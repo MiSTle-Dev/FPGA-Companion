@@ -31,6 +31,7 @@ extern uint32_t __HeapLimit;
 #include "bflb_clock.h"
 #include "bflb_flash.h"
 #include "bflb_clock.h"
+#include "bflb_wdg.h"
 #include <lwip/tcpip.h>
 #if __has_include("bl_fw_api.h")
 #include "bl_fw_api.h"        // old SDK 2.0, buggy and WIFI not working
@@ -695,6 +696,7 @@ extern void bflb_uart_set_console(struct bflb_device_s *dev);
 #define CONSOLE_BAUDRATE 2000000
 
 static struct bflb_device_s *uart0;
+static struct bflb_device_s *wdg;
 
 static void system_clock_init(void) {
   /* wifipll/audiopll */
@@ -872,6 +874,10 @@ void mcu_hw_init(void) {
   // both leds off
   bflb_gpio_set(gpio, GPIO_PIN_27);
   bflb_gpio_set(gpio, GPIO_PIN_28);
+#elif TANG_MEGA138KPRO
+  /* LED6 enable */
+  bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, GPIO_PIN_20);
 #endif
   mcu_hw_spi_init();
 
@@ -891,9 +897,10 @@ void mcu_hw_init(void) {
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
-  
-  bflb_mtimer_delay_ms(1000);
-  GLB_SW_POR_Reset(); 
+  GLB_SW_POR_Reset();
+  while (1) {
+    /*empty dead loop*/
+  }
 }
 
 void mcu_hw_port_byte(unsigned char byte) {

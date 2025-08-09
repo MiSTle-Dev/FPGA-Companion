@@ -266,7 +266,9 @@ static void sys_handle_event(bool ignore_coldboot) {
     unsigned char buttons = sys_get_buttons();
     sys_debugf("Buttons: %02x", buttons);
 
-    if(buttons & 2)
+    if(buttons & 1)
+      mcu_hw_reset();
+    else if(buttons & 2)
       menu_notify(osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW);    
   }
   
