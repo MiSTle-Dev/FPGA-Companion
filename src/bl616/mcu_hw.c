@@ -696,11 +696,17 @@ extern void bflb_uart_set_console(struct bflb_device_s *dev);
 #define CONSOLE_BAUDRATE 2000000
 
 static struct bflb_device_s *uart0;
-static struct bflb_device_s *wdg;
 
 static void system_clock_init(void) {
   /* wifipll/audiopll */
+
+#if TANG_MEGA138KPRO
+  GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_26M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
+#elif TANG_PRIMER25K
+  GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_26M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
+#else
   GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_40M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
+#endif
   GLB_Set_MCU_System_CLK(GLB_MCU_SYS_CLK_TOP_WIFIPLL_320M);
   CPU_Set_MTimer_CLK(ENABLE, BL_MTIMER_SOURCE_CLOCK_MCU_XCLK, Clock_System_Clock_Get(BL_SYSTEM_CLOCK_XCLK) / 1000000 - 1);
 }
@@ -897,10 +903,14 @@ void mcu_hw_init(void) {
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
+#if M0S_DOCK
   GLB_SW_POR_Reset();
   while (1) {
     /*empty dead loop*/
   }
+#else
+  debugf("unsupported HW reset command fused/encrypted bl616");
+#endif
 }
 
 void mcu_hw_port_byte(unsigned char byte) {
