@@ -317,10 +317,10 @@ int sdc_handle_event(void) {
   for(int i=0;i<4;i++) rsector = (rsector << 8) | mcu_hw_spi_tx_u08(0); 
   mcu_hw_spi_end();
 
-  int drive = 0;
-  while(!(request & (1<<drive))) drive++;
-
   if(request) {
+    int drive = 0;
+    while(!(request & (1<<drive))) drive++;
+
     if(!fil[drive].flag) {
       // no file selected
       // this should actually never happen as the core won't request
