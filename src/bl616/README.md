@@ -24,7 +24,7 @@ A working **WIFI** modem function requires to make use of SDK 2.0.1 and an addit
 No modified fork can be provided and updates need to be done on your own.  
 
 ```bash
-git clone --recurse-submodules https://github.com/harbaum/bouffalo_sdk.git
+git clone --recurse-submodules https://github.com/MiSTle-Dev/bouffalo_sdk.git
 git fetch origin 0444691f1299ba846324effb347ac083e803eaee  
 git checkout 0444691f1299ba846324effb347ac083e803eaee 
 # message shows something like: Release version 2.0.1 + 2 
@@ -35,7 +35,7 @@ git apply cherryusb150.patch
 Compile the firmware:
 
 ```bash
-git clone --recurse-submodules https://github.com/harbaum/FPGA-Companion.git
+git clone --recurse-submodules https://github.com/MiSTle-Dev/FPGA-Companion.git
 cd FPGA-Companion
 git submodule init
 git submodule update
@@ -89,7 +89,7 @@ If you have built the firmware yourself and have the SDK installed you can simpl
 BL_SDK_BASE=<where you downloaded the sdk>/bouffalo_sdk/ make CHIP=bl616 COMX=/dev/ttyACM3 flash
 ```
 
-If you have downloaded the firmware from the [release page](https://github.com/harbaum/FPGA-Companion/releases) you can use the graphical [BLFlashCube](https://github.com/CherryUSB/bouffalo_sdk/tree/master/tools/bflb_tools/bouffalo_flash_cube) tool using the ```fpga_companion_bl616_cfg.ini``` file.
+If you have downloaded the firmware from the [release page](https://github.com/MiSTle-Dev/FPGA-Companion/releases) you can use the graphical [BLFlashCube](https://github.com/CherryUSB/bouffalo_sdk/tree/master/tools/bflb_tools/bouffalo_flash_cube) tool using the ```fpga_companion_bl616_cfg.ini``` file.
 
 After successful download you need to unplug the device again and reinsert it *without* the BOOT button pressed to boot into the newly installed firmware.
 
@@ -114,7 +114,7 @@ Install Bouffalo SDK fork and apply CherryUSB patch.
 
 ```shell
 cd %HOMEPATH%
-git clone --recurse-submodules https://github.com/harbaum/bouffalo_sdk.git
+git clone --recurse-submodules https://github.com/MiSTle-Dev/bouffalo_sdk.git
 git fetch origin 0444691f1299ba846324effb347ac083e803eaee  
 git checkout 0444691f1299ba846324effb347ac083e803eaee 
 # message shows something like: Release version 2.0.1 + 2 
@@ -158,7 +158,7 @@ Download FPGA companion repository
 
 ```shell
 cd %HOMEPATH%/Documents
-git clone --recurse-submodules https://github.com/harbaum/FPGA-Companion.git
+git clone --recurse-submodules https://github.com/MiSTle-Dev/FPGA-Companion.git
 cd FPGA-Companion
 git submodule init
 git submodule update
@@ -194,6 +194,6 @@ Check for the COM ports by expanding the same.
 make CHIP=bl616 COMX=COMabc  flash
 ```
 
-If you have downloaded the firmware from the [release page](https://github.com/harbaum/FPGA-Companion/releases) you can use the graphical [BLFlashCube](https://github.com/CherryUSB/bouffalo_sdk/tree/master/tools/bflb_tools/bouffalo_flash_cube) tool using the ```fpga_companion_bl616_cfg.ini``` file.
+If you have downloaded the firmware from the [release page](https://github.com/MiSTle-Dev/FPGA-Companion/releases) you can use the graphical [BLFlashCube](https://github.com/CherryUSB/bouffalo_sdk/tree/master/tools/bflb_tools/bouffalo_flash_cube) tool using the ```fpga_companion_bl616_cfg.ini``` file.
 
 After successful download you need to unplug the device again and reinsert it *without* the BOOT button pressed to boot into the newly installed firmware.

@@ -1,7 +1,7 @@
 # MiSTeryNano FPGA companion ESP32 variant
 
 This is the variant of the
-[MiSTeryNano](https://github.com/harbaum/MiSTeryNano) FPGA companion
+[MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano) FPGA companion
 firmware for the ESP32-S2 and ESP32-S3. 
 
 ## USB Support

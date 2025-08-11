@@ -76,17 +76,17 @@ Currently the following interrupt sources are being used:
 SPI communication is initiated by the MCU by driving CSN low.
 
 The basic SPI communication runs between [```spi.c```](src/spi.c) on the
-MCU side and [```mcu_spi.v```](https://github.com/harbaum/MiSTeryNano/blob/main/src/misc/mcu_spi.v) on FPGA side.
+MCU side and [```mcu_spi.v```](https://github.com/MiSTle-Dev/MiSTeryNano/blob/main/src/misc/mcu_spi.v) on FPGA side.
 
 The first byte of each message identifies the target inside the FPGA
 the MCU wants to address. Currently implemented are:
 
 | value | name | description | MCU implementation | FPGA implementation |
 |-------|------|-------------|--------------------|---------------------|
-| 0     | SYS  | Generic system control | [```sysctrl.c```](src/sysctrl.c) | [```sysctrl.v```](https://github.com/harbaum/MiSTeryNano/blob/main/src/misc/sysctrl.v) |
-| 1     | HID  | Human Interface Devices, e.g. keyboard & mice | [```usb_host.c```](src/hid.c) | [```hid.v```](https://github.com/harbaum/MiSTeryNano/blob/main/src/misc/hid.v) |
-| 2     | OSD  | On-Screen-Display | [```osd_u8g2.c```](src/osd_u8g2.c) | [```osd_u8g2.v```](https://github.com/harbaum/MiSTeryNano/blob/main/src/misc/osd_u8g2.v) |
-| 3     | SDC  | SD Card   | [```sdc.c```](src/sdc.c) | [```sd_card.v```](https://github.com/harbaum/MiSTeryNano/blob/main/src/misc/sd_card.v) |
+| 0     | SYS  | Generic system control | [```sysctrl.c```](src/sysctrl.c) | [```sysctrl.v```](https://github.com/MiSTle-Dev/MiSTeryNano/blob/main/src/misc/sysctrl.v) |
+| 1     | HID  | Human Interface Devices, e.g. keyboard & mice | [```usb_host.c```](src/hid.c) | [```hid.v```](https://github.com/MiSTle-Dev/MiSTeryNano/blob/main/src/misc/hid.v) |
+| 2     | OSD  | On-Screen-Display | [```osd_u8g2.c```](src/osd_u8g2.c) | [```osd_u8g2.v```](https://github.com/MiSTle-Dev/MiSTeryNano/blob/main/src/misc/osd_u8g2.v) |
+| 3     | SDC  | SD Card   | [```sdc.c```](src/sdc.c) | [```sd_card.v```](https://github.com/MiSTle-Dev/MiSTeryNano/blob/main/src/misc/sd_card.v) |
 | 4     | AUDIO | Audio output | TBD | TBD |
 
 Any data after the first target byte is being sent to the target
@@ -284,7 +284,8 @@ The SDC target supports the following commands:
 | 3 | ```SPI_SDC_MCU_READ``` | Request to read data for MCU usage |
 | 4 | ```SPI_SDC_INSERTED``` | Inform core about the selection of disk images |
 | 5 | ```SPI_SDC_MCU_WRITE``` | Request to write data on behalf of the MCU |
-| 6 | ```SPI_SDC_DIRECT``` | Inform core that image may be accessed directly |	
+| 6 | ```SPI_SDC_DIRECT``` | Inform core that image may be accessed directly |
+| 7 | ```SPI_SDC_INS_LARGE``` | Inform core about the selection of large disk images |
 
 The ```SPI_SDC_STATUS``` command is used to poll the SD card status. The first
 byte returned is a generic status byte indicating whether the card
@@ -336,6 +337,13 @@ fragmented) and may be accessed by the core directly without sector
 translation by the MCU. The following four data bytes contain the LBA
 of the first sector of the selected image on SD card and may
 optionally be used by the core to directly access the SD card.
+
+The ```SPI_SDC_INS_LARGE``` command and the following nine data bytes
+inform the core that a large image (>4GB) has been inserted. This
+commands works otherwise like ```SPI_SDC_INSERTED```. Cores not
+able to deal with images that large should ignore this command and
+thus prevent themselves from accidentially damaging the image during
+a write.
 
 ### AUDIO target
 

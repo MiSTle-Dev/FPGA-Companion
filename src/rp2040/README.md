@@ -49,7 +49,7 @@ This repository has to be cloned recursively to make sure the submodules
 are included.
 
 ```bash
-git clone https://github.com/harbaum/FPGA-Companion.git  --recursive
+git clone https://github.com/MiSTle-Dev/FPGA-Companion.git  --recursive
 cd FPGA-Companion
 ```
 
@@ -158,7 +158,7 @@ on the [MiSTeryShield20k RPiPico](https://github.com/vossstef/tang_nano_20k_c64/
 
 ## Using the MiSTeryShield20k Lite
 
-The [MiSTeryShield20k Lite](https://github.com/harbaum/MiSTeryNano/tree/main/board/misteryshield20k_lite) does not
+The [MiSTeryShield20k Lite](https://github.com/MiSTle-Dev/MiSTeryNano/tree/main/board/misteryshield20k_lite) does not
 include WiFi and does not allow to detect its absence automatically. Some versions also need a custom oscillator
 setting. Thus a FPGA Companion version specifially for the MiSTeryShield20k Lite can be enabled as follows.
 

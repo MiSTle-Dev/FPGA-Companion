@@ -2,7 +2,7 @@
 
 The MiSTeryNano FPGA Companion implements support functions for FPGA
 based retro computing projects like [MiSTeryNano
-project](https://github.com/harbaum/MiSTeryNano). While the FPGA
+project](https://github.com/MiSTle-Dev/MiSTeryNano). While the FPGA
 typically implements the hardware of the retro machine itself the
 Companion uses a microcontroller to add support for modern peripherals
 like USB keyboard, mice and SD cards. It also implements an
@@ -11,9 +11,9 @@ machine.
 
 The FPGA Companion replaces the MiSTeryNano firmware that was
 formerly part of the [MiSTeryNano
-project](https://github.com/harbaum/MiSTeryNano). It is also
-used by the [NanoMig](https://github.com/harbaum/nanomig),
-the [NanoMac](https://github.com/harbaum/nanomac), the
+project](https://github.com/MiSTle-Dev/MiSTeryNano). It is also
+used by the [NanoMig](https://github.com/MiSTle-Dev/nanomig),
+the [NanoMac](https://github.com/MiSTle-Dev/nanomac), the
 [C64Nano](https://github.com/vossstef/tang_nano_20k_c64), the
 [VIC20Nano](https://github.com/vossstef/VIC20Nano), the
 [A2600Nano](https://github.com/vossstef/A2600Nano) and the 
@@ -79,9 +79,9 @@ disadvantages.
 
 You might also want to check out the following related projects:
 
-  - [MiSTeryNano](https://github.com/harbaum/MiSTeryNano) HDL implementation of the Atari ST home computer
-  - [NanoMIG](https://github.com/harbaum/NanoMIG) HDL implementation of the Commodore Amiga home computer
-  - [NanoMAC](https://github.com/harbaum/NanoMac) HDL implementation of the Apple Macintosh Plus computer
+  - [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano) HDL implementation of the Atari ST home computer
+  - [NanoMIG](https://github.com/MiSTle-Dev/NanoMIG) HDL implementation of the Commodore Amiga home computer
+  - [NanoMAC](https://github.com/MiSTle-Dev/NanoMac) HDL implementation of the Apple Macintosh Plus computer
   - [C64 Nano](https://github.com/vossstef/tang_nano_20k_c64) HDL implementationm of the Commodore C64 home computer
   - [VIC20 Nano](https://github.com/vossstef/VIC20Nano) HDL implementation of the Commodore VIC20 home computer
   - [A2600 Nano](https://github.com/vossstef/A2600Nano) HDL implementation of the Atari 2600 game console
