@@ -585,11 +585,12 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
 #elif TANG_MEGA138KPRO
+  /* JTAG re-use on AST138k presently not possible ! */
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
-  #define SPI_PIN_IRQ   GPIO_PIN_11/* in P15 GPIO_PIN_11 BL616 RX /K26 GPIO_PIN_27 PLL1_TWI SDA */
+  #define SPI_PIN_IRQ   GPIO_PIN_11/* in  UART RX, crossed */
 #elif TANG_MEGA60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
@@ -761,10 +762,8 @@ static void console_init() {
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
 #elif TANG_MEGA138KPRO
-  /* RX is dummy */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX); /* K25 GPIO28 PLL1_TWI SCL */
-//bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_RX); /* P15 GPIO_PIN_11 BL616 RX wire */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); /* dummy */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX); /* K25 PLL1_TWI SCL */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_27, GPIO_UART_FUNC_UART0_RX); /* K26 PLL1_TWI SDA */
 #elif TANG_MEGA60K
   /* RX is dummy */
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
@@ -904,6 +903,7 @@ void mcu_hw_init(void) {
 void mcu_hw_reset(void) {
   debugf("HW reset");
 #if M0S_DOCK
+  bflb_mtimer_delay_ms(1000);
   GLB_SW_POR_Reset();
   while (1) {
     /*empty dead loop*/
