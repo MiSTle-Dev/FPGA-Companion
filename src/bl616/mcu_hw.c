@@ -909,7 +909,7 @@ void mcu_hw_reset(void) {
     /*empty dead loop*/
   }
 #else
-  debugf("unsupported HW reset command fused/encrypted bl616");
+  // debugf("unsupported HW reset command fused/encrypted bl616");
 #endif
 }
 
