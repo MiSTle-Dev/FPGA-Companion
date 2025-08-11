@@ -58,8 +58,6 @@ extern uint32_t __HeapLimit;
 #include "lwip/dns.h"
 #include "../at_wifi.h"
 
-static struct bflb_device_s *gpio;
-
 #ifdef TANG_CONSOLE60K
 #warning "Building for TANG_CONSOLE60K internal BL616"
 #elif TANG_NANO20K
@@ -100,7 +98,7 @@ static struct bflb_device_s *gpio;
 #define XINPUT_GAMEPAD_LEFT_SHOULDER 0x0100
 #define XINPUT_GAMEPAD_RIGHT_SHOULDER 0x0200
 
-extern struct bflb_device_s *gpio;
+static struct bflb_device_s *gpio;
 extern void shell_init_with_task(struct bflb_device_s *shell);
 
 void set_led(int pin, int on) {
@@ -591,7 +589,7 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
-  #define SPI_PIN_IRQ   GPIO_PIN_11/* in  UART RX, crossed */
+  #define SPI_PIN_IRQ   GPIO_PIN_11/* in P15 GPIO_PIN_11 BL616 RX /K26 GPIO_PIN_27 PLL1_TWI SDA */
 #elif TANG_MEGA60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
@@ -623,6 +621,7 @@ static void mcu_hw_spi_init(void) {
   // when FPGA sets data on rising edge:
   // stable with long cables up to 20Mhz
   // short cables up to 32MHz
+  gpio = bflb_device_get_by_name("gpio");
 
   /* spi miso */
   bflb_gpio_init(gpio, SPI_PIN_MISO, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
@@ -747,10 +746,8 @@ static void peripheral_clock_init(void) {
 }
 
 static void console_init() {
-  struct bflb_device_s *gpio;
-  
   gpio = bflb_device_get_by_name("gpio");
-
+  
 #ifdef M0S_DOCK
   /* M0S Dock has debug uart on default pins 21 and 22 */
   bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_TX);
@@ -765,8 +762,9 @@ static void console_init() {
   bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
 #elif TANG_MEGA138KPRO
   /* RX is dummy */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_10, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX); /* K25 GPIO28 PLL1_TWI SCL */
+//bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_RX); /* P15 GPIO_PIN_11 BL616 RX wire */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); /* dummy */
 #elif TANG_MEGA60K
   /* RX is dummy */
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
@@ -871,6 +869,8 @@ void mcu_hw_init(void) {
   mn_board_init();
 
   printf("\r\n\r\n" LOGO "           FPGA Companion for BL616\r\n\r\n");
+
+  gpio = bflb_device_get_by_name("gpio");
 
 #ifdef M0S_DOCK
   // init on-board LEDs
