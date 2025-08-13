@@ -10,6 +10,7 @@
 #include "usbh_core.h"
 #include "usbh_hid.h"
 
+#include "board_gpio.h"
 #include "../spi.h"
 #include "../hid.h"
 #include "../sdc.h"
@@ -17,10 +18,8 @@
 #include "../debug.h"
 #include "../mcu_hw.h"
 
-extern uint32_t __HeapBase;
-extern uint32_t __HeapLimit;
-
 #include "bl616_glb.h"
+#include "bl616_sys.h"
 
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
@@ -30,8 +29,6 @@ extern uint32_t __HeapLimit;
 #include "bflb_uart.h"
 #include "bflb_clock.h"
 #include "bflb_flash.h"
-#include "bflb_clock.h"
-#include "bflb_wdg.h"
 #include <lwip/tcpip.h>
 #if __has_include("bl_fw_api.h")
 #include "bl_fw_api.h"        // old SDK 2.0, buggy and WIFI not working
@@ -49,7 +46,6 @@ extern uint32_t __HeapLimit;
 #include "bflb_efuse.h"
 #include "board.h"
 #include "bl616_tzc_sec.h"
-#include "bl616_psram.h"
 #include "task.h"
 #include "timers.h"
 #include <lwip/sockets.h>
@@ -57,6 +53,9 @@ extern uint32_t __HeapLimit;
 #include "bflb_irq.h"
 #include "lwip/dns.h"
 #include "../at_wifi.h"
+
+extern uint32_t __HeapBase;
+extern uint32_t __HeapLimit;
 
 #ifdef TANG_CONSOLE60K
 #warning "Building for TANG_CONSOLE60K internal BL616"
@@ -573,35 +572,35 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MOSI  GPIO_PIN_11
   #define SPI_PIN_IRQ   GPIO_PIN_14
 #elif TANG_NANO20K
-  #define SPI_PIN_CSN   GPIO_PIN_0  /* out */
-  #define SPI_PIN_SCK   GPIO_PIN_1  /* out */
-  #define SPI_PIN_MISO  GPIO_PIN_2  /* in, new 3921 ok*/
-  #define SPI_PIN_MOSI  GPIO_PIN_3  /* out */
-  #define SPI_PIN_IRQ   GPIO_PIN_13 /* in UART RX, crossed */
+  #define SPI_PIN_CSN   GPIO_PIN_0  /* out SPI_CSn */
+  #define SPI_PIN_SCK   GPIO_PIN_1  /* out SPI_SCLK */
+  #define SPI_PIN_MOSI  GPIO_PIN_2  /* out SPI_DIR, CHIP_EN, 10K PD*/
+  #define SPI_PIN_MISO  GPIO_PIN_3  /* in  SPI_DAT */
+  #define SPI_PIN_IRQ   GPIO_PIN_13 /* in  UART RX, crossed */
 #elif TANG_CONSOLE60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK 4K7 PD SOM */
-  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO 3K3 PU Console Board */
-  #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
+  #define SPI_PIN_MOSI  GPIO_PIN_2 /* out TDO, CHIP_EN 3K3 PD */
+  #define SPI_PIN_MISO  GPIO_PIN_3 /* in  TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
 #elif TANG_MEGA138KPRO
   /* JTAG re-use on AST138k presently not possible ! */
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
-  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO */
-  #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
+  #define SPI_PIN_MOSI  GPIO_PIN_2 /* out TDO, CHIP_EN */
+  #define SPI_PIN_MISO  GPIO_PIN_3 /* in  TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_11/* in  UART RX, crossed */
 #elif TANG_MEGA60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
-  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO */
-  #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
+  #define SPI_PIN_MOSI  GPIO_PIN_2 /* out TDO, CHIP_EN */
+  #define SPI_PIN_MISO  GPIO_PIN_3 /* in  TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
 #elif TANG_PRIMER25K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
-  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO */
-  #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
+  #define SPI_PIN_MOSI  GPIO_PIN_2 /* out TDO, CHIP_EN */
+  #define SPI_PIN_MISO  GPIO_PIN_3 /* in  TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_10/* in  UART RX, crossed */
 #endif
 
@@ -697,6 +696,10 @@ extern void bflb_uart_set_console(struct bflb_device_s *dev);
 
 static struct bflb_device_s *uart0;
 
+#if (defined(CONFIG_LUA) || defined(CONFIG_BFLOG) || defined(CONFIG_FATFS))
+static struct bflb_device_s *rtc;
+#endif
+
 static void system_clock_init(void) {
   /* wifipll/audiopll */
 
@@ -708,6 +711,7 @@ static void system_clock_init(void) {
   GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_40M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
 #endif
   GLB_Set_MCU_System_CLK(GLB_MCU_SYS_CLK_TOP_WIFIPLL_320M);
+  HBN_Set_MCU_XCLK_Sel(HBN_MCU_XCLK_XTAL);
   CPU_Set_MTimer_CLK(ENABLE, BL_MTIMER_SOURCE_CLOCK_MCU_XCLK, Clock_System_Clock_Get(BL_SYSTEM_CLOCK_XCLK) / 1000000 - 1);
 }
 
@@ -746,8 +750,43 @@ static void peripheral_clock_init(void) {
   GLB_Swap_MCU_SPI_0_MOSI_With_MISO(0);
 }
 
+#if defined(CONFIG_ANTI_ROLLBACK) && !defined(CONFIG_BOOT2)
+extern const blverinf_t app_ver;
+uint8_t efuse_version = 0xFF;
+
+static void bflb_check_anti_rollback(void)
+{
+    if (0 != bflb_get_app_version_from_efuse(&efuse_version)) {
+        printf("error! can't read app version in efuse\r\n");
+        while (1) {}
+    } else {
+        printf("app version in efuse is: %d\r\n", efuse_version);
+    }
+
+    if (app_ver.anti_rollback < efuse_version) {
+        printf("app version in application is: %d, less than app version in efuse, the application should not run up\r\n", app_ver.anti_rollback);
+    } else {
+        printf("app version in application is: %d, not less than app version in efuse, the application should run up\r\n", app_ver.anti_rollback);
+    }
+
+    /* change app version in efuse to app_ver.anti_rollback, default is 0 */
+    if (app_ver.anti_rollback > efuse_version) {
+        bflb_set_app_version_to_efuse(app_ver.anti_rollback); //be attention! app version in efuse is incremental(from 0 to 128), and cannot be reduced forever
+        printf("update app version in efuse to %d\r\n", app_ver.anti_rollback);
+
+        /* check app version in efuse */
+        if (0 != bflb_get_app_version_from_efuse(&efuse_version)) {
+            printf("error! can't read app version in efuse\r\n");
+            while (1) {}
+        } else {
+            printf("app version in efuse is: %d\r\n", efuse_version);
+        }
+    }
+}
+#endif
+
 static void console_init() {
-  gpio = bflb_device_get_by_name("gpio");
+    gpio = bflb_device_get_by_name("gpio");
   
 #ifdef M0S_DOCK
   /* M0S Dock has debug uart on default pins 21 and 22 */
@@ -758,9 +797,8 @@ static void console_init() {
   bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_20, GPIO_UART_FUNC_UART0_RX);
 #elif TANG_CONSOLE60K
-  /* TX & RX  USB-C connector SB1 and SB2 */
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX); /* K25 TWI.SCL */
 #elif TANG_MEGA138KPRO
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX); /* K25 PLL1_TWI SCL */
   bflb_gpio_uart_init(gpio, GPIO_PIN_27, GPIO_UART_FUNC_UART0_RX); /* K26 PLL1_TWI SDA */
@@ -782,12 +820,13 @@ static void console_init() {
   cfg.flow_ctrl = 0;
   cfg.tx_fifo_threshold = 7;
   cfg.rx_fifo_threshold = 7;
+  cfg.bit_order = UART_LSB_FIRST;
   
   uart0 = bflb_device_get_by_name("uart0");
   
   bflb_uart_init(uart0, &cfg);
   bflb_uart_set_console(uart0);
-}    
+}
 
 static void wifi_init(void);
 
@@ -797,12 +836,16 @@ static void mn_board_init(void) {
     uintptr_t flag;
     size_t heap_len;
 
+    /* lock */
     flag = bflb_irq_save();
-#ifndef CONFIG_PSRAM_COPY_CODE
     ret = bflb_flash_init();
-#endif
+
+    /* system clock */
     system_clock_init();
+
     peripheral_clock_init();
+
+    /* irq init */
     bflb_irq_initialize();
 
     gpio = bflb_device_get_by_name("gpio");
@@ -836,32 +879,46 @@ static void mn_board_init(void) {
   bflb_gpio_set(gpio, GPIO_PIN_20);
 #endif
 
+    /* console init (uart or wo) */
     console_init();
 
     heap_len = ((size_t)&__HeapLimit - (size_t)&__HeapBase);
     kmem_init((void *)&__HeapBase, heap_len);
 
+    /* boot info dump */
     bl_show_log();
+    /* version info dump */
     bl_show_component_version();
 
-    if (ret != 0) {
-        printf("flash init fail!!!\r\n");
-    }
-    bl_show_flashinfo();
+#if defined(CONFIG_ANTI_ROLLBACK) && !defined(CONFIG_BOOT2)
+    bflb_check_anti_rollback();
+#endif
 
-    printf("dynamic memory init success, ocram heap size = %d Kbyte \r\n", ((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024);
+  /* flash info dump */
+  bl_show_flashinfo();
+  if (ret != 0) {
+        printf("flash init fail !!!\r\n");
+      }
 
-    printf("sig1:%08x\r\n", BL_RD_REG(GLB_BASE, GLB_UART_CFG1));
-    printf("sig2:%08x\r\n", BL_RD_REG(GLB_BASE, GLB_UART_CFG2));
-    printf("cgen1:%08x\r\n", getreg32(BFLB_GLB_CGEN1_BASE));
+    printf("uart  sig1:%08x, sig2:%08x\r\n", getreg32(GLB_BASE + GLB_UART_CFG1_OFFSET), getreg32(GLB_BASE + GLB_UART_CFG2_OFFSET));
+    printf("clock gen1:%08x, gen2:%08x\r\n", getreg32(GLB_BASE + GLB_CGEN_CFG1_OFFSET), getreg32(GLB_BASE + GLB_CGEN_CFG2_OFFSET));
 
     log_start();
+
+#if (defined(CONFIG_LUA) || defined(CONFIG_BFLOG) || defined(CONFIG_FATFS))
+    rtc = bflb_device_get_by_name("rtc");
+#endif
 
 #ifdef CONFIG_MBEDTLS
     extern void bflb_sec_mutex_init(void);
     bflb_sec_mutex_init();
 #endif
+
+    /* unlock */
     bflb_irq_restore(flag);
+
+    printf("board init done\r\n");
+    printf("===========================\r\n");
 }
 
 void mcu_hw_init(void) {
@@ -902,15 +959,11 @@ void mcu_hw_init(void) {
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
-#if M0S_DOCK
   bflb_mtimer_delay_ms(1000);
   GLB_SW_POR_Reset();
   while (1) {
     /*empty dead loop*/
   }
-#else
-  // debugf("unsupported HW reset command fused/encrypted bl616");
-#endif
 }
 
 void mcu_hw_port_byte(unsigned char byte) {
