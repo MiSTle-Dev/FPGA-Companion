@@ -574,33 +574,33 @@ static struct bflb_device_s *spi_dev;
 #elif TANG_NANO20K
   #define SPI_PIN_CSN   GPIO_PIN_0  /* out SPI_CSn */
   #define SPI_PIN_SCK   GPIO_PIN_1  /* out SPI_SCLK */
-  #define SPI_PIN_MOSI  GPIO_PIN_2  /* out SPI_DIR, CHIP_EN, 10K PD*/
-  #define SPI_PIN_MISO  GPIO_PIN_3  /* in  SPI_DAT */
+  #define SPI_PIN_MISO  GPIO_PIN_2  /* in  SPI_DIR, CHIP_EN, 10K PD*/
+  #define SPI_PIN_MOSI  GPIO_PIN_3  /* out SPI_DAT */
   #define SPI_PIN_IRQ   GPIO_PIN_13 /* in  UART RX, crossed */
 #elif TANG_CONSOLE60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK 4K7 PD SOM */
-  #define SPI_PIN_MOSI  GPIO_PIN_2 /* out TDO, CHIP_EN 3K3 PD */
-  #define SPI_PIN_MISO  GPIO_PIN_3 /* in  TDI */
+  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN 3K3 PD */
+  #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
 #elif TANG_MEGA138KPRO
   /* JTAG re-use on AST138k presently not possible ! */
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
-  #define SPI_PIN_MOSI  GPIO_PIN_2 /* out TDO, CHIP_EN */
-  #define SPI_PIN_MISO  GPIO_PIN_3 /* in  TDI */
+  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
+  #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_11/* in  UART RX, crossed */
 #elif TANG_MEGA60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
-  #define SPI_PIN_MOSI  GPIO_PIN_2 /* out TDO, CHIP_EN */
-  #define SPI_PIN_MISO  GPIO_PIN_3 /* in  TDI */
+  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
+  #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
 #elif TANG_PRIMER25K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
-  #define SPI_PIN_MOSI  GPIO_PIN_2 /* out TDO, CHIP_EN */
-  #define SPI_PIN_MISO  GPIO_PIN_3 /* in  TDI */
+  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
+  #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_10/* in  UART RX, crossed */
 #endif
 
@@ -793,12 +793,11 @@ static void console_init() {
   bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_TX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
 #elif TANG_NANO20K
-  /* RX is dummy */
   bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_20, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_14, GPIO_UART_FUNC_UART0_RX); /* 8 TDO */
 #elif TANG_CONSOLE60K
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX); /* K25 TWI.SCL */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX); /* M13 TWI.SCL */
 #elif TANG_MEGA138KPRO
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX); /* K25 PLL1_TWI SCL */
   bflb_gpio_uart_init(gpio, GPIO_PIN_27, GPIO_UART_FUNC_UART0_RX); /* K26 PLL1_TWI SDA */
