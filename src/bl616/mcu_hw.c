@@ -10,7 +10,6 @@
 #include "usbh_core.h"
 #include "usbh_hid.h"
 
-#include "board_gpio.h"
 #include "../spi.h"
 #include "../hid.h"
 #include "../sdc.h"
@@ -19,7 +18,6 @@
 #include "../mcu_hw.h"
 
 #include "bl616_glb.h"
-#include "bl616_sys.h"
 
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
@@ -786,7 +784,7 @@ static void bflb_check_anti_rollback(void)
 #endif
 
 static void console_init() {
-    gpio = bflb_device_get_by_name("gpio");
+  gpio = bflb_device_get_by_name("gpio");
   
 #ifdef M0S_DOCK
   /* M0S Dock has debug uart on default pins 21 and 22 */
