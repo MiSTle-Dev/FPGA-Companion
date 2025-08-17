@@ -10,6 +10,21 @@ for the BL616 MCU (M0S Dock).
 
 ![Tang Nano 20k with M0S Dock](m0s_dock_tn20k.png)  
 
+## Tang integrated onboard BL616 µC
+
+JTAG signals and UART RX are re-purposed as SPI interface. µC is Master and FPGA is slave.  
+BL616 GPIO pin mapping is fix in SDK and no option to change. UART RX GPIO is board specific.
+
+|Tang Board wiring BL616|BL616 GPIO|SPI re-use|Note|
+|-------------|-----|--------|-----|
+|JTAG TMS     |GPIO0|SPI _SS |  |
+|JTAG TCK     |GPIO1|SPI SCK |  |
+|JTAG TDO     |GPIO2|SPI MISO| EN_CHIP BL616 |
+|JTAG TDI     |GPIO3|SPI MOSI|  |
+|BL616 UART RX|GPIO x|_IRQ    |  |
+
+[Windows 11 Build AiO](#tang-onboard-bl616)
+
 ## Compiling and uploading code for the BL616 (Linux)
 
 Download the Bouffalo toolchain:
@@ -18,21 +33,12 @@ Download the Bouffalo toolchain:
 git clone https://github.com/bouffalolab/toolchain_gcc_t-head_linux.git
 ```
 
-and the Bouffalo SDK:  
-
-A working **WIFI** modem function requires to make use of SDK 2.0.1 and an additional CherryUSB patch.  
-No modified fork can be provided and updates need to be done on your own.  
-
+and the patched Bouffalo SDK with latest version common CherryUSB Stack:  
 ```bash
 git clone --recurse-submodules https://github.com/MiSTle-Dev/bouffalo_sdk.git
-git fetch origin 0444691f1299ba846324effb347ac083e803eaee  
-git checkout 0444691f1299ba846324effb347ac083e803eaee 
-# message shows something like: Release version 2.0.1 + 2 
-# copy CherryUSB update patch into the bouffalo_sdk folder
-git apply cherryusb150.patch
 ```
 
-Compile the firmware:
+Compile the firmware for **M0S Dock**
 
 ```bash
 git clone --recurse-submodules https://github.com/MiSTle-Dev/FPGA-Companion.git
@@ -51,6 +57,8 @@ PATH=$PATH:/abc/toolchain_gcc_t-head_linux/bin
 ```
 
 A simple make or make CHIP=bl616 COMX=/dev/ttyACMxyz flash in your bl616 folder will do then.
+
+for onboard BL616 see: [Windows 11 Build AiO](#tang-onboard-bl616)
 
 ### Flashing the firmware
 
@@ -108,18 +116,11 @@ cd %HOMEPATH%
 git clone https://github.com/bouffalolab/toolchain_gcc_t-head_windows.git
 ```
 
-And the Bouffalo SDK:  
-
-Install Bouffalo SDK fork and apply CherryUSB patch.  
+and the patched Bouffalo SDK with latest version common CherryUSB Stack:  
 
 ```shell
 cd %HOMEPATH%
 git clone --recurse-submodules https://github.com/MiSTle-Dev/bouffalo_sdk.git
-git fetch origin 0444691f1299ba846324effb347ac083e803eaee  
-git checkout 0444691f1299ba846324effb347ac083e803eaee 
-# message shows something like: Release version 2.0.1 + 2 
-# copy CherryUSB update patch into the bouffalo_sdk folder
-git apply cherryusb150.patch
 ```
 
 Set Windows SDK Environment Variable:  
@@ -164,7 +165,7 @@ git submodule init
 git submodule update
 ```
 
-Compile the firmware:  
+Compile the firmware for **M0S Dock**  
 
 ```shell
 cd %HOMEPATH%/Documents\FPGA-Companion\src\bl616
@@ -172,16 +173,19 @@ make clean
 make
 ```
 
-Alternative build option: [ninja](https://ninja-build.org).  
-make clean and then: make ninja
+## tang onboard bl616
 
-### Flashing the firmware
+A build script creates for the several setups specific binaries and .ini files including the needed ``bl616_fpga_partner_`` firmware. The ``buildall`` folder will contain all needed files for a release. So far TN20k and Console60k apart from M0S Dock is supported. Presently it seems that GW5AST-LV138 JTAG interface can't be re-purposed on for unknown reasons. TM60k and Primer 25k are likely possible but not released yet. TP20k and TN9k are excluded as their BL702 doesn't support required USB host mode.
+
+```shell
+buildall.bat
+```
+
+### Flashing the firmware M0S Dock
 
 First, you need to unplug the M0S_DOCK from USB, press the BOOT button and plug the M0S Dock back into the PCs USB with the
 BOOT button still pressed. Once connected release the BOOT button. The device
 should now be in bootloader mode and show up with its bootloader on the PC.
-
-For Tang Console press and hold the "BOOT" button on the board (bottom left corner, close to one of the USB-C port), then plug in the USB cable. This enters the BL616 into the programming mode.
 
 Figure out µC bootloader COM port and use shell command to program:  
 Press Windows + R keyboard shortcut to launch the Windows Run box, type “devmgmt.msc” , and click the OK button.  
