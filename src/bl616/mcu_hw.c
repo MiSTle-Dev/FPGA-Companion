@@ -9,6 +9,7 @@
 
 #include "usbh_core.h"
 #include "usbh_hid.h"
+#include "usbd_core.h"
 
 #include "../spi.h"
 #include "../hid.h"
@@ -532,7 +533,6 @@ void usb_host(void) {
 
   usb_debugf("init usb hid host");
 
-//  usbh_initialize();
   usbh_initialize(0, USB_BASE);
 
   // initialize all HID info entries
@@ -804,9 +804,8 @@ static void console_init() {
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
 #elif TANG_PRIMER25K
-  /* RX is dummy */
   bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_RX); /* access at S3 button, remove capacitor */
 #endif
 
   struct bflb_uart_config_s cfg;
@@ -937,6 +936,10 @@ void mcu_hw_init(void) {
   /* LED6 enable */
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
+#elif TANG_PRIMER25K
+  /* LED5 enable */
+  bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, GPIO_PIN_20);
 #endif
   mcu_hw_spi_init();
 
@@ -954,9 +957,43 @@ void mcu_hw_init(void) {
 
 }
 
+static void usbd_event_handler(uint8_t busid, uint8_t event)
+{
+    switch (event) {
+        default:
+            break;
+    }
+}
+
+
 void mcu_hw_reset(void) {
   debugf("HW reset");
-  bflb_mtimer_delay_ms(1000);
+
+  struct bflb_device_s *wdg;
+  struct bflb_wdg_config_s wdg_cfg;
+  wdg_cfg.clock_source = WDG_CLKSRC_32K;
+  wdg_cfg.clock_div = 31;
+  wdg_cfg.comp_val = 1000;
+  wdg_cfg.mode = WDG_MODE_RESET;
+
+  wdg = bflb_device_get_by_name("watchdog");
+  bflb_wdg_init(wdg, &wdg_cfg);
+  bflb_wdg_start(wdg); // to be sure...
+
+  gpio = bflb_device_get_by_name("gpio");
+  bflb_irq_disable(gpio->irq_num);
+  bflb_gpio_deinit(gpio, GPIO_PIN_0);
+  bflb_gpio_deinit(gpio, GPIO_PIN_1);
+  bflb_gpio_deinit(gpio, GPIO_PIN_2);
+  bflb_gpio_deinit(gpio, GPIO_PIN_3);
+  bflb_gpio_init(gpio, GPIO_PIN_2, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, GPIO_PIN_2);
+  debugf("usb host deinit");
+  usbh_deinitialize(0);
+  debugf("start usb device mode");
+  usbd_initialize(0, USB_BASE, usbd_event_handler);
+  debugf("deinit done");
+  bflb_mtimer_delay_ms(100);
   GLB_SW_POR_Reset();
   while (1) {
     /*empty dead loop*/
