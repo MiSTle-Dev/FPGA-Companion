@@ -18,48 +18,34 @@ below may be outdated. The basic principles should still be valid.
 
 ## Internal vs. external MCU
 
-Theoretically it's possible to use the Tang Nano 20k's internal BL616
-MCU or an externally connected MCU like a Raspberry Pi Pico or a M0S
-Dock. Using the internal MCU would have the advantage that no
-additional component is required. The major disadvantage would be that
-this MCU is usually being used to flash the FPGA from a
-PC. Repurposing the internal MCU makes flashing the FPGA more
-difficult and thus hinders FPGA development. Using an external MCU
-like e.g. a M0S Dock instead leaves the internal MCU and it's ability
-to flash the FPGA untouched. Development therefore usually takes place
-with an external MCU.
+It's nowadays possible to use the Tang Nano 20k's internal BL616 MCU or an 
+externally connected MCU like a Raspberry Pi Pico or a M0S Dock.
+Using the internal MCU has the advantage that no additional component 
+is required. Development usually takes place with an external MCU.  
+At time of project start it wasn't reasonable possible to make use of TN20k internal BL616 MPU due to both PCBA and firmware limitations. This had been resolved over time by a new TN20k assembly version 3921 and availability of the fused/encryped ``bl616_fpga_partner`` firmware.
 
 ## SPI bus
 
-The SPI bus between the MCU and the FPGA consists of four connections
+The SPI bus between the MCU and the FPGA consists of five connections
 e.g. for a M0S Dock/BL616. For other MCUs see the READMEs in their
 respective subdirectories.
 
-|      | M0S Dock <-> FPGA | int. MCU <-> FPGA |                                      |
+|      | M0S Dock <-> FPGA | TN20k int. MCU <-> FPGA |                                      |
 |------|-------------------|-------------------|--------------------------------------|
 | CSN  | GPIO12 -> 56      | GPIO0 -> 86       | SPI select, active low               |
 | SCK  | GPIO13 -> 54      | GPIO1 -> 13       | SPI clock, idle low                  |
 | MOSI | GPIO11 -> 41      | GPIO3 -> 76       | SPI data from MCU to FPGA            |
-| MISO | GPIO10 <- 42      | GPIO10 <- 6       | SPI data from FPGA to MCU    |
-| IRQ  | GPIO14 <- 51      | GPIO12 <- 7       | Interrupt from FPGA to MCU, active low |
+| MISO | GPIO10 <- 42      | GPIO2 <- 75        | SPI data from FPGA to MCU    |
+| IRQN | GPIO14 <- 51      | GPIO13 <- 69      | Interrupt from FPGA to MCU, active low |
 
-Usually the SPI bus is run at 20Mhz.
-
-The internal MCU of the Tang Nano 20K is supposed to use GPIO2 to FPGA
-pin 6 for MISO data. But due to a design error on some Tang Nano 20k,
-GPIO2 is unusable for fast signals. Thus, GPIO10 is being used
-instead. GPIO10 is one of the JTAG pins on FPGA side. Using this pin
-as a regular IO requires to disable JTAG in the FPGA. As a
-consequence, programming the FPGA needs [special care](MODES.md). This
-only affects the Tang Nano 20k's internal MCU. An external M0S based
-solution is not affected by this.
+Usually the SPI bus is run at 20Mhz.  
 
 The SPI master is the MCU and the SPI target is the FPGA. Thus, only
 the MCU initiates SPI communication. The SPI is operated in MODE1 with
 clock idle state being low and data being sampled on the falling edge
 of clock.
 
-Since release 1.2.2 an interrupt signal (IRQ) is being used to allow
+An interrupt signal (IRQ) is being used to allow
 the FPGA to notify the MCU of events. This avoids the need to
 constantly poll the FPGA from the MCU and the FPGA can simply raise
 the interrupt signal whenever it requires the cooperation of the MCU.
@@ -222,13 +208,14 @@ The ```SPI_HID_MOUSE``` messages contain three data bytes. The first
 byte carries the state of the mouse buttons in bits 0 and 1. The
 second and third bytes contain relative x and y movements.
 
-The ```SPI_HID_JOYSTICK``` messages contains two data bytes, the
-first addressing the joystick and the second containing classic 8 bit
+The ```SPI_HID_JOYSTICK``` messages contains five data bytes, the
+first addressing the joystick / gamepad and the second containing classic 8 bit
 digital joystick data. The address byte is needed since unlike
 keyboards and mice, the core needs to distinguish between multiple
 joysticks. The upper four bits of the second byte contain up to four
 fire buttons. These can simply be or'd together for standard DB9
 joystick emulation.
+The subsequent three bytes transfer Gamepad analog proportional position X, Y and 8 extra digital gamepad buttons.  
 
 The ```SPI_HID_GET_DB9``` command allows the MCU to request the
 state of the DB9 joystick port from the FPGA. This can be used
