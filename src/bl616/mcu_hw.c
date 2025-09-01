@@ -957,14 +957,7 @@ void mcu_hw_init(void) {
 
 }
 
-static void usbd_event_handler(uint8_t busid, uint8_t event)
-{
-    switch (event) {
-        default:
-            break;
-    }
-}
-
+extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
@@ -990,9 +983,18 @@ void mcu_hw_reset(void) {
   bflb_gpio_reset(gpio, GPIO_PIN_2);
   debugf("usb host deinit");
   usbh_deinitialize(0);
-  debugf("start usb device mode");
-  usbd_initialize(0, USB_BASE, usbd_event_handler);
-  debugf("deinit done");
+  bflb_mtimer_delay_ms(250);
+
+#ifdef TANG_CONSOLE60K
+  /* USB-C OTG Power enable */
+  bflb_gpio_deinit(gpio, GPIO_PIN_20);
+  bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, GPIO_PIN_20);
+#endif
+
+  debugf("start usb hid device mode");
+  hid_keyboard_init(0, USB_BASE);
+  debugf("deinit done and ready for POR reset");
   bflb_mtimer_delay_ms(100);
   GLB_SW_POR_Reset();
   while (1) {

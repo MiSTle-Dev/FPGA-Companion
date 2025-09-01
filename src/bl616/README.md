@@ -6,7 +6,7 @@ for the BL616 MCU (M0S Dock).
 > [!IMPORTANT]
 > * Updated SDK have to be installed!  
 
-## Example wiring
+## Example wiring M0S Dock
 
 ![Tang Nano 20k with M0S Dock](m0s_dock_tn20k.png)  
 
@@ -175,7 +175,7 @@ make
 
 ## tang onboard bl616
 
-A build script creates for the several setups specific binaries and .ini files including the needed ``bl616_fpga_partner_`` firmware. The ``buildall`` folder will contain all needed files for a release. So far TN20k and Console60k apart from M0S Dock is supported. Presently it seems that GW5AST-LV138 JTAG interface can't be re-purposed on for unknown reasons. TM60k and Primer 25k are likely possible but not released yet. TP20k and TN9k are excluded as their BL702 doesn't support required USB host mode.
+A build script creates for the several setups specific binaries and .ini files including the needed ``bl616_fpga_partner_`` firmware. The ``buildall`` folder will contain all needed files for a release. So far TN20k, Console60k, Primer25k apart from M0S Dock are supported. Presently it seems that GW5AST-LV138 JTAG interface can't be re-purposed for unknown reasons. TM60k is very likely possible but not released yet. TP20k and TN9k are excluded as their BL702 doesn't support required USB host mode.
 
 ```shell
 buildall.bat
