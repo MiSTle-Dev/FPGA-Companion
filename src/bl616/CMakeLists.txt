@@ -9,6 +9,7 @@ set(CONFIG_FREERTOS 1)
 set(CONFIG_CHERRYUSB 1)
 set(CONFIG_CHERRYUSB_HOST 1)
 set(CONFIG_CHERRYUSB_DEVICE 1)
+set(CONFIG_CHERRYUSB_DEVICE_HID 1)
 set(CONFIG_PSRAM 0)
 set(CONFIG_FATFS 1)
 set(CONFIG_BFLOG 0)
@@ -87,6 +88,7 @@ target_sources(app PRIVATE
    	../xml.c
     ../at_wifi.c
     ../puff.c
+    hid_keyboard_template.c
 )
 
 file(GLOB COMPONENT_SRCS ../u8g2/csrc/*.c  ../u8g2/sys/bitmap/common/*.c)
