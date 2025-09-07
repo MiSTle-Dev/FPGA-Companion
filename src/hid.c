@@ -10,7 +10,7 @@
 #include "inifile.h"
 #include "mcu_hw.h"
 
-#include <string.h>  // for memcpy
+#include <string.h>  // for memcpy and strcmp
 
 // keep a map of joysticks to be able to report
 // them individually
@@ -37,11 +37,52 @@ static void kbd_tx(uint8_t byte) {
   mcu_hw_spi_end();
 }
 
+bool check_and_handle_amiga_warm_reset(struct hid_kbd_state_S *state, const unsigned char *buffer) {
+  if((core_id == 0x04) || (strcmp(cfg->name, "NanoMig") == 0)) {
+  // core_id == 0x04 CORE_ID_AMIGA
+
+    // --- Warm reset combo: LCTRL + LGUI + RGUI -------------------------------
+    enum {
+      MOD_LCTRL = 1 << 0,
+      MOD_LGUI  = 1 << 3,
+      MOD_RGUI  = 1 << 7,
+      MOD_MASK_RESET = (MOD_LCTRL | MOD_LGUI | MOD_RGUI)
+    };
+    //usb_debugf("buffer: %i", buffer[0]);
+    //usb_debugf("MOD_MASK_RESET: %i", MOD_MASK_RESET);
+
+    static bool reset_latched = false;
+
+    bool reset_combo_now  = (buffer[0] & MOD_MASK_RESET) == MOD_MASK_RESET;
+    bool reset_combo_prev = (state->last_report[0] & MOD_MASK_RESET) == MOD_MASK_RESET;
+    
+    if(reset_combo_now && !reset_combo_prev && !reset_latched) {
+      usb_debugf("AMIGA core detected: core_id %02x - cfg->name %s", core_id, cfg->name);
+      usb_debugf("AMIGA: warm reset (Ctrl+LAmiga+RAmiga)");
+
+      // warm reset the core as via OSD
+      sys_set_val('R', 1);
+      sys_set_val('R', 0);
+      reset_latched = true;
+      // Swallow this report so the combo doesn't leak into the core
+      memcpy(state->last_report, buffer, 8);
+      return true;
+    } else if(!reset_combo_now) {
+      reset_latched = false; // release latch when the combo is released
+    }
+  }
+  return false;
+}
+
 void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kbd_state_S *state,
 	       const unsigned char *buffer, int nbytes) {
   // we expect boot mode packets which are exactly 8 bytes long
   if(nbytes != 8) return;
   
+  // check for Amiga warm reset key combination
+  if(check_and_handle_amiga_warm_reset(state, buffer))
+    return;
+
   // check if modifier have changed
   if((buffer[0] != state->last_report[0]) && !osd_is_visible()) {
     for(int i=0;i<8;i++) {
