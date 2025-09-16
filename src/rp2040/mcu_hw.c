@@ -203,14 +203,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
       hid_device[idx].dev_addr = dev_addr;
       hid_device[idx].instance = instance;
       if(hid_device[idx].rep.type == REPORT_TYPE_JOYSTICK)
-	hid_device[idx].state.joystick.js_index = hid_allocate_joystick();
-      else if(hid_device[idx].rep.type == REPORT_TYPE_MOUSE) {
-	// switch mice to report mode
-	if(!tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_REPORT)) {
-	  usb_debugf("Failed to set report mode");
-	  hid_device[idx].rep.report_id_present = false;
-	}
-      }
+	      hid_device[idx].state.joystick.js_index = hid_allocate_joystick();
     } else
       usb_debugf("Ignoring device");
   } else
@@ -870,6 +863,7 @@ void mcu_hw_init(void) {
   gpio_put(LED_JOYSTICK_PIN, 0);
 #endif
   
+  tuh_hid_set_default_protocol(HID_PROTOCOL_REPORT);
   tuh_init(BOARD_TUH_RHPORT);
   
   xTaskCreate(pio_usb_task, "usb_task", 2048, NULL, configMAX_PRIORITIES, NULL);
