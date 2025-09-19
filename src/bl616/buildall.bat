@@ -6,7 +6,7 @@ if not exist buildall mkdir buildall
 del /Q buildall\*
 
 REM List of boards to build
-set "boards=m0sdock nano20k console60k primer25k"
+set "boards=m0sdock nano20k console60k primer25k mega138kpro"
 @REM set "boards=m0sdock nano20k console60k mega60k mega138kpro primer25k"
 
 for %%b in (%boards%) do (
@@ -25,8 +25,6 @@ for %%b in (%boards%) do (
         REM Copy and rename the binary files
         copy /Y build\build_out\fpga_companion_bl616.bin buildall\fpga_companion_%%b.bin
         if "%%b"=="console60k" (
-            copy /Y bl616_fpga_partner\bl616_fpga_partner_Console.bin buildall\bl616_fpga_partner_%%b.bin
-        ) else if "%%b"=="console138k" (
             copy /Y bl616_fpga_partner\bl616_fpga_partner_Console.bin buildall\bl616_fpga_partner_%%b.bin
         ) else if "%%b"=="mega60k" (
             copy /Y bl616_fpga_partner\bl616_fpga_partner_NeoDock.bin buildall\bl616_fpga_partner_%%b.bin

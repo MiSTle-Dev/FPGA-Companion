@@ -306,7 +306,7 @@ bool sys_wait4fpga(void) {
   
   // try to establish connection to FPGA for five seconds. Assume the FPGA is
   // not properly configured after that
-  int fpga_ok, timeout = 500;
+  int fpga_ok, timeout = 1000; // prolonged for GW5AST138K
   do {
     fpga_ok = sys_status_is_valid();
     if(!fpga_ok) {
@@ -316,7 +316,7 @@ bool sys_wait4fpga(void) {
   } while(timeout && !fpga_ok);
 
   if(timeout) {
-    sys_debugf("FPGA ready after %dms!", (500-timeout)*10);
+    sys_debugf("FPGA ready after %dms!", (1000-timeout)*10);
 
     // core_id is set now, so handle the legacy cores. The
     // new config driven cores will (hopefully) handle this

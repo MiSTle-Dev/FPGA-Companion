@@ -10,9 +10,9 @@ for the BL616 MCU (M0S Dock).
 
 ![Tang Nano 20k with M0S Dock](m0s_dock_tn20k.png)  
 
-## Tang integrated onboard BL616 µC
+## Tang integrated onboard BL616 MPU
 
-JTAG signals and UART RX are re-purposed as SPI interface. µC is Master and FPGA is slave.  
+JTAG signals and UART RX are re-purposed as SPI interface. MPU is Master and FPGA is slave.  
 BL616 GPIO pin mapping is fix in SDK and no option to change. UART RX GPIO is board specific.
 
 |Tang Board wiring BL616|BL616 GPIO|SPI re-use|Note|
@@ -175,7 +175,7 @@ make
 
 ## tang onboard bl616
 
-A build script creates for the several setups specific binaries and .ini files including the needed ``bl616_fpga_partner_`` firmware. The ``buildall`` folder will contain all needed files for a release. So far TN20k, Console60k, Primer25k apart from M0S Dock are supported. Presently it seems that GW5AST-LV138 JTAG interface can't be re-purposed for unknown reasons. TM60k is very likely possible but not released yet. TP20k and TN9k are excluded as their BL702 doesn't support required USB host mode.
+A build script creates for the several setups specific binaries and .ini files including the needed ``bl616_fpga_partner_`` firmware. The ``buildall`` folder will contain all needed files for a release. So far TN20k, Console60k, Console138k, Primer25k, Mega138k Pro apart from M0S Dock are supported. TM60k is likely possible but not released yet. TP20k and TN9k are excluded as their BL702 doesn't support required USB host mode.
 
 ```shell
 buildall.bat
@@ -187,7 +187,7 @@ First, you need to unplug the M0S_DOCK from USB, press the BOOT button and plug 
 BOOT button still pressed. Once connected release the BOOT button. The device
 should now be in bootloader mode and show up with its bootloader on the PC.
 
-Figure out µC bootloader COM port and use shell command to program:  
+Figure out MPU bootloader COM port and use shell command to program:  
 Press Windows + R keyboard shortcut to launch the Windows Run box, type “devmgmt.msc” , and click the OK button.  
 
 Device Manager will open.  
