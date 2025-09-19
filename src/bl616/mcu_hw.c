@@ -582,7 +582,6 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
 #elif TANG_MEGA138KPRO
-  /* JTAG re-use on AST138k presently not possible ! */
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
@@ -793,19 +792,32 @@ static void console_init() {
 #elif TANG_NANO20K
   bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_14, GPIO_UART_FUNC_UART0_RX); /* 8 TDO */
+  /* GPIO 14, FPGA 8 TDO */
 #elif TANG_CONSOLE60K
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX); /* M13 TWI.SCL */
+  /* GPIO 27 default UART RX, FPGA U15 TX */
+  /* GPIO 28 default UART TX, FPGA V15 RX */
+  /* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
+  /* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK */
 #elif TANG_MEGA138KPRO
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX); /* K25 PLL1_TWI SCL */
   bflb_gpio_uart_init(gpio, GPIO_PIN_27, GPIO_UART_FUNC_UART0_RX); /* K26 PLL1_TWI SDA */
+  /* GPIO 10 default UART TX, FPGA N16, RX */
+  /* GPIO 11 default UART RX, FPGA P15, TX */
+  /* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
+  /* GPIO 28 default PLL1_TWI SCL, FPGA K25, SCL */
 #elif TANG_MEGA60K
-  /* RX is dummy */
+  /* RX no FPGA connection available, adhoc wiring needed */
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_17, GPIO_UART_FUNC_UART0_RX); /* ModeSel */
+/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection ! */
+/* GPIO 27 default UART RX, FPGA U15 TX */
+/* GPIO 28 default UART TX, FPGA V15 RX */
 #elif TANG_PRIMER25K
   bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_RX); /* access at S3 button, remove capacitor */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_RX);
+  /* GPIO 12 access at S3 button, remove C22 capacitor */
 #endif
 
   struct bflb_uart_config_s cfg;
