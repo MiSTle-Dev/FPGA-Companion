@@ -15,7 +15,7 @@
 #endif
 
 #define MAX_DRIVES                   (8)
-#define MAX_HID_DEVICES              (4)
+#define MAX_HID_DEVICES              (6)
 #define MAX_XBOX_DEVICES             (2)
 
 

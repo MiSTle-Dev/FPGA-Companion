@@ -34,6 +34,7 @@ static const char system_form[] =
   "L,Video:,Color|Mono,V;"
   "L,Cartridge:,None|Cubase 2&3,Q;"     // Cubase dongle support
   "L,Mouse:,USB|Atari ST|Amiga,J;"      // Mouse (DB9) mapping
+  "L,USB Joy:,Port1/Port0,Port0/Port1,U;" //USB Joys order
   "L,TOS Slot:,Primary|Secondary,T;"    // Select TOS
   "B,Cold Boot,B;";                     // system reset with memory reset
 
@@ -72,6 +73,7 @@ menu_legacy_variable_t core_atarist_variables[] = {
   { 'P', { 0 }},    // default no floppy write protected
   { 'Q', { 0 }},    // default cubase dongle not enabled
   { 'J', { 0 }},    // default mouse USB, DB9 connector joystick
+  { 'U', { 0 }},    // default Port1/Port0 assingned for USB Joys
   { 'T', { 0 }},    // default primary TOS slot
   { '\0',{ 0 }}
 };
