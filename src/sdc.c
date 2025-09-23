@@ -338,7 +338,7 @@ int sdc_handle_event(void) {
     unsigned long dsector = clst2sect(fil[drive].clust) + rsector%fs.csize;    
 #else
     // derive cluster directly from table
-    unsigned long dsector = clst2sect(clmt_clust(&fil[drive], rsector*512)) + rsector%fs.csize;
+    unsigned long dsector = clst2sect(clmt_clust(&fil[drive], (FSIZE_t)rsector*512ll)) + rsector%fs.csize;
 #endif
     
     sdc_debugf("DRV %d: lba %lu = %lu", drive, rsector, dsector);
@@ -395,9 +395,10 @@ static int sdc_image_inserted(char drive, FSIZE_t size) {
 
   // files over 4GB size are reported using an extra command. This also prevents
   // cores not coping with big files from messing them up
-  if( (sizeof(FSIZE_t) == 8) && (size >= 0x100000000llu))
+  if( (sizeof(FSIZE_t) == 8) && (size >= 0x100000000llu)) {
+    sdc_debugf("Inserting large file");
     mcu_hw_spi_tx_u08(SPI_SDC_INS_LARGE);
-  else
+  } else
     mcu_hw_spi_tx_u08(SPI_SDC_INSERTED);
   
   mcu_hw_spi_tx_u08(drive);
