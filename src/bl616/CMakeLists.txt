@@ -71,12 +71,6 @@ sdk_add_include_directories(. ../u8g2/csrc)
 
 target_sources(app PRIVATE
    	mcu_hw.c
-   	../core.c
-   	../core_atarist.c
-   	../core_c64.c
-   	../core_vic20.c
-   	../core_amiga.c
-   	../core_atari2600.c
    	../hidparser.c
    	../hid.c
    	../inifile.c

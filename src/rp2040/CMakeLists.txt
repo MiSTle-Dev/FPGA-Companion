@@ -52,12 +52,6 @@ add_executable(${PROJECT}
 	../osd_u8g2.c
 	../menu.c
 	../inifile.c
-	../core.c
-	../core_atarist.c
-	../core_c64.c
-	../core_vic20.c
-	../core_amiga.c
-	../core_atari2600.c
 	../at_wifi.c
 	../puff.c
 	../fatfs/source/ff.c

@@ -12,27 +12,6 @@
 #include "config.h"
 #include "spi.h"
 
-// the MCU can adopt to the core running to e.g.
-// change the menu and the keyboard mapping
-#define CORE_ID_UNKNOWN  0x00
-#ifdef ENABLE_LEGACY_ATARIST
-#define CORE_ID_ATARI_ST 0x01
-#endif
-#ifdef ENABLE_LEGACY_C64
-#define CORE_ID_C64      0x02
-#endif
-#ifdef ENABLE_LEGACY_VIC20
-#define CORE_ID_VIC20    0x03
-#endif
-#ifdef ENABLE_LEGACY_AMIGA
-#define CORE_ID_AMIGA    0x04
-#endif
-#ifdef ENABLE_LEGACY_ATARI_2600
-#define CORE_ID_ATARI_2600    0x05
-#endif
-
-extern unsigned char core_id;
-
 struct port_serial_status {
   uint32_t bitrate :24;
   uint8_t stopbits:2;

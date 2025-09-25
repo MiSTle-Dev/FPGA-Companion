@@ -10,7 +10,6 @@
 #include "../sdc.h"
 #include "../osd.h"
 #include "../menu.h"
-#include "../core.h"
 #include "../inifile.h"
 #include "../debug.h"
 #include "../xml.h"

@@ -11,8 +11,8 @@
 #include "sysctrl.h"
 #include "sdc.h"
 #include "osd.h"
+#include "menu.h"
 #include "inifile.h"
-#include "core.h"
 
 #include "debug.h"
 #include "config.h"
@@ -23,22 +23,10 @@
 // very small and memory efficient implementation of the deflate de-compression
 #include "puff.h"
 
-unsigned char core_id = 0;
-
-static const char *core_names[] = {
-  "<unset>", "Atari ST", "C64", "VIC", "Amiga", "Atari 2600"
-};
-
 const char *sys_get_config_name(void) {
-  const char *config_xml[] = {
-    CARD_MOUNTPOINT "/config.xml",
-    CARD_MOUNTPOINT "/atarist.xml",
-    CARD_MOUNTPOINT "/c64.xml",
-    CARD_MOUNTPOINT "/vic20.xml",
-    CARD_MOUNTPOINT "/amiga.xml",
-    CARD_MOUNTPOINT "/atari2600.xml"
-  };
-  return config_xml[core_id];
+  const char *config_xml =
+    CARD_MOUNTPOINT "/config.xml";
+  return config_xml;
 }
 
 static void sys_begin(unsigned char cmd) {
@@ -52,13 +40,14 @@ int sys_status_is_valid(void) {
   mcu_hw_spi_tx_u08(0);
   unsigned char b0 = mcu_hw_spi_tx_u08(0);
   unsigned char b1 = mcu_hw_spi_tx_u08(0);
-  core_id = mcu_hw_spi_tx_u08(0);
+  unsigned char core_id = mcu_hw_spi_tx_u08(0);
   unsigned char coldboot = mcu_hw_spi_tx_u08(0);
   mcu_hw_spi_end();  
 
   if((b0 == 0x5c) && (b1 == 0x42)) {
     sys_debugf("Core ID: %02x", core_id);
-    if(core_id < 3) sys_debugf("Core: %s", core_names[core_id]);
+    if(core_id)
+      sys_debugf("Warning: Core ID should be 0. Is this an old legacy core?");
 
     // coldboot status equals core_id on cores not supporting cold
     // boot status
@@ -318,12 +307,6 @@ bool sys_wait4fpga(void) {
   if(timeout) {
     sys_debugf("FPGA ready after %dms!", (1000-timeout)*10);
 
-    // core_id is set now, so handle the legacy cores. The
-    // new config driven cores will (hopefully) handle this
-    // in the init action
-    if(core_id != CORE_ID_UNKNOWN)
-      sys_set_val('R', 3);  // immediately set reset as the config may change
-    
     sys_set_rgb(0x000040);  // blue
     return true;
   }
@@ -358,9 +341,7 @@ void sys_run_action(config_action_t *action) {
       sys_debugf("LOAD %s", action->commands[i].filename);
 
       // try to read ini file
-      if(inifile_read(action->commands[i].filename) != 0)
-	// ini file loading failed: set core specific defaults
-	core_set_default_images();
+      inifile_read(action->commands[i].filename);
       break;
       
     case CONFIG_ACTION_COMMAND_SAVE:

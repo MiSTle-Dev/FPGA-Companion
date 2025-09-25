@@ -3,7 +3,6 @@
 #include "hid.h"
 #include "debug.h"
 #include "sysctrl.h"
-#include "core.h"
 #include "osd.h"
 #include "menu.h"
 
@@ -45,14 +44,14 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
   // check if modifier have changed
   if((buffer[0] != state->last_report[0]) && !osd_is_visible()) {
     for(int i=0;i<8;i++) {
-      if(core_map_modifier_key(i)) {      
-	// modifier released?
-	if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
-	  kbd_tx(0x80 | core_map_modifier_key(i));
-	// modifier pressed?
-	if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
-	  kbd_tx(core_map_modifier_key(i));
-      }
+      // modifier keys map to key codes 0x68+
+      
+      // modifier released?
+      if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
+	kbd_tx(0x80 | (i+0x68));
+      // modifier pressed?
+      if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
+	kbd_tx(i+0x68);
     }
   } 
   
@@ -65,7 +64,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
 	  // check if the reported key is the OSD activation hotkey
 	  // and suppress reporting it to the core
 	  if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY))
-	    kbd_tx(0x80 | core_map_key(state->last_report[2+i]));
+	    kbd_tx(0x80 | state->last_report[2+i]);
 	} else
 	  menu_notify(MENU_EVENT_KEY_RELEASE);
       }
@@ -88,7 +87,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
  	  msg = MENU_EVENT_BACK;
 	else {
 	  if(!osd_is_visible())
-	    kbd_tx(core_map_key(buffer[2+i]));
+	    kbd_tx(buffer[2+i]);
 	  else {
 	    // check if cursor up/down or space has been pressed
 	    if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;      

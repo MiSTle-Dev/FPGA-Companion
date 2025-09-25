@@ -7,20 +7,10 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
-#include "sysctrl.h"  // for core_id
 #include "sdc.h"      // for CARD_MOUNTPOINT
 #include "menu.h"     // to access menu variables
 #include "config.h"
 #include "debug.h"
-
-static const char *settings_file[] = {
-  NULL,
-  CARD_MOUNTPOINT "/atarist.ini",  // core id = 1
-  CARD_MOUNTPOINT "/c64.ini",      // core id = 2
-  CARD_MOUNTPOINT "/vic20.ini",    // core id = 3
-  CARD_MOUNTPOINT "/amiga.ini",    // core id = 4
-  CARD_MOUNTPOINT "/atari2600.ini" // core id = 5
-};
 
 static int iswhite(char c) {
   return c == ' ' || c == '\r' || c == '\n' || c == '\t';
@@ -48,18 +38,15 @@ int inifile_option_get(int id) {
 }
 
 int inifile_read(char *name) {
-  if(!core_id && !name) {
+  if(!name) {
     ini_debugf("Unable to load core specific setting as no core has been identified");
     return -1;
   }
 
-  char *filename = (char*)settings_file[core_id];
-  if(name) {
-    filename = malloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
-    strcpy(filename, CARD_MOUNTPOINT);
-    strcat(filename, "/");
-    strcat(filename, name);
-  }
+  char *filename = malloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
+  strcpy(filename, CARD_MOUNTPOINT);
+  strcat(filename, "/");
+  strcat(filename, name);
   
   ini_debugf("Reading settings from '%s'", filename);
 
@@ -160,23 +147,25 @@ int inifile_read(char *name) {
     f_close(&fil);
   } else {
     ini_debugf("Error opening file %s", filename);
-    if(name) free(filename);
+    free(filename);
     sdc_unlock();
     return -1;
   }
-  if(name) free(filename);
+  free(filename);
   sdc_unlock();
   return 0;
 }
 
 void inifile_write(char *name) {
-  char *filename = (char*)settings_file[core_id];
-  if(name) {
-    filename = malloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
-    strcpy(filename, CARD_MOUNTPOINT);
-    strcat(filename, "/");
-    strcat(filename, name);
+  if(!name) {
+    ini_debugf("Unable to write core specific setting as no core has been identified");
+    return;
   }
+    
+  char *filename = malloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
+  strcpy(filename, CARD_MOUNTPOINT);
+  strcat(filename, "/");
+  strcat(filename, name);
 
   ini_debugf("Write settings to %s", filename);
   
@@ -190,20 +179,11 @@ void inifile_write(char *name) {
     // write variable values
     f_puts("\n; variables\n", &file);
 
-    if(!cfg) {    
-      menu_legacy_variable_t *vars = menu_get_vars();
-      for(int i=0;vars[i].id;i++) {
-	char str[10];
-	sprintf(str, "var %c=%d\n", vars[i].id, vars[i].value);
-	f_puts(str, &file);
-      }
-    } else {
-      menu_variable_t **vars = menu_get_variables();
-      for(int i=0;vars[i];i++) {
-	char str[10];
-	sprintf(str, "var %c=%d\n", vars[i]->id, vars[i]->value);
-	f_puts(str, &file);
-      }
+    menu_variable_t **vars = menu_get_variables();
+    for(int i=0;vars[i];i++) {
+      char str[10];
+      sprintf(str, "var %c=%d\n", vars[i]->id, vars[i]->value);
+      f_puts(str, &file);
     }
 
     // write options
@@ -235,6 +215,6 @@ void inifile_write(char *name) {
   } else
     ini_debugf("Error opening file");
   
-  if(name) free(filename);
+  free(filename);
   sdc_unlock();
 }
