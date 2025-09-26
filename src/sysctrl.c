@@ -255,16 +255,28 @@ static void sys_handle_event(bool ignore_coldboot) {
     unsigned char buttons = sys_get_buttons();
     sys_debugf("Buttons: %02x", buttons);
 
-    if(buttons & 1)
-      mcu_hw_reset();
-    else if(buttons & 2)
+    static TickType_t reset_timer = 0;
+    if(buttons & 1) {
+      // button has just been pressed
+      if(!reset_timer) reset_timer = xTaskGetTickCount();
+    } else {
+      // do a full mcu reset if reset button has been pressed for 2 seconds
+      if(reset_timer) {
+	if((xTaskGetTickCount() - reset_timer) > pdMS_TO_TICKS(2000))
+	  mcu_hw_reset();
+      
+	reset_timer = 0;
+      }
+    }
+
+    // the second button controls the OSD, so it can be used in conjunction
+    // with 
+    if(buttons & 2)
       menu_notify(osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW);    
   }
-  
-  // no irq source given at all means coldboot of a very old core.
-  // TODO: That does not work as intended and triggers with port
-  // IO on later cores. Disabled for now ...
-  if(irq_src & 1 /* || !irq_src */ ) {
+
+  /* check if the FPGA has the coldboot flag set */
+  if(irq_src & 1) {
     if(ignore_coldboot)
       sys_debugf("FPGA cold boot detected, ignoring for now");
     else {
