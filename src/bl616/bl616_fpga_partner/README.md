@@ -42,6 +42,12 @@ The device should still work normal and be able to update and flash the FPGA.
 > use the FPGA Partner. You need to follow [these instructions](../friend_20k)
 > to restore your device to factory state.
 
+## Installing the FPGA Companion as secondary firmware
+
+Once the FPGA Partner is installed and the device still works as expected, then
+the FPGA Companion can be installed additionally. The necessary files are usuaally part
+of the [FPGA Companion Releases](https://github.com/MiSTle-Dev/FPGA-Companion/releases).
+
 ## More information
 
 - [Information about the Tang Nano 20k variants](https://github.com/MiSTle-Dev/.github/wiki/Versions_TangNano20k)
