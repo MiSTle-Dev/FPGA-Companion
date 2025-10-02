@@ -9,7 +9,7 @@ provide a similar functionality. Sipeed decided to encrypt the
 firmware on boards sold about the beginning of 2024. These newer
 boards will not accept or run any non-encrypted firmware and replacing
 its default firmware will essentially brick the Tang Nano 20K. This
-encrypted firmware will allow to restore the newer boards to factory
+encrypted firmware will allow restoring the newer boards to factory
 state as well and thus unbrick the device.
 
 It's currently unknown if the firmware versions can be identified
@@ -27,9 +27,9 @@ one's the one working for your board.
 You can flash either of these with the command line tool. To get the
 BL616 into firmware update mode, power the Tang Nano 20k up with the
 ```UPDATE``` (next to the HDMI connector) pressed. The BL616 will then
-indentify itself as ```Bouffalo CDC DEMO``` and a virtual COM port
+identify itself as ```Bouffalo CDC DEMO``` and a virtual COM port
 will be created. Use the following commands to flash using the
-comamnd line tool:
+command line tool:
 
 ```
 $ BLFlashCommand --interface=uart --baudrate=2000000 --port=/dev/ttyACM0 --chipname=bl616 --cpu_id= --config=friend_20k_cfg.ini
@@ -41,7 +41,7 @@ or
 $ BLFlashCommand --interface=uart --baudrate=2000000 --port=/dev/ttyACM0 --chipname=bl616 --cpu_id= --config=friend_20k_encrypted_cfg.ini
 ```
 
-Afterwards power cycle the device and it should show up as the ```20K's FRIEND``` friend
+Afterward power cycle the device, and it should show up as the ```20K's FRIEND``` friend
 again and work as normal. If it still shows up as the ```Bouffalo CDC DEMO``` then you
 most probably flashed the wrong version (encrypted onto an unencrypted device or
 vice versa). In that case you can simply flash the correct version.
