@@ -25,6 +25,8 @@
 #define CONFIG_XML_ELEMENT_LIST          12
 #define CONFIG_XML_ELEMENT_LISTENTRY     13
 #define CONFIG_XML_ELEMENT_BUTTON        14
+#define CONFIG_XML_ELEMENT_IMAGE         15
+#define CONFIG_XML_ELEMENT_TOGGLE        16
 
 static int config_element;
 static int config_depth;
@@ -66,6 +68,8 @@ static config_menu_t *config_xml_new_menu(config_menu_t *parent);
 static void config_xml_new_fileselector(config_menu_t *menu);
 static void config_xml_new_list(config_menu_t *menu);
 static void config_xml_new_button(config_menu_t *menu);
+static void config_xml_new_image(config_menu_t *menu);
+static void config_xml_new_toggle(config_menu_t *menu);
 
 /* ============================================================================= */
 /* ================================ config ===================================== */
@@ -296,13 +300,15 @@ static config_menu_entry_t *config_xml_get_last_menu_entry(config_menu_t *menu, 
 }
 
 const char *config_menuentry_get_type_str(config_menu_entry_t *entry) {
-  const char *names[] = { "menu", "fileselector", "list", "button", "unknown" };
+  const char *names[] = { "unknown", "menu", "fileselector", "list", "button", "image", "toggle" };
 
-  if(entry->type == CONFIG_MENU_ENTRY_MENU)         return names[0];
-  if(entry->type == CONFIG_MENU_ENTRY_FILESELECTOR) return names[1];
-  if(entry->type == CONFIG_MENU_ENTRY_LIST)         return names[2];
-  if(entry->type == CONFIG_MENU_ENTRY_BUTTON)       return names[3];
-  return names[4];  
+  if(entry->type == CONFIG_MENU_ENTRY_MENU)         return names[1];
+  if(entry->type == CONFIG_MENU_ENTRY_FILESELECTOR) return names[2];
+  if(entry->type == CONFIG_MENU_ENTRY_LIST)         return names[3];
+  if(entry->type == CONFIG_MENU_ENTRY_BUTTON)       return names[4];
+  if(entry->type == CONFIG_MENU_ENTRY_IMAGE)        return names[5];
+  if(entry->type == CONFIG_MENU_ENTRY_TOGGLE)       return names[6];
+  return names[0];  
 }
 
 static int config_xml_menu_element(char *name) {
@@ -323,6 +329,14 @@ static int config_xml_menu_element(char *name) {
     config_xml_new_button(menu);      	
     config_element = CONFIG_XML_ELEMENT_BUTTON;
     return 0;
+  } else if(strcasecmp(name, "image") == 0) {
+    config_xml_new_image(menu);
+    config_element = CONFIG_XML_ELEMENT_IMAGE;
+    return 0;
+  } else if(strcasecmp(name, "toggle") == 0) {
+    config_xml_new_toggle(menu);
+    config_element = CONFIG_XML_ELEMENT_TOGGLE;
+    return 0;
   } else
     debugf("WARNING: Unexpected menu element %s in state %d", name, config_element);
     
@@ -340,6 +354,8 @@ static void config_xml_menu_attribute(char *name, char *value) {
 
 static void config_dump_fileselector(config_fsel_t *fs);
 static void config_dump_button(config_button_t *btn);
+static void config_dump_image(config_image_t *img);
+static void config_dump_toggle(config_toggle_t *btn);
 static void config_dump_list(config_list_t *ls);
 
 static void config_dump_menu(config_menu_t *mnu) {
@@ -358,6 +374,12 @@ static void config_dump_menu(config_menu_t *mnu) {
       break;
     case CONFIG_MENU_ENTRY_BUTTON:
       config_dump_button(mnu->entries[i].button);
+      break;
+    case CONFIG_MENU_ENTRY_IMAGE:
+      config_dump_image(mnu->entries[i].image);
+      break;
+    case CONFIG_MENU_ENTRY_TOGGLE:
+      config_dump_toggle(mnu->entries[i].toggle);
       break;
     }    
   }
@@ -421,7 +443,8 @@ static void config_xml_fsel_attribute(char *name, char *value) {
 }
 
 static void config_dump_fileselector(config_fsel_t *fs) {
-  debugf("Fileselector, index=%d, label=\"%s\" ext=[%s], default=\"%s\"", fs->index, fs->label, fs->ext[0], fs->def?fs->def:"<none>");
+  debugf("Fileselector, index=%d, label=\"%s\" ext=[%s], default=\"%s\"",
+	 fs->index, fs->label, fs->ext[0], fs->def?fs->def:"<none>");
   for(int i=1;fs->ext[i];i++) debugf("  further ext: \"%s\"", fs->ext[i]);
   if(fs->action) config_dump_action(fs->action);
 }
@@ -479,7 +502,7 @@ static void config_xml_list_attribute(char *name, char *value) {
       me->list->id = value[0];
     else if(me->list && strcasecmp(name, "default") == 0)
       me->list->def = atoi(value);
-    else if(strcasecmp(name, "action") == 0)
+    else if(me->list && strcasecmp(name, "action") == 0)
       me->list->action = config_get_action(value);
     
     else
@@ -534,7 +557,7 @@ static void config_xml_button_attribute(char *name, char *value) {
   if(me && me->type == CONFIG_MENU_ENTRY_BUTTON) {    
     if(me->button && strcasecmp(name, "label") == 0 && !me->button->label)
       me->button->label = strdup(value);      
-    else if(strcasecmp(name, "action") == 0)
+    else if(me->button && strcasecmp(name, "action") == 0)
       me->button->action = config_get_action(value);
     
     else
@@ -545,6 +568,108 @@ static void config_xml_button_attribute(char *name, char *value) {
 static void config_dump_button(config_button_t *btn) {
   debugf("Button, label=\"%s\"", btn->label);
   if(btn->action) config_dump_action(btn->action);
+}
+
+/* ============================================================================= */
+/* ================================= image ===================================== */
+/* ============================================================================= */
+
+static void config_xml_new_image(config_menu_t *menu) {
+  config_image_t *image = malloc(sizeof(config_image_t));
+  image->index = -1;
+  image->label = NULL;
+  image->none_str = NULL;
+  image->none_icn = NULL;
+  image->def = NULL;
+  image->action = NULL;
+  image->ext = NULL;
+
+  config_menu_entry_t *me = config_xml_new_menu_entry(menu);
+  me->type = CONFIG_MENU_ENTRY_IMAGE;
+  me->image = image;
+}
+ 
+static void config_xml_image_attribute(char *name, char *value) {
+  // get corresponding image
+  config_menu_entry_t *me = config_xml_get_last_menu_entry(cfg->menu, config_depth-3);
+  if(me && me->type == CONFIG_MENU_ENTRY_IMAGE) {    
+    if(me->image && strcasecmp(name, "label") == 0 && !me->image->label)
+      me->image->label = strdup(value);      
+    else if(me->image && strcasecmp(name, "ext") == 0 && !me->image->ext)
+      me->image->ext = config_parse_strlist(value, ';');
+    else if(me->image && strcasecmp(name, "index") == 0)
+      me->image->index = atoi(value);
+    else if(me->image && strcasecmp(name, "default") == 0)
+      me->image->def = strdup(value);
+    else if(me->image && strcasecmp(name, "none_str") == 0 && !me->image->none_str)
+      me->image->none_str = strdup(value);      
+    else if(me->image && strcasecmp(name, "none_icn") == 0 && !me->image->none_icn) {
+      if(strlen(value) >= 16) {
+	// convert 16 bytes hex string into 8 byte bitmap
+	me->image->none_icn = malloc(8);
+	for(int i=0;i<16;i++) {
+	  int nibble =
+	    (value[i] >= '0' && value[i] <= '9')?(value[i]-'0'):
+	    (value[i] >= 'a' && value[i] <= 'f')?(value[i]-'a'+10):
+	    (value[i] >= 'A' && value[i] <= 'F')?(value[i]-'A'+10):
+	    0;
+	  
+	  me->image->none_icn[i/2] = (i&1)?(me->image->none_icn[i/2] | nibble):(nibble<<4);
+	}
+      }
+    } else if(me->image && strcasecmp(name, "action") == 0)
+      me->image->action = config_get_action(value);
+
+    else
+      debugf("WARNING: Unused image attribute '%s'", name);
+  }
+}
+    
+static void config_dump_image(config_image_t *img) {
+  debugf("Image, index=%d, label=\"%s\", none_str=\"%s\", none_icn=%p, ext=[%s], default=\"%s\"",
+	 img->index, img->label, img->none_str?img->none_str:"<unset>", img->none_icn,
+	 img->ext[0], img->def?img->def:"<none>");
+  for(int i=1;img->ext[i];i++) debugf("  further ext: \"%s\"", img->ext[i]);
+  if(img->action) config_dump_action(img->action);
+}
+
+/* ============================================================================= */
+/* ================================= toggle ==================================== */
+/* ============================================================================= */
+
+static void config_xml_new_toggle(config_menu_t *menu) {
+  config_toggle_t *toggle = malloc(sizeof(config_toggle_t));
+  toggle->label = NULL;
+  toggle->action = NULL;
+  toggle->id = 0;
+  toggle->def = 0;
+
+  config_menu_entry_t *me = config_xml_new_menu_entry(menu);
+  me->type = CONFIG_MENU_ENTRY_TOGGLE;
+  me->toggle = toggle;
+}
+ 
+static void config_xml_toggle_attribute(char *name, char *value) {
+  // get corresponding toggle
+  config_menu_entry_t *me = config_xml_get_last_menu_entry(cfg->menu, config_depth-3);
+  if(me && me->type == CONFIG_MENU_ENTRY_TOGGLE) {    
+    if(me->toggle && strcasecmp(name, "label") == 0 && !me->toggle->label)
+      me->toggle->label = strdup(value);      
+    else if(me->toggle && strcasecmp(name, "id") == 0)
+      me->toggle->id = value[0];
+    else if(me->toggle && strcasecmp(name, "default") == 0)
+      me->toggle->def = atoi(value);
+    else if(me->toggle && strcasecmp(name, "action") == 0)
+      me->toggle->action = config_get_action(value);
+
+    else
+      debugf("WARNING: Unused toggle attribute '%s'", name);
+  }
+}
+    
+static void config_dump_toggle(config_toggle_t *toggle) {
+  debugf("Toggle, id='%c', label=\"%s\", default=\"%d\"", toggle->id, toggle->label, toggle->def);
+  if(toggle->action) config_dump_action(toggle->action);
 }
 
 void config_dump(void) {
@@ -650,6 +775,8 @@ void xml_element_end_cb(void) {
   case CONFIG_XML_ELEMENT_FILSELECTOR:
   case CONFIG_XML_ELEMENT_LIST:
   case CONFIG_XML_ELEMENT_BUTTON:
+  case CONFIG_XML_ELEMENT_IMAGE:
+  case CONFIG_XML_ELEMENT_TOGGLE:
     config_element = CONFIG_XML_ELEMENT_MENU;
     break;
     
@@ -699,6 +826,14 @@ void xml_attribute_cb(char *name, char *value) {
     
   case CONFIG_XML_ELEMENT_BUTTON:
     config_xml_button_attribute(name, value);
+    break;
+    
+  case CONFIG_XML_ELEMENT_IMAGE:
+    config_xml_image_attribute(name, value);
+    break;
+    
+  case CONFIG_XML_ELEMENT_TOGGLE:
+    config_xml_toggle_attribute(name, value);
     break;
   }
 }

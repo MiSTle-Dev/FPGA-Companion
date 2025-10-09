@@ -68,9 +68,11 @@ int inifile_read(char *name) {
 	buffer[strlen(buffer)-1] = 0;
 
       // ini_debugf("Line = '%s'\n", buffer);
-      // check for drives
-      if(strncasecmp(buffer, "drive", 5) == 0) {
-	char * p = buffer+5;  // skip 'drive'
+      // check for drives or images
+      if((strncasecmp(buffer, "drive", 5) == 0) ||
+	 (strncasecmp(buffer, "image", 5) == 0) ) {
+	char is_drive = buffer[0] == 'd' || buffer[0] == 'D';
+	char * p = buffer+5;  // skip 'drive'/'image'
 	while(*p && iswhite(*p)) p++;
 	if(*p) {
 	  int drive = *p-'0';
@@ -82,13 +84,13 @@ int inifile_read(char *name) {
 	    while(*p && iswhite(*p)) p++;
 	    if(*p) {
 	      // tell SDC layer what images to use as default
-	      ini_debugf("drive %d = %s", drive, p);		
-	      sdc_set_default(drive, p);
+	      ini_debugf("%s %d = %s", is_drive?"drive":"image",drive, p);
+	      sdc_set_default(is_drive?drive:(drive+MAX_DRIVES), p);
 	    }
 	  }
 	}
       }
-
+      
       // check for variables 
       if(strncasecmp(buffer, "var ", 4) == 0) {
 	
@@ -195,20 +197,22 @@ void inifile_write(char *name) {
       f_puts(str, &file);
     }
     
-    // write image file names
+    // write disk and ROM image file names
     f_puts("\n; image files\n", &file);
 
-    for(int drive=0;drive<MAX_DRIVES;drive++) {
+    // disk images
+    for(int drive=0;drive<MAX_DRIVES+MAX_IMAGES;drive++) {
       char *cwd = sdc_get_cwd(drive);
       char *image = sdc_get_image_name(drive);
 
       if(cwd && image) {
 	char str[strlen(cwd) + strlen(image) + 12];
-	sprintf(str, "drive%d=%s/%s\n", drive, cwd, image);
+	sprintf(str, "%s%d=%s/%s\n", (drive<MAX_DRIVES)?"drive":"image",
+		(drive<MAX_DRIVES)?drive:(drive-MAX_DRIVES), cwd, image);
 	f_puts(str, &file);
       }      
     }
-    
+
     f_puts("\n", &file);
     
     f_close(&file);  

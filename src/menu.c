@@ -66,7 +66,19 @@ typedef struct {
   sdc_dir_t *dir;
 } menu_state_t;
 
+typedef struct {
+  char index;
+  char **ext;
+
+  // string and icon to be used if nothing is selected
+  // by default this is "[X] No Disk"
+  char *none_str;
+  unsigned char *none_icn;
+} fsel_state_t;
+
+// menu state is a stack since as the menu is hierarchical
 static menu_state_t *menu_state = NULL;
+static fsel_state_t fsel_state;
 
 /* =========== handling of variables ============= */
 static menu_variable_t **variables = NULL;
@@ -127,6 +139,13 @@ static void menu_setup_menu_variables(config_menu_t *menu) {
       // ... and set in core
       sys_set_val(me[cnt].list->id, me[cnt].list->def);
     }
+    
+    if(me[cnt].type == CONFIG_MENU_ENTRY_TOGGLE) {
+      // setup variable ...
+      menu_setup_variable(me[cnt].toggle->id, me[cnt].toggle->def);
+      // ... and set in core
+      sys_set_val(me[cnt].toggle->id, me[cnt].toggle->def);
+    }
   }
 }
 
@@ -163,6 +182,8 @@ static const unsigned char icn_right_bits[]  = { 0x00,0x04,0x0c,0x1c,0x3c,0x1c,0
 static const unsigned char icn_left_bits[]   = { 0x00,0x20,0x30,0x38,0x3c,0x38,0x30,0x20 };
 static const unsigned char icn_floppy_bits[] = { 0xff,0x81,0x83,0x81,0xbd,0xad,0x6d,0x3f };
 static const unsigned char icn_empty_bits[] =  { 0xc3,0xe7,0x7e,0x3c,0x3c,0x7e,0xe7,0xc3 };
+static const unsigned char icn_on_bits[] =     { 0x3c,0x42,0x99,0xbd,0xbd,0x99,0x42,0x3c };
+static const unsigned char icn_off_bits[] =    { 0x3c,0x42,0x81,0x81,0x81,0x81,0x42,0x3c };
 
 void u8g2_DrawStrT(u8g2_t *u8g2, u8g2_uint_t x, u8g2_uint_t y, const char *s) {
   // get length of string
@@ -217,37 +238,39 @@ static void menu_fs_draw_entry(int row, sdc_dir_entry_t *entry) {
   static const unsigned char folder_icon[] = { 0x70,0x8e,0xff,0x81,0x81,0x81,0x81,0x7e };
   static const unsigned char up_icon[] =     { 0x04,0x0e,0x1f,0x0e,0xfe,0xfe,0xfe,0x00 };
   static const unsigned char empty_icon[] =  { 0xc3,0xe7,0x7e,0x3c,0x3c,0x7e,0xe7,0xc3 };
-  
-  char str[strlen(entry->name)+1];
-  int y =  MENU_LINE_Y + MENU_ENTRY_H * (row+1);
 
-  // ignore leading / used by special entries
-  if(entry->name[0] == '/') strcpy(str, entry->name+1);
-  else                      strcpy(str, entry->name);
-  
+  int y =  MENU_LINE_Y + MENU_ENTRY_H * (row+1);
   int width = u8g2_GetDisplayWidth(&u8g2);
   
-  // properly ellipsize string
-  int dotlen = u8g2_GetStrWidth(&u8g2, "...");
-  if(u8g2_GetStrWidth(&u8g2, str) > width-FS_ICON_WIDTH) {
-    // the entry is too long to fit the menu.    
-    // check if this is the selected file and then enable scrolling
-    if(row == menu_state->selected - menu_state->scroll - 1)
-      fs_scroll_cur = 0;
-    
-    // enable timer, to allow animations
-    menu_timer_enable(true);
-    
-    while(u8g2_GetStrWidth(&u8g2, str) > width-FS_ICON_WIDTH-dotlen) str[strlen(str)-1] = 0;
-    if(strlen(str) < sizeof(str)-4) strcat(str, "...");
-  }
+  if(entry->name[0] == '/') {
+    if(fsel_state.none_str) u8g2_DrawStr(&u8g2, FS_ICON_WIDTH, y, fsel_state.none_str);
+    else                    u8g2_DrawStr(&u8g2, FS_ICON_WIDTH, y, "No Disk");
+  } else {
+    char str[strlen(entry->name)+1];
+    strcpy(str, entry->name);
   
-  u8g2_DrawStr(&u8g2, FS_ICON_WIDTH, y, str);      
+    // properly ellipsize string
+    int dotlen = u8g2_GetStrWidth(&u8g2, "...");
+    if(u8g2_GetStrWidth(&u8g2, str) > width-FS_ICON_WIDTH) {
+      // the entry is too long to fit the menu.    
+      // check if this is the selected file and then enable scrolling
+      if(row == menu_state->selected - menu_state->scroll - 1)
+	fs_scroll_cur = 0;
+      
+      // enable timer, to allow animations
+      menu_timer_enable(true);
+      
+      while(u8g2_GetStrWidth(&u8g2, str) > width-FS_ICON_WIDTH-dotlen) str[strlen(str)-1] = 0;
+      if(strlen(str) < sizeof(str)-4) strcat(str, "...");
+    }
+  
+    u8g2_DrawStr(&u8g2, FS_ICON_WIDTH, y, str);
+  }
   
   // draw folder icon in front of directories
   if(entry->is_dir)
     u8g2_DrawXBM(&u8g2, 1, y-8, 8, 8,
-		 (entry->name[0] == '/')?empty_icon:
+		 (entry->name[0] == '/')?(fsel_state.none_icn?fsel_state.none_icn:empty_icon):
 		 strcmp(entry->name, "..")?folder_icon:
 		 up_icon);
 
@@ -370,6 +393,10 @@ static char *menuentry_get_label(config_menu_entry_t *entry) {
     return entry->list->label;
   if(entry->type == CONFIG_MENU_ENTRY_BUTTON)
     return entry->button->label;
+  if(entry->type == CONFIG_MENU_ENTRY_IMAGE)
+    return entry->image->label;
+  if(entry->type == CONFIG_MENU_ENTRY_TOGGLE)
+    return entry->toggle->label;
   
   return NULL;
 }
@@ -427,12 +454,25 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected) 
   // some entries have a small icon to the right    
   if(entry->type == CONFIG_MENU_ENTRY_MENU)
     u8g2_DrawXBM(&u8g2, hl_w-8, ypos-8, 8, 8, icn_right_bits);
+
   if(entry->type == CONFIG_MENU_ENTRY_FILESELECTOR) {
     // icon depends if floppy is inserted
     u8g2_DrawXBM(&u8g2, hl_w-MENU_ENTRY_BASE, ypos-8, 8, 8,
 	 sdc_get_image_name(entry->fsel->index)?icn_floppy_bits:icn_empty_bits);
   }
   
+  if(entry->type == CONFIG_MENU_ENTRY_TOGGLE) 
+    u8g2_DrawXBM(&u8g2, hl_w-MENU_ENTRY_BASE, ypos-8, 8, 8,
+		 menu_variable_get(entry->toggle->id)?icn_on_bits:icn_off_bits);
+  
+  if(entry->type == CONFIG_MENU_ENTRY_IMAGE) {
+    char *icon = sdc_get_image_name(entry->image->index+MAX_DRIVES)?icn_floppy_bits:
+      entry->image->none_icn?entry->image->none_icn:
+      icn_empty_bits;
+    
+    u8g2_DrawXBM(&u8g2, hl_w-MENU_ENTRY_BASE, ypos-8, 8, 8, icon);
+  }
+    
   if(selected)
     u8g2_DrawButtonFrame(&u8g2, hl_x, ypos, U8G2_BTN_INV, hl_w, 1, 1);
 }
@@ -526,8 +566,7 @@ void menu_draw(void) {
 
     // draw up to four entries
     for(int i=0;i<4 && i<menu_state->dir->len-menu_state->scroll;i++) {            
-      debugf("file %s", menu_state->dir->files[i+menu_state->scroll].name);
-
+      menu_debugf("file %s", menu_state->dir->files[i+menu_state->scroll].name);
       menu_fs_draw_entry(i, &menu_state->dir->files[i+menu_state->scroll]);
     }
   }
@@ -546,6 +585,20 @@ void menu_goto(config_menu_t *menu) {
 }
 
 static void menu_file_selector_open(config_menu_entry_t *entry) {
+  // the file selector can either be opened from disk image file
+  // selectors or from rom image selectors  
+  if(entry->type == CONFIG_MENU_ENTRY_IMAGE) {
+    fsel_state.ext = entry->image->ext;
+    fsel_state.index = entry->image->index + MAX_DRIVES;  // the images are stored after the drives
+    fsel_state.none_str = entry->image->none_str;
+    fsel_state.none_icn = entry->image->none_icn;
+  } else {
+    fsel_state.ext = entry->fsel->ext;
+    fsel_state.index = entry->fsel->index;
+    fsel_state.none_str = NULL;
+    fsel_state.none_icn = NULL;
+  }
+    
   menu_push();
   menu_state->fsel = entry->fsel;
   menu_state->selected = 1;
@@ -553,9 +606,9 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
   menu_state->type = CONFIG_MENU_ENTRY_FILESELECTOR;
   
   // scan file system
-  menu_state->dir = sdc_readdir(entry->fsel->index, NULL, (void*)entry->fsel->ext);
+  menu_state->dir = sdc_readdir(fsel_state.index, NULL, (void*)fsel_state.ext);
   // try to jump to current file. Get the current image name and path
-  char *name = sdc_get_image_name(entry->fsel->index);
+  char *name = sdc_get_image_name(fsel_state.index);
   if(name) {
     debugf("trying to jump to %s", name);
     // try to find name in file list
@@ -605,7 +658,7 @@ static void menu_pop(void) {
 }
 
 static void menu_fileselector_select(sdc_dir_entry_t *entry) {
-  int drive = menu_state->fsel->index;
+  int drive = fsel_state.index;
   debugf("drive %d, file selected '%s'", drive, entry->name);
     
   // stop any scroll timer that might be running
@@ -629,7 +682,7 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
 
       menu_state->selected = 1;   // start by highlighting '..'
       menu_state->scroll = 0;
-      menu_state->dir = sdc_readdir(drive, entry->name, (void*)menu_state->fsel->ext);	
+      menu_state->dir = sdc_readdir(drive, entry->name, (void*)fsel_state.ext);	
       
       // prev is still valid, since sdc_readdir doesn't free the old string when going
       // up one directory. Instead it just terminates it in the middle	
@@ -731,6 +784,17 @@ static void menu_select(void) {
       sys_run_action(entry->button->action);
     break;
 	
+  case CONFIG_MENU_ENTRY_IMAGE:
+    // user has choosen an image selector
+    menu_file_selector_open(entry);
+    break;
+    
+  case CONFIG_MENU_ENTRY_TOGGLE:
+    menu_variable_set(entry->toggle->id, !menu_variable_get(entry->toggle->id));
+    if(entry->toggle->action)
+      sys_run_action(entry->toggle->action);
+    break;
+    
   default:
     menu_debugf("unknown %s", config_menuentry_get_type_str(entry));    
   }

@@ -33,7 +33,8 @@ static SemaphoreHandle_t sdc_sem;
 
 static FATFS fs;
 
-static FIL fil[MAX_DRIVES];
+// disk and rom images
+static FIL fil[MAX_DRIVES+MAX_IMAGES];
 static DWORD *lktbl[MAX_DRIVES];
 
 static void sdc_spi_begin(void) {
@@ -256,8 +257,8 @@ static int fs_init() {
 // -------------- higher layer routines provided to the firmware ----------------
  
 // keep track of working directory for each drive
-static char *cwd[MAX_DRIVES];
-static char *image_name[MAX_DRIVES];
+static char *cwd[MAX_DRIVES+MAX_IMAGES];
+static char *image_name[MAX_DRIVES+MAX_IMAGES];
 
 void sdc_set_default(int drive, const char *name) {
   sdc_debugf("set default %d: %s", drive, name);
@@ -424,10 +425,14 @@ static int sdc_image_inserted(char drive, FSIZE_t size) {
 
 int sdc_image_open(int drive, char *name) {
   unsigned long start_sector = 0;
-  
-  // tell core that the "disk" has been removed
-  sdc_image_inserted(drive, 0);
 
+  if(drive < MAX_DRIVES) {
+    // tell core that the "disk" has been removed
+    sdc_image_inserted(drive, 0);
+  } else {
+    // TODO: report image de-selection    
+  }
+    
   // forget about any previous name
   if(image_name[drive]) {
     free(image_name[drive]);
@@ -442,79 +447,86 @@ int sdc_image_open(int drive, char *name) {
   strcpy(fname, cwd[drive]);
   strcat(fname, "/");
   strcat(fname, name);
+
+  if(drive < MAX_DRIVES) {
+    sdc_lock();
   
-  sdc_lock();
-  
-  // close any previous image, especially free the link table
-  if(fil[drive].cltbl) {
-    sdc_debugf("DRV %d: freeing link table", drive);
-    free(lktbl[drive]);
-    lktbl[drive] = NULL;
-    fil[drive].cltbl = NULL;
-  }
-  
-  sdc_debugf("DRV %d: Mounting %s", drive, fname);
-
-  if(f_open(&fil[drive], fname, FA_OPEN_EXISTING | FA_READ) != 0) {
-    sdc_debugf("DRV %d: file open failed", drive);
-    sdc_unlock();
-    return -1;
-  } else {
-    sdc_debugf("DRV %d: file opened, cl=%lu(%lu)", drive,
-	   fil[drive].obj.sclust, clst2sect(fil[drive].obj.sclust));
-    sdc_debugf("DRV %d: File len = %ld, spc = %d, clusters = %lu", drive,
-	   (unsigned long)fil[drive].obj.objsize, fs.csize,
-	   (unsigned long)fil[drive].obj.objsize / 512 / fs.csize);      
-    
-    // try with a 16 entry link table
-    lktbl[drive] = malloc(16 * sizeof(DWORD));    
-    fil[drive].cltbl = lktbl[drive];
-    lktbl[drive][0] = 16;
-    
-    if(f_lseek(&fil[drive], CREATE_LINKMAP)) {
-      // this isn't really a problem. But sector access will
-      // be slower
-      sdc_debugf("DRV %d: Short link table creation failed, "
-		 "required size: %lu", drive, lktbl[drive][0]);
-
-      // re-alloc sufficient memory
-      lktbl[drive] = realloc(lktbl[drive], sizeof(DWORD) * lktbl[drive][0]);
-
-      // and retry link table creation
-      if(f_lseek(&fil[drive], CREATE_LINKMAP)) {
-	sdc_debugf("DRV %d: Link table creation finally failed, "
-		   "required size: %lu", drive, lktbl[drive][0]);
-	free(lktbl[drive]);
-	lktbl[drive] = NULL;
-	fil[drive].cltbl = NULL;
-
-	sdc_unlock();
-	return -1;
-      } else 
-	sdc_debugf("DRV %d: Link table ok with %ld entries", drive, lktbl[drive][0]);
-    } else {
-      sdc_debugf("DRV %d: Short link table ok with %ld entries", drive, lktbl[drive][0]);
-
-      // A link table length of 4 means, that  there's only one entry in it. This
-      // in turn means that the file is continious. The start sector can thus be
-      // sent to the core which can then access any sector without further help
-      // by the MCU.
-      if(lktbl[drive][0] == 4 && lktbl[drive][3] == 0)
-	start_sector = clst2sect(lktbl[drive][2]);
+    // close any previous image, especially free the link table
+    if(fil[drive].cltbl) {
+      sdc_debugf("DRV %d: freeing link table", drive);
+      free(lktbl[drive]);
+      lktbl[drive] = NULL;
+      fil[drive].cltbl = NULL;
     }
+    
+    sdc_debugf("DRV %d: Mounting %s", drive, fname);
+    
+    if(f_open(&fil[drive], fname, FA_OPEN_EXISTING | FA_READ) != 0) {
+      sdc_debugf("DRV %d: file open failed", drive);
+      sdc_unlock();
+      return -1;
+    } else {
+      sdc_debugf("DRV %d: file opened, cl=%lu(%lu)", drive,
+		 fil[drive].obj.sclust, clst2sect(fil[drive].obj.sclust));
+      sdc_debugf("DRV %d: File len = %ld, spc = %d, clusters = %lu", drive,
+		 (unsigned long)fil[drive].obj.objsize, fs.csize,
+		 (unsigned long)fil[drive].obj.objsize / 512 / fs.csize);      
+      
+      // try with a 16 entry link table
+      lktbl[drive] = malloc(16 * sizeof(DWORD));    
+      fil[drive].cltbl = lktbl[drive];
+      lktbl[drive][0] = 16;
+      
+      if(f_lseek(&fil[drive], CREATE_LINKMAP)) {
+	// this isn't really a problem. But sector access will
+	// be slower
+	sdc_debugf("DRV %d: Short link table creation failed, "
+		   "required size: %lu", drive, lktbl[drive][0]);
+	
+	// re-alloc sufficient memory
+	lktbl[drive] = realloc(lktbl[drive], sizeof(DWORD) * lktbl[drive][0]);
+	
+	// and retry link table creation
+	if(f_lseek(&fil[drive], CREATE_LINKMAP)) {
+	  sdc_debugf("DRV %d: Link table creation finally failed, "
+		     "required size: %lu", drive, lktbl[drive][0]);
+	  free(lktbl[drive]);
+	  lktbl[drive] = NULL;
+	  fil[drive].cltbl = NULL;
+	  
+	  sdc_unlock();
+	  return -1;
+	} else 
+	  sdc_debugf("DRV %d: Link table ok with %ld entries", drive, lktbl[drive][0]);
+      } else {
+	sdc_debugf("DRV %d: Short link table ok with %ld entries", drive, lktbl[drive][0]);
+	
+	// A link table length of 4 means, that  there's only one entry in it. This
+	// in turn means that the file is continious. The start sector can thus be
+	// sent to the core which can then access any sector without further help
+	// by the MCU.
+	if(lktbl[drive][0] == 4 && lktbl[drive][3] == 0)
+	  start_sector = clst2sect(lktbl[drive][2]);
+      }
+    }
+    
+    sdc_unlock();
+
+    // remember current image name
+    image_name[drive] = strdup(name);
+
+    // image has successfully been opened, so report image size to core
+    sdc_image_inserted(drive, fil[drive].obj.objsize);
+
+    // allow direct mapping if possible
+    if(start_sector) sdc_image_enable_direct(drive, start_sector);
+  } else {
+    sdc_debugf("TODO: handle rom images");    
+
+    // remember current image name
+    image_name[drive] = strdup(name);    
   }
-
-  sdc_unlock();
-
-  // remember current image name
-  image_name[drive] = strdup(name);
-
-  // image has successfully been opened, so report image size to core
-  sdc_image_inserted(drive, fil[drive].obj.objsize);
-
-  // allow direct mapping if possible
-  if(start_sector) sdc_image_enable_direct(drive, start_sector);
-  
+    
   return 0;
 }
 
@@ -525,10 +537,14 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
     sdc_dir_entry_t *d1 = (sdc_dir_entry_t *)p1;
     sdc_dir_entry_t *d2 = (sdc_dir_entry_t *)p2;
 
-    // comparing directory with re111gular file?
+    // comparing directory with regular file? 
     if(d1->is_dir != d2->is_dir)
       return d2->is_dir - d1->is_dir;
 
+    // check if one of the entries is the empty entry
+    if(d1->name[0] == '/') return -1;
+    if(d2->name[0] == '/') return  1;
+    
     return strcasecmp(d1->name, d2->name);    
   }
 
@@ -585,7 +601,6 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
 #endif
   
   FILINFO fno;
-
   // assemble name before we free it
   if(name) {
     if(strcmp(name, "..")) {
@@ -600,7 +615,7 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
       strrchr(cwd[drive], '/')[0] = 0;
     }
   }
-  
+
   // free existing file names
   if(sdc_dir.files) {
     for(int i=0;i<sdc_dir.len;i++)
@@ -617,9 +632,9 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
     fno.fattrib = AM_DIR;
     append(&sdc_dir, &fno);
   } else {
-    // the root also gets a special entry for "eject" or No Disk
+    // the root also gets a special entry for "eject" or "No Disk"
     // It's identified by the leading /, so the name can be changed
-    strcpy(fno.fname, "/No Disk");
+    strcpy(fno.fname, "/");
     fno.fattrib = AM_DIR;
     append(&sdc_dir, &fno);    
   }
@@ -660,13 +675,13 @@ int sdc_init(void) {
 
   if(fs_init() == 0) {
     // setup paths
-    for(int d=0;d<MAX_DRIVES;d++) {
+    for(int d=0;d<MAX_DRIVES+MAX_IMAGES;d++) {
       cwd[d] = strdup(CARD_MOUNTPOINT);
       image_name[d] = NULL;
     }
     sdc_debugf("SD card is ready");
   }
-    
+
   return 0;
 }
 

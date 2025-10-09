@@ -137,6 +137,10 @@ int xml_parse(char c) {
       // check if string now ends with escaped char
       if(strlen(value)>=5 && !strcasecmp("&amp;", value+strlen(value)-5))
 	strcpy(value+strlen(value)-5, "&");
+      else if(strlen(value)>=4 && !strcasecmp("&lt;", value+strlen(value)-4))
+	strcpy(value+strlen(value)-4, "<");
+      else if(strlen(value)>=4 && !strcasecmp("&gt;", value+strlen(value)-4))
+	strcpy(value+strlen(value)-4, ">");
     }
     break;
     

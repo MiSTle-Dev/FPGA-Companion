@@ -14,7 +14,8 @@
 #define CONFIG_MAX_PRIORITY          (25)
 #endif
 
-#define MAX_DRIVES                   (8)
+#define MAX_DRIVES                   (8)   // max disk floppy/hdd drives supported
+#define MAX_IMAGES                   (8)   // max rom/memory images supported
 #define MAX_HID_DEVICES              (6)
 #define MAX_XBOX_DEVICES             (2)
 
@@ -50,7 +51,7 @@ typedef struct config_action_S {
 } config_action_t;
 
 typedef struct {
-  unsigned char index;
+  char index;
   char *label;
   char *def;
   char **ext;
@@ -75,11 +76,30 @@ typedef struct {
   config_action_t *action;
 } config_button_t;
 
+typedef struct {
+  char index;
+  char *label;
+  char **ext;
+  char *def;
+  char *none_str;
+  unsigned char *none_icn;
+  config_action_t *action;
+} config_image_t;
+
+typedef struct {
+  unsigned char id;
+  char *label;
+  unsigned char def;
+  config_action_t *action;
+} config_toggle_t;
+
 #define CONFIG_MENU_ENTRY_UNKNOWN       0
 #define CONFIG_MENU_ENTRY_MENU          1
 #define CONFIG_MENU_ENTRY_FILESELECTOR  2
 #define CONFIG_MENU_ENTRY_LIST          3
 #define CONFIG_MENU_ENTRY_BUTTON        4
+#define CONFIG_MENU_ENTRY_IMAGE         5
+#define CONFIG_MENU_ENTRY_TOGGLE        6
 
 typedef struct {
   unsigned char type;
@@ -88,6 +108,8 @@ typedef struct {
     config_fsel_t *fsel;    
     config_list_t *list;    
     config_button_t *button;
+    config_image_t *image;
+    config_toggle_t *toggle;
   };  
 } config_menu_entry_t;
 
