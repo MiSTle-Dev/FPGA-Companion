@@ -704,6 +704,8 @@ static void system_clock_init(void) {
   GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_26M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
 #elif TANG_PRIMER25K
   GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_26M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
+#elif TANG_MEGA60K
+  GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_26M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
 #else
   GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_40M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
 #endif
@@ -810,10 +812,11 @@ static void console_init() {
 #elif TANG_MEGA60K
   /* RX no FPGA connection available, adhoc wiring needed */
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_17, GPIO_UART_FUNC_UART0_RX); /* ModeSel */
-/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection ! */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX);
+/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, 31004 assembly,  */
 /* GPIO 27 default UART RX, FPGA U15 TX */
 /* GPIO 28 default UART TX, FPGA V15 RX */
+/* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK, only 31005 assembly */
 #elif TANG_PRIMER25K
   bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_RX);
@@ -883,8 +886,12 @@ static void mn_board_init(void) {
 
 #ifdef TANG_CONSOLE60K
   /* USB-C OTG Power enable */
-  bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_set(gpio, GPIO_PIN_20);
+    bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+    bflb_gpio_set(gpio, GPIO_PIN_20);
+#elif TANG_MEGA60K
+  /* IPS5310 power enable */
+    //bflb_gpio_init(gpio, GPIO_PIN_16, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+    //bflb_gpio_set(gpio, GPIO_PIN_16);
 #endif
 
     /* console init (uart or wo) */
