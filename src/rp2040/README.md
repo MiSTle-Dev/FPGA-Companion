@@ -43,6 +43,31 @@ cd pico-sdk/lib/tinyusb
 python3 tools/get_deps.py rp2040
 ```
 
+### Optional: Update TinyUSB and PIO-USB to the latest version
+
+The TinyUSB stack and the PIO-USB mostly work for the FPGA Companion.
+But they do have some problems with plugging and unplugging devices.
+Later versions have some fixes and updates for this. Therefore, you
+may want to update to the latest version.
+
+```bash
+cd pico-sdk/lib/tinyusb
+git checkout master
+git pull
+cd hw/mcu/raspberry_pi/Pico-PIO-USB
+git pull
+git checkout main
+```
+
+Furthermore [this line](https://github.com/hathach/tinyusb/blob/8f2e3ed4418a08cc13aee4527b7bdd1b8bb1bf55/src/host/hub.c#L364)
+in ```tinyusb/src/host/hub.c``` may be changed to:
+
+```
+/*  if (result == XFER_RESULT_SUCCESS) */ {
+```
+
+For more details on this see [TinyUSB issue #3296](https://github.com/hathach/tinyusb/issues/3296).
+
 ### Clone this respository
 
 This repository has to be cloned recursively to make sure the submodules
