@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <diskio.h>
 #include <string.h>
-
+#include <inttypes.h>
 #include "sdc.h"
 #include "sysctrl.h"
 
@@ -120,13 +120,13 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
 #endif
 
 static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, UINT count) {
-  sdc_debugf("sdc_read(%p,%lu,%u)", buff, sector, count);  
+  sdc_debugf("sdc_read(%p,%lu,%u)", buff, (unsigned long)sector, count);  
   sdc_read_sector(sector, buff);
   return 0;
 }
 
 static SDC_RESULT sdc_write(const BYTE *buff, LBA_t sector, UINT count) {
-  sdc_debugf("sdc_write(%p,%lu,%u)", buff, sector, count);  
+  sdc_debugf("sdc_write(%p,%lu,%u)", buff, (unsigned long)sector, count);  
   sdc_write_sector(sector, buff);
   return 0;
 }
@@ -387,10 +387,8 @@ static int sdc_image_inserted(char drive, FSIZE_t size) {
   // to guess sector/track/side information for floppy disk images, so the
   // core can translate from floppy disk to LBA
 
-  if(size) {
-    if(sizeof(FSIZE_t) == 8) sdc_debugf("DRV %d: inserted. Size = %llu", drive, size);
-    else                     sdc_debugf("DRV %d: inserted. Size = %lu", drive, (uint32_t)size);
-  } else                     sdc_debugf("DRV %d: ejected", drive);
+  if(size) sdc_debugf("DRV %d: inserted. Size = %llu", drive, (unsigned long long)size);
+  else     sdc_debugf("DRV %d: ejected", drive);
   
   sdc_spi_begin();
 
@@ -423,6 +421,58 @@ static int sdc_image_inserted(char drive, FSIZE_t size) {
   return 0;
 }
 
+static void sdc_rom_image_selected(char image, FSIZE_t size) {
+  if(size) sdc_debugf("IMG %d: selected. Size = %llu", image, (unsigned long long)size);
+  else     sdc_debugf("IMG %d: deselected", image);
+
+  sdc_spi_begin();
+  mcu_hw_spi_tx_u08(SPI_SDC_IMAGE);
+  mcu_hw_spi_tx_u08(SPI_SDC_IMAGE_SELECT);  
+  mcu_hw_spi_tx_u08(image);
+
+  // send 32 bit image size, allowing for images up to 4GB
+  mcu_hw_spi_tx_u08((size >> 24) & 0xff);
+  mcu_hw_spi_tx_u08((size >> 16) & 0xff);
+  mcu_hw_spi_tx_u08((size >> 8) & 0xff);
+  mcu_hw_spi_tx_u08(size & 0xff);
+
+  mcu_hw_spi_end();
+}
+
+static int sdc_rom_image_get_buffer(char image) {
+  sdc_spi_begin();
+  mcu_hw_spi_tx_u08(SPI_SDC_IMAGE);
+  mcu_hw_spi_tx_u08(SPI_SDC_IMAGE_STATUS);  
+  mcu_hw_spi_tx_u08(image);
+
+  uint8_t status = mcu_hw_spi_tx_u08(0);
+  
+  // read 16 bit buffer value
+  uint16_t buffer = mcu_hw_spi_tx_u08(0);
+  buffer = (buffer << 8) + mcu_hw_spi_tx_u08(0);
+  
+  mcu_hw_spi_end();
+
+  // return -1 if core has not accepted the image, e.g. since
+  // the size is not what it supports
+  if(!(status & 0x80))
+    return -1;
+  
+  return buffer;
+}
+
+static void sdc_rom_image_send_chunk(char image, uint16_t len) {
+  sdc_spi_begin();
+  mcu_hw_spi_tx_u08(SPI_SDC_IMAGE);
+  mcu_hw_spi_tx_u08(SPI_SDC_IMAGE_WRITE);  
+  mcu_hw_spi_tx_u08(image);
+
+  while(len--) mcu_hw_spi_tx_u08(0);
+  
+  mcu_hw_spi_end();
+}
+
+  // open a drive or rom image
 int sdc_image_open(int drive, char *name) {
   unsigned long start_sector = 0;
 
@@ -430,7 +480,8 @@ int sdc_image_open(int drive, char *name) {
     // tell core that the "disk" has been removed
     sdc_image_inserted(drive, 0);
   } else {
-    // TODO: report image de-selection    
+    // TODO: report image de-selection
+    sdc_rom_image_selected(drive-MAX_DRIVES, 0);
   }
     
   // forget about any previous name
@@ -467,7 +518,7 @@ int sdc_image_open(int drive, char *name) {
       return -1;
     } else {
       sdc_debugf("DRV %d: file opened, cl=%lu(%lu)", drive,
-		 fil[drive].obj.sclust, clst2sect(fil[drive].obj.sclust));
+		 (unsigned long)fil[drive].obj.sclust, (unsigned long)clst2sect(fil[drive].obj.sclust));
       sdc_debugf("DRV %d: File len = %ld, spc = %d, clusters = %lu", drive,
 		 (unsigned long)fil[drive].obj.objsize, fs.csize,
 		 (unsigned long)fil[drive].obj.objsize / 512 / fs.csize);      
@@ -481,7 +532,7 @@ int sdc_image_open(int drive, char *name) {
 	// this isn't really a problem. But sector access will
 	// be slower
 	sdc_debugf("DRV %d: Short link table creation failed, "
-		   "required size: %lu", drive, lktbl[drive][0]);
+		   "required size: %lu", drive, (unsigned long)lktbl[drive][0]);
 	
 	// re-alloc sufficient memory
 	lktbl[drive] = realloc(lktbl[drive], sizeof(DWORD) * lktbl[drive][0]);
@@ -489,7 +540,7 @@ int sdc_image_open(int drive, char *name) {
 	// and retry link table creation
 	if(f_lseek(&fil[drive], CREATE_LINKMAP)) {
 	  sdc_debugf("DRV %d: Link table creation finally failed, "
-		     "required size: %lu", drive, lktbl[drive][0]);
+		     "required size: %lu", drive, (unsigned long)lktbl[drive][0]);
 	  free(lktbl[drive]);
 	  lktbl[drive] = NULL;
 	  fil[drive].cltbl = NULL;
@@ -497,9 +548,9 @@ int sdc_image_open(int drive, char *name) {
 	  sdc_unlock();
 	  return -1;
 	} else 
-	  sdc_debugf("DRV %d: Link table ok with %ld entries", drive, lktbl[drive][0]);
+	  sdc_debugf("DRV %d: Link table ok with %lu entries", drive, (unsigned long)lktbl[drive][0]);
       } else {
-	sdc_debugf("DRV %d: Short link table ok with %ld entries", drive, lktbl[drive][0]);
+	sdc_debugf("DRV %d: Short link table ok with %lu entries", drive, (unsigned long)lktbl[drive][0]);
 	
 	// A link table length of 4 means, that  there's only one entry in it. This
 	// in turn means that the file is continious. The start sector can thus be
@@ -521,8 +572,39 @@ int sdc_image_open(int drive, char *name) {
     // allow direct mapping if possible
     if(start_sector) sdc_image_enable_direct(drive, start_sector);
   } else {
-    sdc_debugf("TODO: handle rom images");    
+    char image = drive-MAX_DRIVES;
+    
+    sdc_debugf("IMG %d: Mounting %s", image, fname);
+    
+    sdc_lock();
+    if(f_open(&fil[drive], fname, FA_OPEN_EXISTING | FA_READ) != 0) {
+      sdc_debugf("IMG %d: file open failed", image);
+      sdc_unlock();
+      return -1;
+    }
 
+    sdc_rom_image_selected(image, fil[drive].obj.objsize);
+
+    // Upload rom. For now we do this blocking. But in the long term 
+
+    // get number of bytes to send
+    uint32_t bytes2send = fil[drive].obj.objsize;
+    
+    // send as many bytes as buffer space is available
+    while(bytes2send) {
+      // request free buffer size
+      uint32_t cnt = sdc_rom_image_get_buffer(image);    
+      // printf("Space in buffer: %d\n", cnt);
+
+      // don't send more bytes then left in file
+      if(cnt > bytes2send) cnt = bytes2send;
+      
+      sdc_rom_image_send_chunk(image, cnt);
+
+      bytes2send -= cnt;
+    }
+
+    
     // remember current image name
     image_name[drive] = strdup(name);    
   }
@@ -645,12 +727,13 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
   
   int ret = f_opendir(&dir, cwd[drive]);
   sdc_debugf("opendir(%s)=%d", cwd[drive], ret);
-  
+ 
   if(ret == 0) {  
     do {
       f_readdir(&dir, &fno);
       if(fno.fname[0] != 0 && !(fno.fattrib & (AM_HID|AM_SYS)) ) {
-	sdc_debugf("%s %s, len=%lld", (fno.fattrib & AM_DIR) ? "dir: ":"file:", fno.fname, fno.fsize);
+	sdc_debugf("%s %s, len=%llu", (fno.fattrib & AM_DIR) ? "dir: ":"file:",
+		   fno.fname, (unsigned long long)fno.fsize);
 
 	// only accept directories or .ST/.HD files
 	if((fno.fattrib & AM_DIR) || ext_match(fno.fname, ext)) 
@@ -689,9 +772,12 @@ void sdc_mount_defaults(void) {
   sdc_debugf("Mounting all default images ...");
 
   // try to mount (default) images
-  for(int drive=0;drive<MAX_DRIVES;drive++) {
+  for(int drive=0;drive<MAX_DRIVES+MAX_IMAGES;drive++) {
     char *name = sdc_get_image_name(drive);
-    sdc_debugf("Processing drive %d: %s", drive, name?name:"<no image>");
+    sdc_debugf("Processing %s %d: %s",
+	       (drive<MAX_DRIVES)?"drive":"image",
+	       (drive<MAX_DRIVES)?drive:(drive-MAX_DRIVES),
+	       name?name:"<no file>");
     
     if(name) {
       // create a local copy as sdc_image_open frees its own copy

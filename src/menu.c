@@ -466,7 +466,7 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected) 
 		 menu_variable_get(entry->toggle->id)?icn_on_bits:icn_off_bits);
   
   if(entry->type == CONFIG_MENU_ENTRY_IMAGE) {
-    char *icon = sdc_get_image_name(entry->image->index+MAX_DRIVES)?icn_floppy_bits:
+    const unsigned char *icon = sdc_get_image_name(entry->image->index+MAX_DRIVES)?icn_floppy_bits:
       entry->image->none_icn?entry->image->none_icn:
       icn_empty_bits;
     
