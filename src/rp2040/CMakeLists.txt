@@ -67,6 +67,7 @@ family_add_pico_pio_usb(${PROJECT})
 
 target_compile_definitions(${PROJECT} PRIVATE
         PIO_USB_DP_PIN_DEFAULT=2
+        PICO_DEFAULT_PIO_USB_DP_PIN=2
         )
 	
 if(SH20KLITE)
