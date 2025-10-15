@@ -241,7 +241,7 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
       hid_parse(&hid_device[idx].rep, &hid_device[idx].state, report, len);
   
   // continue to request to receive report
-  if ( !tuh_hid_receive_report(dev_addr, instance) )
+  if ( len && !tuh_hid_receive_report(dev_addr, instance) )
     usb_debugf("Error: cannot request report");
 }
 
@@ -399,7 +399,9 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
       }
     }
   }
-  tuh_xinput_receive_report(dev_addr, instance);
+
+  if(len)
+    tuh_xinput_receive_report(dev_addr, instance);
 }
 
 void tuh_xinput_mount_cb(uint8_t dev_addr, uint8_t instance, const xinputh_interface_t *xinput_itf) {
@@ -823,8 +825,10 @@ uint32_t getFreeHeap(void) {
 }
 
 void mcu_hw_init(void) {
-  // default 125MHz is not appropriate for PIO USB. Sysclock should be multiple of 12MHz.
-  set_sys_clock_khz(120000, true);
+  // default 125MHz is not appropriate for PIO USB. Sysclock should be
+  // multiple of 12MHz. Some devices don't enumerate properly with the
+  // latest PIO-USB below ~16*12Mhz
+  set_sys_clock_khz(16*12000, true);
   
   stdio_init_all();    // ... so stdio can adjust its bit rate
 #ifdef WAVESHARE_RP2040_ZERO

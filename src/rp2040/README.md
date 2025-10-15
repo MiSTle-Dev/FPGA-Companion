@@ -59,13 +59,6 @@ git pull
 git checkout main
 ```
 
-Furthermore [this line](https://github.com/hathach/tinyusb/blob/8f2e3ed4418a08cc13aee4527b7bdd1b8bb1bf55/src/host/hub.c#L364)
-in ```tinyusb/src/host/hub.c``` may be changed to:
-
-```
-/*  if (result == XFER_RESULT_SUCCESS) */ {
-```
-
 For more details on this see [TinyUSB issue #3296](https://github.com/hathach/tinyusb/issues/3296).
 
 ### Clone this respository
