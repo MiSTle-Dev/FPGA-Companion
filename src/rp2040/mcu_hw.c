@@ -210,7 +210,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
     usb_debugf("Error, no more free HID entries");
   
   // tuh_hid_report_received_cb() will be invoked when report is available
-  if ( !tuh_hid_receive_report(dev_addr, instance) ) 
+  if (!tuh_hid_receive_report(dev_addr, instance) ) 
     usb_debugf("Error: cannot request report");
 
   usb_check_devices();
@@ -374,7 +374,7 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
     if(ay < (uint8_t) 0x40) state |= 0x08;
 
     // submit if state has changed
-	  if((state != xbox_state[idx].state) ||
+    if((state != xbox_state[idx].state) ||
       (state_btn_extra != xbox_state[idx].state_btn_extra) ||
       (ax != xbox_state[idx].state_x) ||
       (ay != xbox_state[idx].state_y)) {
@@ -394,13 +394,13 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
 	    mcu_hw_spi_tx_u08(ay); // gamepad analog Y
 	    mcu_hw_spi_tx_u08(state_btn_extra); // gamepad extra buttons
 	    mcu_hw_spi_end();
-    }
+	  }
 	}
       }
     }
   }
 
-  if(len)
+  if(xid_itf->last_xferred_bytes)
     tuh_xinput_receive_report(dev_addr, instance);
 }
 
@@ -825,9 +825,8 @@ uint32_t getFreeHeap(void) {
 }
 
 void mcu_hw_init(void) {
-  // default 125MHz is not appropriate for PIO USB. Sysclock should be
-  // multiple of 12MHz. Some devices don't enumerate properly with the
-  // latest PIO-USB below ~16*12Mhz
+  // default 125MHz is not appropriate for PIO USB. Sysclock should be multiple of 12MHz.
+  // some devices won't enumerate propery below ~16*12Mhz
   set_sys_clock_khz(16*12000, true);
   
   stdio_init_all();    // ... so stdio can adjust its bit rate
