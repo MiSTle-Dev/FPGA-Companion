@@ -175,7 +175,7 @@ make
 
 ## tang onboard bl616
 
-A build script creates for the several setups specific binaries and .ini files including the needed ``bl616_fpga_partner_`` firmware. The ``buildall`` folder will contain all needed files for a release. So far TN20k, Console60k, Console138k, Primer25k, Mega138k Pro apart from M0S Dock are supported. TM60k is likely possible but not released yet. TP20k and TN9k are excluded as their BL702 doesn't support required USB host mode.
+A build script creates for the several setups specific binaries and .ini files including the needed ``bl616_fpga_partner_`` firmware. The ``buildall`` folder will contain all needed files for a release. So far Nano20k, Console60k, Console138k, Primer25k, Mega138k Pro, Mega NEO Dock 60k apart from M0S Dock are supported. Primer20k and TN9k are excluded as their BL702 doesn't support required USB host mode.
 
 ```shell
 buildall.bat
