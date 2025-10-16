@@ -233,7 +233,7 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
 }
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) {
-  // usb_debugf("[%u] HID Interface%u", dev_addr, instance);
+  usb_debugf("[%u] HID Interface%u %p/%d", dev_addr, instance, report, len);
 
   // find matching hid report
   for(int idx=0;idx<MAX_HID_DEVICES;idx++)
@@ -241,7 +241,7 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
       hid_parse(&hid_device[idx].rep, &hid_device[idx].state, report, len);
   
   // continue to request to receive report
-  if ( len && !tuh_hid_receive_report(dev_addr, instance) )
+  if ( report && !tuh_hid_receive_report(dev_addr, instance) )
     usb_debugf("Error: cannot request report");
 }
 
@@ -398,10 +398,8 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
 	}
       }
     }
-  }
-
-  if(xid_itf->last_xferred_bytes)
     tuh_xinput_receive_report(dev_addr, instance);
+  }
 }
 
 void tuh_xinput_mount_cb(uint8_t dev_addr, uint8_t instance, const xinputh_interface_t *xinput_itf) {
