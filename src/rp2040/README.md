@@ -59,7 +59,13 @@ git pull
 git checkout main
 ```
 
-For more details on this see [TinyUSB issue #3296](https://github.com/hathach/tinyusb/issues/3296).
+Additionally patch [```src/class/hid/hid_host.c```](https://github.com/hathach/tinyusb/blob/79445c2386adefb207a76a70d87578b53c3e7922/src/class/hid/hid_host.c#L487) to:
+
+```
+    tuh_hid_report_received_cb(daddr, idx, (XFER_RESULT_SUCCESS == result)?epbuf->epin:NULL, (uint16_t) xferred_bytes);
+```
+
+For more details on this see [TinyUSB issue #3296](https://github.com/hathach/tinyusb/issues/3296) and [issue #3307](https://github.com/hathach/tinyusb/issues/3307).
 
 ### Clone this respository
 
