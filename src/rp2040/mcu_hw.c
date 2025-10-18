@@ -37,7 +37,7 @@
 #define SPI_BUS  spi0
 #define WS2812_PIN    16
 #else
-#ifdef PICO2
+#ifdef PICO_RP2350
 #warning "Building for Pi Pico2 and Pico2(W)"
 #define ENABLE_WIFI
 #else
@@ -497,7 +497,7 @@ static int wifi_state = WIFI_STATE_UNKNOWN;
 unsigned int petsc2;
 
 static void mcu_hw_wifi_init(void) {
-#ifdef PICO2
+#ifdef PICO_RP2350
   debugf("Detected Pico2-W");
 #else
   debugf("Detected Pico-W");
@@ -835,7 +835,11 @@ void mcu_hw_init(void) {
   uart_set_baudrate(uart0, 921600);
 #endif
   
-  printf("\r\n\r\n" LOGO "        FPGA Companion for RP2040/RP2350\r\n\r\n");
+#ifdef PICO_RP2350
+  printf("\r\n\r\n" LOGO "             FPGA Companion for RP2350\r\n\r\n");
+#else
+  printf("\r\n\r\n" LOGO "             FPGA Companion for RP2040\r\n\r\n");
+#endif
 #if CFG_TUH_RPI_PIO_USB == 0
   printf("Using native USB\r\n");
 #else
@@ -882,21 +886,24 @@ void mcu_hw_init(void) {
   adc_init();
   adc_gpio_init(29);
   adc_select_input(3);
-  is_pico_w = adc_read() < 0x100;
+
+  uint16_t result = adc_read();
+  debugf("ADC3 value: 0x%03x", result);
+  is_pico_w = result < 0x100;
 
   if(!is_pico_w)
 #endif
     {
 #ifndef WAVESHARE_RP2040_ZERO
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, 1);
-    gpio_put(PICO_DEFAULT_LED_PIN, !PICO_DEFAULT_LED_PIN_INVERTED);
-
-    TimerHandle_t led_timer_handle =
-      xTimerCreate("LED timer", pdMS_TO_TICKS(200), pdTRUE, NULL, led_timer);
-    xTimerStart(led_timer_handle, 0);
+      gpio_init(PICO_DEFAULT_LED_PIN);
+      gpio_set_dir(PICO_DEFAULT_LED_PIN, 1);
+      gpio_put(PICO_DEFAULT_LED_PIN, !PICO_DEFAULT_LED_PIN_INVERTED);
+      
+      TimerHandle_t led_timer_handle =
+	xTimerCreate("LED timer", pdMS_TO_TICKS(200), pdTRUE, NULL, led_timer);
+      xTimerStart(led_timer_handle, 0);
 #endif
-  }
+    }
 #ifdef ENABLE_WIFI
   else
     xTaskCreate(wifi_task, (char *)"wifi_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);  

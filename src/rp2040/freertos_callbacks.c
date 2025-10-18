@@ -1,30 +1,12 @@
 
 #include <stdio.h>
-#include <stdlib.h>
 #include "FreeRTOS.h"
 #include "task.h"
 
-void __attribute__((weak))
-vApplicationStackOverflowHook(__attribute__((unused)) TaskHandle_t xTask, __attribute__((unused)) char *pcTaskName) {
-    /* The stack space has been exceeded for a task, considering allocating more. */
-    printf("\nOut of stack space!\n");
-    printf(pcTaskGetName(NULL));
-    printf("\n");
-    exit(1);
+void *pvPortRealloc( void *pv, size_t size ){
+	  vPortFree ( pv );
+	  return pvPortMalloc( size );
 }
-
-// #ifndef NDEBUG
-//  Note: All pvPortMallocs should be checked individually,
-//  but we don't expect any to fail,
-//  so this can help flag problems in Debug builds.
-void __attribute__((weak))
-vApplicationMallocFailedHook(void) {
-    printf("\nMalloc failed!\n");
-    printf(pcTaskGetName(NULL));
-    printf("\n");
-    exit(2);
-}
-// #endif
 
 /* configSUPPORT_STATIC_ALLOCATION is set to 1, so the application must provide
 an implementation of vApplicationGetIdleTaskMemory() to provide the memory that

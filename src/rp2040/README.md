@@ -192,22 +192,23 @@ cmake -DSH20KLITE=ON ..
 
 ## Using the Raspberry Pi Pico2 or Pico2(W)
 
-Clone the official Pico port of FreeRTOS into the rp2040
-directory:
+The FPGA Companion also runs on the Pico2/RP2350. This has
+not extensively been tested, yet.
+
+The RP2350 needs a special version of the FreeRTOS. Clone the official
+Pico port of FreeRTOS into the rp2040 directory:
 
 ```bash
 cd src/rp2040
 git clone https://github.com/raspberrypi/FreeRTOS-Kernel
 ```
 
-and select the PICO2 and Pico2(W):
+Then go into the ```src/rp2040/build``` directory and select to build for the
+PICO2 and Pico2(W):
 
 ```bash
 cmake -DPICO2=ON ..
 ```
-
-This is currently not working at all and the FreeRTOS scheduler doesn't seem
-to start at all.
 
 ## Using the Waveshare RP2040-Zero
 
