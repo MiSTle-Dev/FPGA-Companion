@@ -23,7 +23,7 @@ set(TARGET rp2040)
 endif(PICO2)
 
 # Pull in SDK (must be before project)
-include(pico_sdk_import.cmake)
+include("$ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake")
 
 project(${PROJECT} C CXX ASM)
 set(CMAKE_C_STANDARD 11)
@@ -32,11 +32,7 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 # Pull in FreeRTOS
-if(PICO2)
-include(./FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2350_ARM_NTZ/FreeRTOS_Kernel_import.cmake)
-else(PICO2)
-include(../FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
-endif(PICO2)
+include(./FreeRTOS_Kernel_import.cmake)
 
 # u8g2
 file(GLOB U8G2_SRC ../u8g2/csrc/*.c)
@@ -118,7 +114,7 @@ add_custom_target(flash
 
 target_link_options(${PROJECT} PRIVATE -Xlinker --print-memory-usage)
 target_compile_options(${PROJECT} PRIVATE -Wall -Wextra)
-
+	
 add_custom_target(reset
     COMMAND echo "Reseting ${PROJECT} for ${TARGET} ..."
     COMMAND openocd -f interface/cmsis-dap.cfg -f target/${TARGET}.cfg -c init -c reset -c exit
