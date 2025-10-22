@@ -55,8 +55,9 @@ cd pico-sdk/lib/tinyusb
 git checkout master
 git pull
 cd hw/mcu/raspberry_pi/Pico-PIO-USB
+git fetch origin
+git checkout main 
 git pull
-git checkout main
 ```
 
 Additionally patch [```src/class/hid/hid_host.c```](https://github.com/hathach/tinyusb/blob/79445c2386adefb207a76a70d87578b53c3e7922/src/class/hid/hid_host.c#L487) to:
