@@ -1,26 +1,48 @@
+#
+# CMakeLists.txt - FPGA Companion for rp2040
+#
+#
 # to build for waveshare rp2040-zero do
-# cmake -DWS2040_ZERO=ON ..
+#  cmake -DBOARD=WS2040_ZERO ..
 # to build for Pico2 or Pico2-W do
-# cmake -DPICO2=ON ..
-# You might need to delete CMakeCache.txt when changing these
+#  cmake -DBOARD=PICO2 ..
+#
+# You might need to delete CMakeCache.txt when changing the BOARD
 
 cmake_minimum_required(VERSION 3.13)
 
 set(PROJECT fpga_companion)
 
-option(PICO2 "Build for Pico2 and Pico2-W" OFF) # Regular Pico-W by default
+message(" __  __ _ ____ _____ _")
+message(" |  \\/  (_) ___|_   _| | ___")
+message(" | |\\/| | \\___ \\ | | | |/ o_)")
+message(" |_|  |_|_|____/ |_| |_|\\___|")
+message(" http://github.com/MiSTle-Dev")
 
-option(SH20KLITE "Build for MiSTeryShield20k Lite" OFF)
+message("==============================")
+message("      Board is ${BOARD}")
+message("==============================")
 
-# This will also work for the regular Pico. The
+# The BOARD option selects which board to build for
+# Regular Pico (W) by default
+option(BOARD "Board type. Can be PICO, PICO2, WS2040_ZERO or SH20KLITE" PICO)
+
+set(BOARDS PICO PICO2 WS2040_ZERO SH20KLITE)
+if( NOT ${BOARD} IN_LIST BOARDS)
+    message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040_ZERO or SH20KLITE")
+endif()
+
+# This will also work for the the Pico-W and the regular Pico. The
 # firmware detects it and acts accordingly
-if(PICO2)
+if(${BOARD} STREQUAL PICO2)
+message("Building for RP2350")
 set(PICO_BOARD pico2_w)
 set(TARGET rp2350)
-else(PICO2)
+else()
+message("Building for RP2040")
 set(PICO_BOARD pico_w)
 set(TARGET rp2040)
-endif(PICO2)
+endif()
 
 # Pull in SDK (must be before project)
 include("$ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake")
@@ -65,26 +87,22 @@ target_compile_definitions(${PROJECT} PRIVATE
         PIO_USB_DP_PIN_DEFAULT=2
         PICO_DEFAULT_PIO_USB_DP_PIN=2
         )
-	
-if(SH20KLITE)
-  add_compile_definitions(${PROJECT} PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64 SH20KLITE=1)
-endif(SH20KLITE)
-	
-option(WS2040_ZERO "Build for Waveshare RP2040-Zero" OFF) # Regular Pico by default
-if(WS2040_ZERO)
-        add_compile_definitions(${PROJECT} PRIVATE WAVESHARE_RP2040_ZERO=1)
-        add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Waveshare RP2040-Zero.")
-else(WS2040_ZERO)
-	if(PICO2)
-        add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico2 or Pico2-W.")
-	else(PICO2)
-		if(SH20KLITE)
-			add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for MiSTeryShield20k-Lite.")
-		else(SH20KLITE)
-		        add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico or Pico-W.")
-		endif(SH20KLITE)
-	endif(PICO2)
-endif(WS2040_ZERO)
+
+if(${BOARD} STREQUAL WS2040_ZERO)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=${BOARD})
+   add_compile_definitions(${PROJECT} PRIVATE WAVESHARE_RP2040_ZERO=)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Waveshare RP2040-Zero.")
+elseif(${BOARD} STREQUAL PICO2)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=1)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico2 or Pico2-W.")
+elseif(${BOARD} STREQUAL SH20KLITE)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=3)
+   add_compile_definitions(${PROJECT} PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64 SH20KLITE=1)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for MiSTeryShield20k-Lite.")
+else()
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=0)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico or Pico-W.")
+endif()
 
 target_include_directories(${PROJECT} PRIVATE
       ${CMAKE_CURRENT_LIST_DIR}
@@ -121,8 +139,8 @@ add_custom_target(reset
     COMMENT "Reset target using openocd"
 )
 
-if(WS2040_ZERO)
-add_custom_target(term COMMAND term.sh /dev/ttyACM0 460800)
-else(WS2040_ZERO)
-add_custom_target(term COMMAND term.sh /dev/ttyACM0 921600)
-endif(WS2040_ZERO)
+if(${BOARD} STREQUAL WS2040_ZERO)
+  add_custom_target(term COMMAND term.sh /dev/ttyACM0 460800)
+else()
+  add_custom_target(term COMMAND term.sh /dev/ttyACM0 921600)
+endif()

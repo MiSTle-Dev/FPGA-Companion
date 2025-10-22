@@ -188,7 +188,7 @@ include WiFi and does not allow to detect its absence automatically. Some versio
 setting. Thus a FPGA Companion version specifially for the MiSTeryShield20k Lite can be enabled as follows.
 
 ```bash
-cmake -DSH20KLITE=ON ..
+cmake -DBOARD=SH20KLITE ..
 ```
 
 ## Using the Raspberry Pi Pico2 or Pico2(W)
@@ -208,7 +208,7 @@ Then go into the ```src/rp2040/build``` directory and select to build for the
 PICO2 and Pico2(W):
 
 ```bash
-cmake -DPICO2=ON ..
+cmake -DBOARD=PICO2 ..
 ```
 
 ## Using the Waveshare RP2040-Zero
@@ -222,7 +222,7 @@ To build the firmware for the RP2040-Zero use the following
 command:
 
 ```bash
-cmake -DWS2040_ZERO=ON ..
+cmake -DBOARD=WS2040_ZERO ..
 ```
 
 The build process will then end with the following message:

@@ -24,38 +24,42 @@
 
 #include "../mcu_hw.h"
 
-#ifdef WAVESHARE_RP2040_ZERO
-#warning "Building for Waveshare RP2040-Zero mini board"
+#ifndef MISTLE_BOARD
+#error "No MiSTle board type specified!"
+#endif
 
+#if MISTLE_BOARD == 0
+#warning "Building for Raspberry Pi Pico or Pico-W"
+#define ENABLE_WIFI
+#elif MISTLE_BOARD == 1
+#warning "Building for Raspberry Pi Pico2 or Pico2-W"
+#define ENABLE_WIFI
+#elif MISTLE_BOARD == 2
+#warning "Building for Waveshare RP2040-Zero"
+#elif MISTLE_BOARD == 3
+#warning "Building for MiSTeryShield20k-Lite"
+#else
+#error "Not a supported MiSTle board!"
+#endif
+
+#if MISTLE_BOARD == 2
 // the waveshare mini does not expose the default spi0 pins, so we need
 // to specify them
-#define SPI_RX_PIN    4
-#define SPI_SCK_PIN   6
-#define SPI_TX_PIN    7
-#define SPI_CSN_PIN   5
-#define SPI_IRQ_PIN   8
-#define SPI_BUS  spi0
+#define SPI_RX_PIN     4
+#define SPI_SCK_PIN    6
+#define SPI_TX_PIN     7
+#define SPI_CSN_PIN    5
+#define SPI_IRQ_PIN    8
+#define SPI_BUS     spi0
 #define WS2812_PIN    16
 #else
-#ifdef PICO_RP2350
-#warning "Building for Pi Pico2 and Pico2(W)"
-#define ENABLE_WIFI
-#else
-#ifdef SH20KLITE
-#warning "Building for MiSTeryShield20K-Lite"
-#else
-#warning "Building for Pi Pico and Pico(W)"
-#define ENABLE_WIFI
-#endif
-#endif
-
 // the regular pi pico uses spi0 by default
 #define SPI_RX_PIN   PICO_DEFAULT_SPI_RX_PIN
 #define SPI_SCK_PIN  PICO_DEFAULT_SPI_SCK_PIN
 #define SPI_TX_PIN   PICO_DEFAULT_SPI_TX_PIN
 #define SPI_CSN_PIN  PICO_DEFAULT_SPI_CSN_PIN
 #define SPI_IRQ_PIN  22
-#define SPI_BUS  spi_default
+#define SPI_BUS      spi_default
 
 // the resular pi pico uses GPIO4, 5 and 6 for status
 // indicator leds. These are e.g. present on the
@@ -64,7 +68,6 @@
 #define LED_MOUSE_PIN    4
 #define LED_KEYBOARD_PIN 5
 #define LED_JOYSTICK_PIN 6
-
 #endif
 
 #ifdef ENABLE_WIFI
@@ -836,9 +839,9 @@ void mcu_hw_init(void) {
 #endif
   
 #ifdef PICO_RP2350
-  printf("\r\n\r\n" LOGO "             FPGA Companion for RP2350\r\n\r\n");
+  printf( LOGO "        FPGA Companion for RP2350\r\n\r\n");
 #else
-  printf("\r\n\r\n" LOGO "             FPGA Companion for RP2040\r\n\r\n");
+  printf( LOGO "        FPGA Companion for RP2040\r\n\r\n");
 #endif
 #if CFG_TUH_RPI_PIO_USB == 0
   printf("Using native USB\r\n");
