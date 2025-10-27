@@ -25,7 +25,7 @@ message("==============================")
 
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
-option(BOARD "Board type. Can be PICO, PICO2, WS2040_ZERO or SH20KLITE" PICO)
+set(BOARD "PICO" CACHE STRING "Board type. Can be PICO, PICO2, WS2040_ZERO or SH20KLITE")
 
 set(BOARDS PICO PICO2 WS2040_ZERO SH20KLITE)
 if( NOT ${BOARD} IN_LIST BOARDS)
