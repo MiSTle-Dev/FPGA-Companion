@@ -24,7 +24,7 @@
 #include "puff.h"
 
 const char *sys_get_config_name(void) {
-  const char *config_xml =
+  static const char *config_xml =
     CARD_MOUNTPOINT "/config.xml";
   return config_xml;
 }

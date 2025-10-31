@@ -709,6 +709,14 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
     
     // return to parent form
     menu_pop();
+
+    // check if we just finished using an IMAGE selector
+    config_menu_entry_t *menu_entry = menu_state->menu->entries + menu_state->selected - 1;
+    if(menu_entry->type == CONFIG_MENU_ENTRY_IMAGE) {
+      // check if entry has an action connected
+      if(menu_entry->image->action)
+	sys_run_action(menu_entry->image->action);
+    }
   }
 }
 

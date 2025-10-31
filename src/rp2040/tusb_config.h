@@ -34,7 +34,7 @@
 // Board Specific Configuration
 //--------------------------------------------------------------------+
 
-#ifdef WAVESHARE_RP2040_ZERO
+#if MISTLE_BOARD == 2
 // the waveshare rp2040 zero comes with a convenient USB-C connector
 // and PIO USB would collide with PIO-WS2812, so this never uses PIO USB
 #define CFG_TUH_RPI_PIO_USB   0
@@ -106,7 +106,7 @@
 #define CFG_TUH_HUB                 2 // number of supported hubs
 #define CFG_TUH_CDC                 0
 #define CFG_TUH_HID                 MAX_HID_DEVICES // typical keyboard + mouse device can have 3-4 HID interfaces
-#define CFG_TUH_MSC                 0
+#define CFG_TUH_MSC                 1
 #define CFG_TUH_VENDOR              0
 #define CFG_TUH_XINPUT              MAX_XBOX_DEVICES
 

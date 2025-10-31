@@ -472,7 +472,7 @@ static void sdc_rom_image_send_chunk(char image, uint16_t len) {
   mcu_hw_spi_end();
 }
 
-  // open a drive or rom image
+// open a drive or rom image
 int sdc_image_open(int drive, char *name) {
   unsigned long start_sector = 0;
 
@@ -499,6 +499,7 @@ int sdc_image_open(int drive, char *name) {
   strcat(fname, "/");
   strcat(fname, name);
 
+  // check whether a drive is being mounted or if a rom image is being loaded
   if(drive < MAX_DRIVES) {
     sdc_lock();
   
@@ -585,7 +586,9 @@ int sdc_image_open(int drive, char *name) {
 
     sdc_rom_image_selected(image, fil[drive].obj.objsize);
 
-    // Upload rom. For now we do this blocking. But in the long term 
+    // Upload rom. For now we do this blocking. But in the long term
+    // we should do this in the background to be able to use the
+    // system while e.g. a slow tape upload is running
 
     // get number of bytes to send
     uint32_t bytes2send = fil[drive].obj.objsize;
@@ -594,16 +597,19 @@ int sdc_image_open(int drive, char *name) {
     while(bytes2send) {
       // request free buffer size
       uint32_t cnt = sdc_rom_image_get_buffer(image);    
-      // printf("Space in buffer: %d\n", cnt);
 
-      // don't send more bytes then left in file
-      if(cnt > bytes2send) cnt = bytes2send;
+      if(cnt) {
+	// don't send more bytes then left in file
+	if(cnt > bytes2send) cnt = bytes2send;
       
-      sdc_rom_image_send_chunk(image, cnt);
+	sdc_rom_image_send_chunk(image, cnt);
 
-      bytes2send -= cnt;
+	bytes2send -= cnt;
+      } else {
+	// no buffer space available. Pause some time ...
+	vTaskDelay(pdMS_TO_TICKS(1));
+      }
     }
-
     
     // remember current image name
     image_name[drive] = strdup(name);    

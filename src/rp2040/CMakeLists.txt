@@ -25,11 +25,11 @@ message("==============================")
 
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
-option(BOARD "Board type. Can be PICO, PICO2, WS2040_ZERO or SH20KLITE" PICO)
+option(BOARD "Board type. Can be PICO, PICO2, WS2040_ZERO, SH20KLITE or DEV20K" PICO)
 
-set(BOARDS PICO PICO2 WS2040_ZERO SH20KLITE)
+set(BOARDS PICO PICO2 WS2040_ZERO SH20KLITE DEV20K)
 if( NOT ${BOARD} IN_LIST BOARDS)
-    message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040_ZERO or SH20KLITE")
+    message(FATAL_ERROR "BOARD must be one of ${BOARDS}")
 endif()
 
 # This will also work for the the Pico-W and the regular Pico. The
@@ -88,20 +88,26 @@ target_compile_definitions(${PROJECT} PRIVATE
         PICO_DEFAULT_PIO_USB_DP_PIN=2
         )
 
-if(${BOARD} STREQUAL WS2040_ZERO)
-   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=${BOARD})
-   add_compile_definitions(${PROJECT} PRIVATE WAVESHARE_RP2040_ZERO=)
-   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Waveshare RP2040-Zero.")
+if(${BOARD} STREQUAL PICO)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=0)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico or Pico-W.")
 elseif(${BOARD} STREQUAL PICO2)
    add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=1)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico2 or Pico2-W.")
+elseif(${BOARD} STREQUAL WS2040_ZERO)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=2)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Waveshare RP2040-Zero.")
 elseif(${BOARD} STREQUAL SH20KLITE)
    add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=3)
-   add_compile_definitions(${PROJECT} PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64 SH20KLITE=1)
+   add_compile_definitions(${PROJECT} PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for MiSTeryShield20k-Lite.")
+elseif(${BOARD} STREQUAL DEV20K)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=4)
+   add_compile_definitions(${PROJECT} PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for MiSTeryDev20k.")
+   target_sources(${PROJECT} PRIVATE sdc_local.c ../jtag.c)
 else()
-   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=0)
-   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico or Pico-W.")
+   message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040_ZERO, SH20KLITE or DEV20K")
 endif()
 
 target_include_directories(${PROJECT} PRIVATE

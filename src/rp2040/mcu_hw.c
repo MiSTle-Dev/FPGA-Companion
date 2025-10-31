@@ -38,6 +38,23 @@
 #warning "Building for Waveshare RP2040-Zero"
 #elif MISTLE_BOARD == 3
 #warning "Building for MiSTeryShield20k-Lite"
+#elif MISTLE_BOARD == 4
+#warning "Building for MiSTeryDev20k"
+#include "../jtag.h"
+#include "./sdc_local.h"
+#define ENABLE_JTAG
+
+// FPGA JTAG pins
+#define PIN_JTAG_TDI  12   // pin 15, gpio 12
+#define PIN_JTAG_TMS  13   // pin 16, gpio 13
+#define PIN_JTAG_TDO  14   // pin 17, gpio 14
+#define PIN_JTAG_TCK  15   // pin 18, gpio 15
+
+// special FPGA configuration pins
+#define PIN_nCFG      21   // pin 32, PIO21
+#define PIN_MODE0     23   // pin 35, PIO23
+#define PIN_MODE1     24   // pin 36, PIO24
+
 #else
 #error "Not a supported MiSTle board!"
 #endif
@@ -815,6 +832,18 @@ static void ws_led_timer(__attribute__((unused)) TimerHandle_t pxTimer) {
 }
 #endif
 
+// Invoked when a device with MassStorage interface is mounted
+void tuh_msc_mount_cb(uint8_t dev_addr) {
+  uint16_t vid, pid;
+  tuh_vid_pid_get(dev_addr, &vid, &pid);
+  usb_debugf("[%04x:%04x][%u] MSC mounted", vid, pid, dev_addr);
+}
+
+// Invoked when a device with MassStorage interface is unmounted
+void tuh_msc_umount_cb(__attribute__((unused)) uint8_t dev_addr) {
+  usb_debugf("MSC unmounted");
+}
+
 extern char __StackLimit, __bss_end__;   
 uint32_t getTotalHeap(void) {
    return &__StackLimit  - &__bss_end__;
@@ -825,13 +854,162 @@ uint32_t getFreeHeap(void) {
    return getTotalHeap() - m.uordblks;
 }
 
+/* ========================================================================= */
+/* ======                              JTAG                           ====== */
+/* ========================================================================= */
+
+#ifdef ENABLE_JTAG
+void mcu_hw_jtag_tms(uint8_t tdi, uint32_t data, int len) {
+  uint32_t mask = (1<<(len-1));
+
+  gpio_put(PIN_JTAG_TDI, tdi);  
+
+  while(mask) {
+    jtag_debugf("TDI %d TMS %d", tdi, (data & mask)?1:0);
+    
+    gpio_put(PIN_JTAG_TMS, (data & mask)?1:0);  
+    gpio_put(PIN_JTAG_TCK, 1);
+    gpio_put(PIN_JTAG_TCK, 0);
+
+    mask >>= 1;
+  }    
+}
+
+void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
+  uint8_t tx_mask = (1<<((len&7)-1));
+  uint8_t rx_mask = 0x01;
+  
+  while(len) {
+    int tx_bit = txd?((*txd & tx_mask)?1:0):1;
+    
+    jtag_debugf("TDI %d TDO %d", tx_bit, gpio_get(PIN_JTAG_TDO));
+
+    if(rxd) {    
+      // shift in from msb
+      if(gpio_get(PIN_JTAG_TDO)) *rxd |=  rx_mask;
+      else                       *rxd &= ~rx_mask;
+
+      // advance rx bit mask
+      rx_mask <<= 1;
+      if(!rx_mask) {
+	rxd++;
+	rx_mask = 0x01;
+      }
+    }
+
+    // set data bit and clock tck once
+    gpio_put(PIN_JTAG_TDI, tx_bit);  
+    gpio_put(PIN_JTAG_TCK, 1);
+    gpio_put(PIN_JTAG_TCK, 0);
+
+    // advance tx bit mask
+    if(txd) {    
+      tx_mask >>= 1;
+      if(!tx_mask) {
+	txd++;
+	tx_mask = 0x80;
+      }
+    }
+
+    len--;
+  }    
+}
+
+static void mcu_hw_jtag_init(void) {
+  // -------- init FPGA control pins ---------
+
+  // FPGA mode pins. Both low for regular boot
+  gpio_init(PIN_MODE0); gpio_put(PIN_MODE0, 0);
+  gpio_set_dir(PIN_MODE0, GPIO_OUT);
+  gpio_init(PIN_MODE1); gpio_put(PIN_MODE1, 0);
+  gpio_set_dir(PIN_MODE1, GPIO_OUT);
+
+  // FPGA reconfig pin, active low
+  gpio_init(PIN_nCFG); gpio_put(PIN_nCFG, 1);
+  gpio_set_dir(PIN_nCFG, GPIO_OUT);
+  
+  // -------- init FPGA JTAG pins ---------
+  gpio_init(PIN_JTAG_TCK); gpio_put(PIN_JTAG_TCK, 0);
+  gpio_set_dir(PIN_JTAG_TCK, GPIO_OUT);
+  gpio_init(PIN_JTAG_TDI); gpio_put(PIN_JTAG_TDI, 1);
+  gpio_set_dir(PIN_JTAG_TDI, GPIO_OUT);
+  gpio_init(PIN_JTAG_TMS); gpio_put(PIN_JTAG_TMS, 1);
+  gpio_set_dir(PIN_JTAG_TMS, GPIO_OUT);
+  gpio_init(PIN_JTAG_TDO);
+  gpio_set_dir(PIN_JTAG_TDO, GPIO_IN);
+}
+
+static void user_task(__attribute__((unused)) void *parms) {
+  static char buffer[32];
+  static int buffer_use = 0;
+  
+  debugf("----------------------------------");
+  debugf("----------- Commands -------------");
+  debugf("----------------------------------");
+  debugf("stop    - stop FPGA");
+  debugf("start   - (re)start FPGA");
+  debugf("init    - init local sdc access");
+  debugf("release - release sdc");
+  debugf("test    - test sdc access");
+  debugf("reset   - reset mcu");
+  
+  while(1) {
+    // listen for incoming commands
+    int c = getchar();
+    if(buffer_use && c == 127) {
+      buffer[--buffer_use] = '\0';       
+    } else if(buffer_use < 31 && c >= 32) {
+      buffer[buffer_use++] = c;      
+      buffer[buffer_use] = '\0';      
+    } else if(c == '\r') {
+      buffer_use = 0;
+
+      if(!strcasecmp(buffer, "stop")) {
+	debugf("Force FPGA reconfig");
+	gpio_put(PIN_nCFG, 0);	
+
+	// alternally the FPGA may be put into a mode != 00 to
+	// suppress MSPI loading	
+	// gpio_put(PIN_MODE0, 1);
+	// gpio_put(PIN_MODE1, 0);
+	// gpio_put(PIN_nCFG, 0);
+	// gpio_put(PIN_nCFG, 1);
+      } else if(!strcasecmp(buffer, "start")) {
+	debugf("Release FPGA reconfig");
+	gpio_put(PIN_nCFG, 1);
+	// gpio_put(PIN_MODE0, 0);
+	// gpio_put(PIN_MODE1, 0);
+	// gpio_put(PIN_nCFG, 0);
+	// gpio_put(PIN_nCFG, 1);
+      } else if(!strcasecmp(buffer, "init")) {
+	// gain access to local sd card
+	sdc_local_init();
+      } else if(!strcasecmp(buffer, "test")) {
+	// try to communicate with sd card
+	sdc_local_test();
+      } else if(!strcasecmp(buffer, "release")) {
+	// release card
+	sdc_local_release();
+      } else if(!strcasecmp(buffer, "reset")) {
+	mcu_hw_reset();
+      } else
+	debugf("Unknown command %s", buffer);
+    }
+    
+    
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+  
+}
+#endif
+
 void mcu_hw_init(void) {
   // default 125MHz is not appropriate for PIO USB. Sysclock should be multiple of 12MHz.
   // some devices won't enumerate propery below ~16*12Mhz
   set_sys_clock_khz(16*12000, true);
   
   stdio_init_all();    // ... so stdio can adjust its bit rate
-#ifdef WAVESHARE_RP2040_ZERO
+#if MISTLE_BOARD == 2
   // the waveshare mini does not support SWD and we thus use a simpler (slower) UART
   uart_set_baudrate(uart0, 460800);  
 #else
@@ -897,7 +1075,8 @@ void mcu_hw_init(void) {
   if(!is_pico_w)
 #endif
     {
-#ifndef WAVESHARE_RP2040_ZERO
+#ifndef WS2812_PIN
+      // prepare for using a regular led
       gpio_init(PICO_DEFAULT_LED_PIN);
       gpio_set_dir(PICO_DEFAULT_LED_PIN, 1);
       gpio_put(PICO_DEFAULT_LED_PIN, !PICO_DEFAULT_LED_PIN_INVERTED);
@@ -914,4 +1093,12 @@ void mcu_hw_init(void) {
 
   printf("Total heap: %ld\n", getTotalHeap());
   printf("Free heap: %ld\n", getFreeHeap());
+
+#ifdef ENABLE_JTAG
+  mcu_hw_jtag_init();
+  jtag_test();
+
+  // create a task for user interaction via the serial debug port
+  xTaskCreate(user_task, (char *)"user_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);  
+#endif
 }

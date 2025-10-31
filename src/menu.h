@@ -17,35 +17,12 @@
 #define MENU_EVENT_BACK         10
 #define MENU_EVENT_KEY_RELEASE  11
 
-// variables
-typedef struct {
-  const char id;
-  union {
-    int value;
-    void *ptr;
-  };
-} menu_legacy_variable_t;
-
-typedef struct {
-  const char **forms;
-  menu_legacy_variable_t *vars;
-  int form;
-  int entry;
-  int entries;
-  int offset;   // scroll offset
-
-  // infos needed to scroll a highlighted fileselector entry
-  int fs_scroll_cur;
-  sdc_dir_entry_t *fs_scroll_entry;
-} menu_legacy_t;
-
 typedef struct {
   char id;
   int value;
 } menu_variable_t;
 
 void menu_init(void);
-menu_legacy_variable_t *menu_get_vars(void);
 menu_variable_t **menu_get_variables(void);
 void menu_set_value(unsigned char id, unsigned char value);
 void menu_do(int);
