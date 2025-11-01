@@ -14,6 +14,7 @@
 #include "tusb.h"
 #include "pico/multicore.h"
 #include "hardware/clocks.h"
+#include "hardware/flash.h"
 
 #include "../debug.h"
 #include "../config.h"
@@ -1017,16 +1018,26 @@ void mcu_hw_init(void) {
 #endif
   
 #ifdef PICO_RP2350
-  printf( LOGO "        FPGA Companion for RP2350\r\n\r\n");
+  debugf( LOGO "        FPGA Companion for RP2350\r\n");
 #else
-  printf( LOGO "        FPGA Companion for RP2040\r\n\r\n");
+  debugf( LOGO "        FPGA Companion for RP2040\r\n");
 #endif
-#if CFG_TUH_RPI_PIO_USB == 0
-  printf("Using native USB\r\n");
-#else
-  printf("USB D+/D- on GP%d and GP%d\r\n", PIO_USB_DP_PIN_DEFAULT, PIO_USB_DP_PIN_DEFAULT+1);
-#endif
+
+  uint8_t txbuf[4] = {0x9f};
+  uint8_t rxbuf[4] = {0};
+  flash_do_cmd(txbuf, rxbuf, 4);
+  debugf("Flash manufacturer ID: %02x", rxbuf[1]);
+  debugf("Flash memory type: %02x", rxbuf[2]);
+  if(rxbuf[3] < 10)      debugf("Flash size: %d", 1 << rxbuf[3]);
+  else if(rxbuf[3] < 20) debugf("Flash size: %dKB", 1 << (rxbuf[3]-10));
+  else                   debugf("Flash size: %dMB", 1 << (rxbuf[3]-20));
   
+#if CFG_TUH_RPI_PIO_USB == 0
+  debugf("Using native USB");
+#else
+  debugf("USB D+/D- on GP%d and GP%d", PIO_USB_DP_PIN_DEFAULT, PIO_USB_DP_PIN_DEFAULT+1);
+#endif
+
   mcu_hw_spi_init();
 
   // initialize the LED gpios
@@ -1091,8 +1102,8 @@ void mcu_hw_init(void) {
     xTaskCreate(wifi_task, (char *)"wifi_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);  
 #endif
 
-  printf("Total heap: %ld\n", getTotalHeap());
-  printf("Free heap: %ld\n", getFreeHeap());
+  debugf("Total heap: %ld", getTotalHeap());
+  debugf("Free heap: %ld", getFreeHeap());
 
 #ifdef ENABLE_JTAG
   mcu_hw_jtag_init();
