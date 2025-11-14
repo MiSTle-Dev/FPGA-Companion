@@ -32,7 +32,8 @@ void mcu_hw_tcp_disconnect(void);
 bool mcu_hw_tcp_data(unsigned char byte);
 
 // some boards provide a connection to the FPGAs JTAG interface
-void mcu_hw_jtag_tms(uint8_t tdi, uint32_t data, int len);
+void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
+uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
 void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 
 #endif // MCU_HW_H

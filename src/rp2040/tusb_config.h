@@ -56,6 +56,33 @@
 #define BOARD_TUH_MAX_SPEED   OPT_MODE_DEFAULT_SPEED
 #endif
 
+// the dev board implements a USB JTAG bridge
+
+#if MISTLE_BOARD == 4
+#define JTAG_CHANNELS   2    // can be one or two
+   
+// RHPort number used for device can be defined by board.mk, default to port 0
+#ifndef BOARD_TUD_RHPORT
+#define BOARD_TUD_RHPORT      0
+#endif
+
+// RHPort max operational speed can defined by board.mk
+#ifndef BOARD_TUD_MAX_SPEED
+#define BOARD_TUD_MAX_SPEED   OPT_MODE_DEFAULT_SPEED
+#endif
+
+// Enable Device stack, Default is max speed that hardware controller could support with on-chip PHY
+#define CFG_TUD_ENABLED       1
+#define CFG_TUD_MAX_SPEED     BOARD_TUD_MAX_SPEED
+
+#ifndef CFG_TUD_ENDPOINT0_SIZE
+#define CFG_TUD_ENDPOINT0_SIZE    64
+#endif
+
+#define CFG_TUD_VENDOR              2
+   
+#endif
+   
 //--------------------------------------------------------------------
 // COMMON CONFIGURATION
 //--------------------------------------------------------------------
