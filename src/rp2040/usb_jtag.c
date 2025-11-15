@@ -23,6 +23,8 @@
 
 #include "../jtag.h"
 
+// #ifdef DEBUG_DATA_TRANSFER
+
 // TODO: make this a table for fast access
 static inline uint8_t reverse_byte(uint8_t byte) {
   byte = ((byte & 0x55) << 1) | ((byte & 0xaa) >> 1);
@@ -51,19 +53,18 @@ static void jtag_data(uint8_t lsb, uint8_t *txd, uint8_t *rxd, int len) {
   if(!lsb && rxd)
     for(int i=0;i<(len+7)/8;i++)
       rxd[i] = reverse_byte(rxd[i]);
-}
 
-// wrapper around mcu_hw_jtag_tms() allowing for reverse bit order
-static uint8_t jtag_tms(uint8_t lsb, uint8_t tdi, uint8_t data, int len) {
-  // reverse incoming data if needed
-  if(!lsb) data = reverse_byte(data);
-
-  uint8_t rxd = mcu_hw_jtag_tms(tdi, data, len);
-  
-  // reverse outgoing data if needed
-  if(!lsb) rxd = reverse_byte(rxd);
-
-  return rxd;
+#ifdef DEBUG_DATA_TRANSFER
+  if(rxd) {
+    // for debug, bit reverse the output
+    uint8_t rev[(len+7)/8];
+    for(int i=0;i<(len+7)/8;i++)
+      rev[i] = reverse_byte(rxd[i]);
+    
+    jtag_debugf("RET:");
+    hexdump(rev, (len+7)/8);
+  }
+#endif
 }
 
 /* ======================================================================== */
@@ -147,7 +148,8 @@ static void cmd_parse(struct jtag *jtag) {
     for(int i=0;i<8;i++) bits[i] = (dir&(0x80>>i))?'O':'I';
     bits[8] = '\0';
     
-    usb_debugf("Set data bits %s value 0x%02x, dir 0x%02x=%s", (jtag->cmd_buf.data.cmd.code&2)?"high":" low", value, dir, bits);
+    usb_debugf("Set data bits %s value 0x%02x, dir 0x%02x=%s",
+	       (jtag->cmd_buf.data.cmd.code&2)?"high":" low", value, dir, bits);
     
     /* we currently only support the lower bits */
     if(!(jtag->cmd_buf.data.cmd.code&2)) {
@@ -185,11 +187,14 @@ static void cmd_parse(struct jtag *jtag) {
     int divisor = jtag->cmd_buf.data.cmd.w;
     int rate = 12000000 / ((1+divisor) * 2);
     usb_debugf("Set TCK/SK Divisor to %d = %d Mhz", divisor, rate/1000000);
-    // pio_jtag_set_clk_freq(&jtag->pio, rate/1000);
   } break;
 
   case 0x87:
+    // this happends quite often during normal data transfers
+    // TODO: Check if we should purge the buffer
+#ifdef DEBUG_DATA_TRANSFER
     usb_debugf("Flush");
+#endif
     break;
 
   case 0x8a:
@@ -261,36 +266,35 @@ static uint16_t shift_bits(struct jtag *jtag) {
   uint8_t data;
   if(cmd & 0x50) data = jtag->cmd_buf.data.cmd.b[1];
   
-#if 0
+#ifdef DEBUG_DATA_TRANSFER
   usb_debugf("[%02x] shift %d bits", shift_len, cmd);
   hexdump(&data, (shift_len+7)/8);
 #endif
   
   if(cmd & 0x40) {
+#ifdef DEBUG_DATA_TRANSFER
     usb_debugf("JTAG TMS BIT WRITE %d %02x", shift_len, data);
+#endif
 
-    uint8_t rx = jtag_tms((cmd&8)?1:0, (data&80)?1:0, data, shift_len);
-    if(cmd & 0x20) {
-      jtag->reply_buffer[jtag->reply_len + 2] = rx;
-      jtag->reply_len += (shift_len+7)/8;
-    }
-    
-    //    pio_jtag_write_tms(&jtag->pio, (cmd&8)?1:0, (data&0x80)?1:0, &data,
-    //       (cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL, shift_len);
+    // although technically possible, there is no MSB variant of the
+    // TMS commands. Bit 3 is always set, variants with bit 3 unset
+    // are invalid.
+    uint8_t rx = mcu_hw_jtag_tms((data&0x80)?1:0, data, shift_len);
+    // the tms command will return exactly one byte
+    if(cmd & 0x20) jtag->reply_buffer[jtag->reply_len++ + 2] = rx;
   } else {
+#ifdef DEBUG_DATA_TRANSFER
     usb_debugf("JTAG TDI BIT WRITE %d %02x", shift_len, data);
-
+#endif
+    
     jtag_data((cmd&8)?1:0, (cmd & 0x10)?&data:NULL,
 	      (cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL,
 	      shift_len);
       
-    //pio_jtag_write_tdi_read_tdo(&jtag->pio, (cmd&8)?1:0, (cmd & 0x10)?&data:NULL,
-    //			(cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL, shift_len);
     if(cmd & 0x20) jtag->reply_len += (shift_len+7)/8;
   }
 
-  // usb_debugf("reply len now %d", jtag->reply_len);
-  return 0;  // no additional bytes used
+  return 0;  // no additional bytes used in any bit shift command
 } 
 
 static uint16_t shift_bytes(struct jtag *jtag, uint8_t *buf, uint16_t len) {
@@ -299,7 +303,7 @@ static uint16_t shift_bytes(struct jtag *jtag, uint8_t *buf, uint16_t len) {
   // length is given in bytes and command length is variable
   uint16_t shift_len = jtag->cmd_buf.data.cmd.w + 1;
 
-#if 1
+#ifdef DEBUG_DATA_TRANSFER
   usb_debugf("[%02x] shift %d bytes (%d avail)", cmd, shift_len, len);
   if(shift_len > len) hexdump(buf, len);
   else                hexdump(buf, shift_len);
@@ -343,9 +347,6 @@ static uint16_t shift_bytes(struct jtag *jtag, uint8_t *buf, uint16_t len) {
 	    (cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL,
 	    shift_len*8);
 
-    //  pio_jtag_write_tdi_read_tdo(&jtag->pio, (cmd&8)?1:0, (cmd & 0x10)?buf:NULL,
-  //			      (cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL,
-  //			      shift_len*8);
   if(cmd & 0x20) jtag->reply_len += shift_len;
   
   // W-TDI set? There was payload used
@@ -389,8 +390,6 @@ static bool check_reply_buffer(struct jtag *jtag) {
   // 64 bytes in the reply buffer left.
 
   // reply_len does not include the two header bytes
-  // usb_debugf("Reply buffer usage is %d of %d", jtag->reply_len+2, REPLY_BUFFER_SIZE);
-  
   if(jtag->reply_len+2 > REPLY_BUFFER_SIZE-64) {
     // the buffer should actually never overflow
     if(jtag->reply_len+2 > REPLY_BUFFER_SIZE) 
@@ -410,7 +409,7 @@ static void check_for_outgoing_data(struct jtag *jtag) {
   
   // check if there's now data in the reply buffer and request to return it
   if(jtag->reply_len) {
-#if 0
+#ifdef DEBUG_DATA_TRANSFER
     usb_debugf("REPLY: %d", jtag->reply_len);
     hexdump(jtag->reply_buffer+2, jtag->reply_len);
 #endif
@@ -421,16 +420,20 @@ static void check_for_outgoing_data(struct jtag *jtag) {
 
     // as a full speed device we can return max 62 bytes per USB transfer
     if(jtag->reply_len >= 62) {
+#ifdef DEBUG_DATA_TRANSFER
       usb_debugf("TX partial 64");
+#endif
       tud_vendor_n_write(jtag->usb_itf, jtag->reply_buffer, 64);
       tud_vendor_n_write_flush(jtag->usb_itf);
       // shift data down
       memmove(jtag->reply_buffer+2, jtag->reply_buffer+64, REPLY_BUFFER_SIZE-64);
       jtag->reply_len -= 62;
     } else {    
+#ifdef DEBUG_DATA_TRANSFER
       usb_debugf("TX 2+%d", jtag->reply_len);
       if(jtag->reply_len < 8)
 	hexdump(jtag->reply_buffer, jtag->reply_len+2);
+#endif
       
       // Send all data back to host
       tud_vendor_n_write(jtag->usb_itf, jtag->reply_buffer, jtag->reply_len+2);
@@ -447,7 +450,9 @@ static void check_for_outgoing_data(struct jtag *jtag) {
       tud_vendor_n_read_flush(jtag->usb_itf);
     }
   } else {
+#ifdef DEBUG_DATA_TRANSFER
     usb_debugf("TX 2+0");
+#endif
     tud_vendor_n_write(jtag->usb_itf, REPLY_STATUS, 2);
     tud_vendor_n_write_flush(jtag->usb_itf);
     jtag->tx_pending = true;
@@ -456,7 +461,7 @@ static void check_for_outgoing_data(struct jtag *jtag) {
 
 // https://github.com/MiSTle-Dev/PICO-MPSSE/blob/main/pico_mpsse/pico_mpsse.c
 void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize) {
-#if 1
+#ifdef DEBUG_DATA_TRANSFER
   usb_debugf("tud_vendor_rx_cb(%d, %p, %d)", itf, buffer, bufsize); 
   hexdump(buffer, bufsize);
 #endif
@@ -502,18 +507,15 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize) {
 void tud_vendor_tx_cb(uint8_t itf, uint32_t bufsize) {
   struct jtag *jtag = &jtag_engine[itf];
 
+#ifdef DEBUG_DATA_TRANSFER
   usb_debugf("tud_vendor_tx_cb(%d)", itf);
+#endif
   jtag->tx_pending = false;
   check_for_outgoing_data(jtag);
 }
 
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const* request) {
-  // usb_debugf("tud_vendor_control_xfer_cb()");
-
   bool dir_in = (request->bmRequestType_bit.direction == TUSB_DIR_IN) ? true : false; 
-  //  usb_debugf("if=0x%02x stage=%d req=0x%02x type=0x%02x dir=%s wValue=0x%04x wIndex=0x%04x wLength=%d",
-  //  	     request->wIndex, stage, request->bRequest, request->bmRequestType_bit.type,
-  //	     dir_in ? "IN" : "OUT", request->wValue, request->wIndex, request->wLength);
 
   if (request->bmRequestType_bit.type != TUSB_REQ_TYPE_VENDOR) {
     usb_debugf("Ignoring unexpected type 0x%02x", request->bmRequestType);
@@ -589,16 +591,19 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
     tud_control_status(rhport, request);
     return true;
   } else {
+    usb_debugf("tud_vendor_control_xfer_cb(if=0x%02x stage=%d req=0x%02x type=0x%02x dir=%s wValue=0x%04x wIndex=0x%04x wLength=%d)",
+	       request->wIndex, stage, request->bRequest, request->bmRequestType_bit.type,
+	       dir_in ? "IN" : "OUT", request->wValue, request->wIndex, request->wLength);
+    
     usb_debugf("UNEXPECTED IN");
     
     /* ... in transfer */
 
 #if 0
+    // a reply would be sent like this:
     ctrl_rsp[0] = 0x00;
     rsp_len = 1;
  
-    // Call tud_control_xfer to send the response, returning its return
-    // code
     return tud_control_xfer(rhport, request, ctrl_rsp, rsp_len);
 #endif
 

@@ -146,11 +146,13 @@ static void pio_usb_task(__attribute__((unused)) void *parms) {
     xbox_state[i].dev_addr = 0xff;
     
   while(1) {
-    tuh_task();
+    for(int i=0;i<100;i++) {
+      tuh_task();
 #if MISTLE_BOARD == 4
-    tud_task();
+      tud_task();
 #endif
-    //    vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 
@@ -865,7 +867,8 @@ uint32_t getFreeHeap(void) {
 
 #ifdef ENABLE_JTAG
 
-#define DEBUG_TAP     // set to follow the JTAG state machine
+// #define DEBUG_JTAG    // debug raw JTAG IO
+// #define DEBUG_TAP     // set to follow the JTAG state machine
 
 #ifdef DEBUG_TAP
 #define JTAG_STATE_TEST_LOGIC_RESET  0
@@ -973,9 +976,11 @@ static const char *jtag_tap_state_name(void) {
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   // bit order is TMS/TDO/TDI/TCK, for JTAG this will be IOII  
   uint8_t pins[] = { PIN_JTAG_TCK, PIN_JTAG_TDI, PIN_JTAG_TDO, PIN_JTAG_TMS };
-  
-  jtag_debugf("PIN DIR 0x%02x, DATA 0x%02x", dir, data);
 
+#ifdef DEBUG_JTAG
+  jtag_debugf("PIN DIR 0x%02x, DATA 0x%02x", dir, data);
+#endif
+  
   // only the lowest four bits are actually implemented
   // TODO: consider another bit for RECONF
   for(int i=0;i<4;i++) {
@@ -995,6 +1000,7 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
     gpio_put(PIN_JTAG_TMS, (data & mask)?1:0);  
     gpio_put(PIN_JTAG_TCK, 1);
 
+#ifdef DEBUG_JTAG
 #ifdef DEBUG_TAP
     // this may put zeroes into the IR 
     if(tap_state == JTAG_STATE_SHIFT_IR)
@@ -1005,6 +1011,7 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
 		jtag_tap_state_name());
 #else
     jtag_debugf("TMS %d TDI %d TDO %d", (data & mask)?1:0, tdi, gpio_get(PIN_JTAG_TDO));
+#endif
 #endif
     
     if(gpio_get(PIN_JTAG_TDO)) rx |= mask;
@@ -1018,7 +1025,7 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
 
 void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
   uint8_t mask = 1;
-  // uint8_t rx_mask = 1;
+  int dlen = len & 7;
 
 #ifdef DEBUG_TAP
   // data transmissions are only expected in states SHIFT_DR and SHIFT_IR
@@ -1030,6 +1037,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
   gpio_put(PIN_JTAG_TMS, 0);
 
   while(len) {
+    // TOOD: Don't touch TDI at all if we are reading, but not writing    
     int tx_bit = txd?((*txd & mask)?1:0):1;
     
     // set data bit and clock tck at once
@@ -1050,7 +1058,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
       if(gpio_get(PIN_JTAG_TDO)) *rxd |=  mask;
       else                       *rxd &= ~mask;
     }
-
+    
     gpio_put(PIN_JTAG_TCK, 0);
 
     // advance bit mask
@@ -1062,16 +1070,24 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
     }
     len--;
   }    
+
+  // We aren't really shifting, but instead setting bits
+  // via mask. This makes a difference for the last byte
+  // when not reading all 8 bits
+  if(dlen) {
+    // jtag_highlight_debugf("last byte %02x, rshift = %d", *rxd, dlen);
+    *rxd <<= 8-dlen;
+  }
 }
 
 static void mcu_hw_jtag_init(void) {
   // -------- init FPGA control pins ---------
 
-  // FPGA mode pins. Both low for regular boot
-  gpio_init(PIN_MODE0); gpio_put(PIN_MODE0, 0);
-  gpio_set_dir(PIN_MODE0, GPIO_OUT);
-  gpio_init(PIN_MODE1); gpio_put(PIN_MODE1, 0);
-  gpio_set_dir(PIN_MODE1, GPIO_OUT);
+  // FPGA mode pins. Init as inputs, so the buttons work
+  gpio_init(PIN_MODE0); // gpio_put(PIN_MODE0, 0);
+  gpio_set_dir(PIN_MODE0, GPIO_IN);
+  gpio_init(PIN_MODE1); // gpio_put(PIN_MODE1, 0);
+  gpio_set_dir(PIN_MODE1, GPIO_IN);
 
   // FPGA reconfig pin, active low
   gpio_init(PIN_nCFG); gpio_put(PIN_nCFG, 1);

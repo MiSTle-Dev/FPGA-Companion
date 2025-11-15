@@ -261,12 +261,10 @@ static void sys_handle_event(bool ignore_coldboot) {
       if(!reset_timer) reset_timer = xTaskGetTickCount();
     } else {
       // do a full mcu reset if reset button has been pressed for 2 seconds
-      if(reset_timer) {
-	if((xTaskGetTickCount() - reset_timer) > pdMS_TO_TICKS(2000))
-	  mcu_hw_reset();
+      if(reset_timer && ((xTaskGetTickCount() - reset_timer) > pdMS_TO_TICKS(2000)))
+	mcu_hw_reset();
       
-	reset_timer = 0;
-      }
+      reset_timer = 0;
     }
 
     // the second button controls the OSD, so it can be used in conjunction
@@ -281,6 +279,11 @@ static void sys_handle_event(bool ignore_coldboot) {
       sys_debugf("FPGA cold boot detected, ignoring for now");
     else {
       sys_debugf("FPGA cold boot detected, reseting MCU ...");
+
+      // Check for USB-JTAG activity and wait for it to finish. The delay
+      // is just a quick fix
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      
       mcu_hw_reset();
     }
   }
