@@ -282,7 +282,7 @@ static void sys_handle_event(bool ignore_coldboot) {
 
       // Check for USB-JTAG activity and wait for it to finish. The delay
       // is just a quick fix
-      vTaskDelay(pdMS_TO_TICKS(1000));
+      vTaskDelay(pdMS_TO_TICKS(2000));
       
       mcu_hw_reset();
     }

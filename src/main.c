@@ -104,6 +104,9 @@ static void com_task(__attribute__((unused)) void *p ) {
     // startup normally if one is detected
     if(sys_status_is_valid()) {
       debugf("FPGA detected!");
+      // This may be due to a USB download. So give USB
+      // some time to finish. The same happens in sysconfig.c
+      vTaskDelay(pdMS_TO_TICKS(2000));
       mcu_hw_reset();
     }
       

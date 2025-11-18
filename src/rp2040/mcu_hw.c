@@ -136,7 +136,8 @@ static struct {
   int16_t state_y;
   uint8_t state_btn_extra;
 } xbox_state[MAX_XBOX_DEVICES];
-  
+
+extern void usb_jtag_poll(void);
 static void pio_usb_task(__attribute__((unused)) void *parms) {
   // mark all hid and xbox entries as unused
   for(int i=0;i<MAX_HID_DEVICES;i++)
@@ -150,6 +151,7 @@ static void pio_usb_task(__attribute__((unused)) void *parms) {
       tuh_task();
 #if MISTLE_BOARD == 4
       tud_task();
+      usb_jtag_poll();
 #endif
     }
     vTaskDelay(pdMS_TO_TICKS(1));

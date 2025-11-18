@@ -4,6 +4,9 @@
 
 #include "tusb.h"
 
+#include <FreeRTOS.h>
+#include <timers.h>
+
 #include "../mcu_hw.h"
 #include "../debug.h"
 
@@ -23,7 +26,7 @@
 
 #include "../jtag.h"
 
-// #ifdef DEBUG_DATA_TRANSFER
+// #define DEBUG_DATA_TRANSFER
 
 // TODO: make this a table for fast access
 static inline uint8_t reverse_byte(uint8_t byte) {
@@ -72,23 +75,46 @@ static void jtag_data(uint8_t lsb, uint8_t *txd, uint8_t *rxd, int len) {
 /* ======================================================================== */
 
 // this is the status reply sent in all replies
-#define REPLY_STATUS   "\x32\x60"
+#define REPLY_STATUS   "\x02\x60"
 
+/* Modem status, x02/x60
+   0
+   0
+   0
+   0
+   0    MODEM_CTS = 1 << 4      Clear to send
+   1    MODEM_DSR = 1 << 5      Data set ready
+   1    MODEM_RI = 1 << 6       Ring indicator
+   0    MODEM_RLSD = 1 << 7     Carrier detect
+   0    MODEM_DR = 1 << 8       Data ready
+   1    MODEM_OE = 1 << 9       Overrun error
+   0    MODEM_PE = 1 << 10      Parity error
+   0    MODEM_FE = 1 << 11      Framing error
+   0    MODEM_BI = 1 << 12      Break interrupt
+   0    MODEM_THRE = 1 << 13    Transmitter holding register
+   0    MODEM_TEMT = 1 << 14    Transmitter empty
+   0    MODEM_RCVE = 1 << 15    Error in RCVR FIFO
+*/
+   
 // the reply buffer should be able to hold at least two times the max
 // endpoint transfer size of 64 bytes. Since the pico will stop
 // accepting incoming requests via USB while the output buffer is full
 // the buffer should actually be at least 256 bytes
-#define REPLY_BUFFER_SIZE (1024)
+// #define REPLY_BUFFER_SIZE (1024)
+#define REPLY_BUFFER_SIZE (256)
 
 struct jtag {
-  uint8_t usb_itf;
-  bool loopback;
-  bool tx_pending, rx_disabled;
-  uint16_t reply_len;
+  uint8_t usb_itf;     // USB interface this JTAG port is associated with
+  bool loopback;       // chip internal loopback is enabled
+  bool rx_disabled;    // the receiver is disabled sind the buffer is full
+  bool tx_pending;     // a transmission is in progress
+  uint16_t reply_len;  // reply (transmit) buffer usage
   uint8_t reply_buffer[REPLY_BUFFER_SIZE];
   uint16_t pending_writes;
   uint8_t pending_write_cmd;
   uint8_t mode;  // 2=JTAG
+  uint8_t latency_timer;
+  TickType_t latency_timer_last_event;
   
   // command buffer to assemble incoming commands and
   // which may be split over multiple usb transfers
@@ -116,8 +142,10 @@ void tud_mount_cb(void) {
 
   for(int i=0;i<JTAG_CHANNELS;i++) {
     jtag_engine[i].usb_itf = i;
+    jtag_engine[i].latency_timer = 16;
+    jtag_engine[i].latency_timer_last_event = 0;
     jtag_engine[i].loopback = false;
-    jtag_engine[i].tx_pending = false;
+    jtag_engine[i].tx_pending = false;       // no tx pending
     jtag_engine[i].rx_disabled = false;
     jtag_engine[i].reply_len = 0;
     jtag_engine[i].cmd_buf.len = 0;
@@ -134,6 +162,83 @@ void tud_suspend_cb(bool remote_wakeup_en) {
 
 void tud_resume_cb(void) {
   usb_debugf("tud_resume_cb()");
+}
+
+static bool check_reply_buffer(struct jtag *jtag) {
+  // the reply buffer has a limited size. Once it runs
+  // too full we need to stop accepting incoming requests
+  // as the buffer may otherwise overflow. Since we cannot
+  // know how much data the next request will ask to be
+  // returned we stop the receiver once we have less than
+  // 64 bytes in the reply buffer left.
+
+  // reply_len does not include the two header bytes
+  if(jtag->reply_len+2 > REPLY_BUFFER_SIZE-64) {
+    // the buffer should actually never overflow
+    if(jtag->reply_len+2 > REPLY_BUFFER_SIZE) 
+      printf(">>> REPLY BUFFER DID OVERFLOW!!! <<< Stopping receiver\n");
+    else
+      usb_debugf("Warning, reply buffer may overflow. Stopping receiver");
+    
+    return false;
+  }
+  return true;
+}
+
+static void send_status_and_data(struct jtag *jtag) {
+  if(jtag->tx_pending) return;
+
+  // check if there's now data in the reply buffer and request to return it
+  if(jtag->reply_len) {
+#ifdef DEBUG_DATA_TRANSFER
+    usb_debugf("REPLY: %d", jtag->reply_len);
+    hexdump(jtag->reply_buffer+2, jtag->reply_len);
+#endif
+    
+    // data is always stored from byte 2 on in the reply buffer, so that the
+    // status can be placed in front
+    memcpy(jtag->reply_buffer, REPLY_STATUS, 2);
+
+    // as a full speed device we can return max 62 bytes per USB transfer
+    if(jtag->reply_len >= 62) {
+#ifdef DEBUG_DATA_TRANSFER
+      usb_debugf("TX partial 64");
+#endif
+      tud_vendor_n_write(jtag->usb_itf, jtag->reply_buffer, 64);
+      tud_vendor_n_write_flush(jtag->usb_itf);
+      // shift data down
+      memmove(jtag->reply_buffer+2, jtag->reply_buffer+64, REPLY_BUFFER_SIZE-64);
+      jtag->reply_len -= 62;
+    } else {    
+#ifdef DEBUG_DATA_TRANSFER
+      usb_debugf("TX 2+%d", jtag->reply_len);
+      if(jtag->reply_len < 8)
+	hexdump(jtag->reply_buffer, jtag->reply_len+2);
+#endif
+      
+      // Send all data back to host
+      tud_vendor_n_write(jtag->usb_itf, jtag->reply_buffer, jtag->reply_len+2);
+      tud_vendor_n_write_flush(jtag->usb_itf);
+      jtag->reply_len = 0;
+    }
+    jtag->tx_pending = true;
+
+    if(jtag->rx_disabled && check_reply_buffer(jtag)) {
+      usb_debugf("FLOW: re-enable receiver");
+      jtag->rx_disabled = false;      
+      tud_vendor_n_read_flush(jtag->usb_itf);
+    }
+  } else {
+#ifdef DEBUG_DATA_TRANSFER
+    usb_debugf("TX 2+0");
+#endif
+    tud_vendor_n_write(jtag->usb_itf, REPLY_STATUS, 2);
+    tud_vendor_n_write_flush(jtag->usb_itf);
+    jtag->tx_pending = true;
+  }
+
+  // remember that we just sent data
+  jtag->latency_timer_last_event = xTaskGetTickCount();      
 }
 
 // parse a non-shifting command
@@ -164,7 +269,8 @@ static void cmd_parse(struct jtag *jtag) {
     uint8_t reply = 0;
 
     // only low byte supported
-    //    if(!(jtag->cmd_buf.data.cmd.code&2)) reply = port_gpio_get(jtag);
+    // TODO: implement this
+    //  if(!(jtag->cmd_buf.data.cmd.code&2)) reply = port_gpio_get(jtag);
       
     usb_debugf("Get data bits %s: 0x%02x", (jtag->cmd_buf.data.cmd.code&2)?"high":"low", reply);
 
@@ -185,16 +291,18 @@ static void cmd_parse(struct jtag *jtag) {
   case 0x86: {
     // send input state in a reply byte
     int divisor = jtag->cmd_buf.data.cmd.w;
-    int rate = 12000000 / ((1+divisor) * 2);
-    usb_debugf("Set TCK/SK Divisor to %d = %d Mhz", divisor, rate/1000000);
+    int rate12 = 12000000 / ((1+divisor) * 2);
+    int rate60 = 60000000 / ((1+divisor) * 2);
+    usb_debugf("Set TCK/SK Divisor to %d = %d/%d khz",
+	       divisor, rate12/1000, rate60/1000);
   } break;
 
   case 0x87:
     // this happends quite often during normal data transfers
-    // TODO: Check if we should purge the buffer
 #ifdef DEBUG_DATA_TRANSFER
     usb_debugf("Flush");
 #endif
+    send_status_and_data(jtag);
     break;
 
   case 0x8a:
@@ -205,9 +313,24 @@ static void cmd_parse(struct jtag *jtag) {
     usb_debugf("Enable div by 5 (12MHz master clock)");
     break;
 
+    // gowin programmer uses this ...
+  case 0x8d:
+    usb_debugf("Disable 3 phase clocking");
+    break;
+    
+    // gowin programmer uses this ...
+  case 0x97:
+    usb_debugf("Disable adaptive clocking");
+    break;
+    
   default:
-    usb_debugf("Unexpected command %02x", jtag->cmd_buf.data.cmd.code);
-    for(;;);
+    usb_debugf("Unexpected command 0x%02x", jtag->cmd_buf.data.cmd.code);
+
+    // reply with "Bad Command". The gowin programmer triggers
+    // this and expects a reply
+    jtag->reply_buffer[jtag->reply_len+2] = 0xfa;
+    jtag->reply_buffer[jtag->reply_len+3] = jtag->cmd_buf.data.cmd.code;
+    jtag->reply_len += 2;
   }
 }
 
@@ -326,8 +449,10 @@ static uint16_t shift_bytes(struct jtag *jtag, uint8_t *buf, uint16_t len) {
   
   // it may happen that we are supposed to shift out more bits than we have payload
   if((cmd & 0x10) && (shift_len > len)) {
-    usb_debugf("Trunc write %d to %d", shift_len, len);
-
+#ifdef DEBUG_DATA_TRANSFER
+    usb_debugf("Partial write %d, avail %d", shift_len, len);
+#endif
+    
     jtag_data((cmd&8)?1:0, buf,
 	      (cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL,
 	      len*8);
@@ -336,8 +461,6 @@ static uint16_t shift_bytes(struct jtag *jtag, uint8_t *buf, uint16_t len) {
     jtag->pending_writes = shift_len-len;
     jtag->pending_write_cmd = cmd;
 
-    for(;;);
-    
     return len;  // all data consumed that was there
   }
 
@@ -381,84 +504,6 @@ static uint16_t cmd_shift_parse(struct jtag *jtag, uint8_t *buf, uint16_t len) {
   else        return shift_bytes(jtag, buf, len);
 }
 
-static bool check_reply_buffer(struct jtag *jtag) {
-  // the reply buffer has a limited size. Once it runs
-  // too full we need to stop accepting incoming requests
-  // as the buffer may otherwise overflow. Since we cannot
-  // know how much data the next request will ask to be
-  // returned we stop the receiver once we have less than
-  // 64 bytes in the reply buffer left.
-
-  // reply_len does not include the two header bytes
-  if(jtag->reply_len+2 > REPLY_BUFFER_SIZE-64) {
-    // the buffer should actually never overflow
-    if(jtag->reply_len+2 > REPLY_BUFFER_SIZE) 
-      printf(">>>>>>>>>>>>>> REPLY BUFFER DID OVERFLOW!!! <<<<<<<<<<<<<<<<<\n");
-    else
-      usb_debugf("FLOW: reply buffer may overflow");
-      
-    // don't allow any more replies
-    usb_debugf("FLOW: stopping receiver");
-    return false;
-  }
-  return true;
-}
-
-static void check_for_outgoing_data(struct jtag *jtag) {
-  if(jtag->tx_pending) return;
-  
-  // check if there's now data in the reply buffer and request to return it
-  if(jtag->reply_len) {
-#ifdef DEBUG_DATA_TRANSFER
-    usb_debugf("REPLY: %d", jtag->reply_len);
-    hexdump(jtag->reply_buffer+2, jtag->reply_len);
-#endif
-    
-    // data is always stored from byte 2 on in the reply buffer, so that the
-    // status can be placed in front
-    memcpy(jtag->reply_buffer, REPLY_STATUS, 2);
-
-    // as a full speed device we can return max 62 bytes per USB transfer
-    if(jtag->reply_len >= 62) {
-#ifdef DEBUG_DATA_TRANSFER
-      usb_debugf("TX partial 64");
-#endif
-      tud_vendor_n_write(jtag->usb_itf, jtag->reply_buffer, 64);
-      tud_vendor_n_write_flush(jtag->usb_itf);
-      // shift data down
-      memmove(jtag->reply_buffer+2, jtag->reply_buffer+64, REPLY_BUFFER_SIZE-64);
-      jtag->reply_len -= 62;
-    } else {    
-#ifdef DEBUG_DATA_TRANSFER
-      usb_debugf("TX 2+%d", jtag->reply_len);
-      if(jtag->reply_len < 8)
-	hexdump(jtag->reply_buffer, jtag->reply_len+2);
-#endif
-      
-      // Send all data back to host
-      tud_vendor_n_write(jtag->usb_itf, jtag->reply_buffer, jtag->reply_len+2);
-      tud_vendor_n_write_flush(jtag->usb_itf);
-      jtag->reply_len = 0;
-    }
-    jtag->tx_pending = true;
-
-    if(jtag->rx_disabled && check_reply_buffer(jtag)) {
-      usb_debugf("FLOW: re-enable receiver <------------------------------------");
-      jtag->rx_disabled = false;
-      
-      // TODO: check if this is the correct solution:
-      tud_vendor_n_read_flush(jtag->usb_itf);
-    }
-  } else {
-#ifdef DEBUG_DATA_TRANSFER
-    usb_debugf("TX 2+0");
-#endif
-    tud_vendor_n_write(jtag->usb_itf, REPLY_STATUS, 2);
-    tud_vendor_n_write_flush(jtag->usb_itf);
-    jtag->tx_pending = true;
-  }
-}
-
 // https://github.com/MiSTle-Dev/PICO-MPSSE/blob/main/pico_mpsse/pico_mpsse.c
 void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize) {
 #ifdef DEBUG_DATA_TRANSFER
@@ -468,50 +513,72 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize) {
   
   struct jtag *jtag = &jtag_engine[itf];
 
-  // parse incoming command  
-  while(bufsize) {
-    // move next byte into command buffer
-    // printf("BUF %d -> %02x to %d\n", bufsize, *buffer, jtag->cmd_buf.len);
-    jtag->cmd_buf.data.bytes[jtag->cmd_buf.len++] = *buffer++;
-    bufsize--;
+  // check if this port is in mpsse mode at all
+  if(jtag->mode == 2) {
+    // check if there are remaining bytes to shift from previous request
+    if(jtag->pending_writes) {
+      uint16_t bytes2shift = (bufsize < jtag->pending_writes)?bufsize:jtag->pending_writes;
+#ifdef DEBUG_DATA_TRANSFER
+      usb_debugf("Continue pending write %d of %d", bytes2shift, jtag->pending_writes);
+#endif
+      
+      jtag_data((jtag->pending_write_cmd&8)?1:0, buffer,
+		(jtag->pending_write_cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL,
+		(uint32_t)bytes2shift*8);
+      if(jtag->pending_write_cmd & 0x20) jtag->reply_len += bytes2shift;
+      
+      jtag->pending_writes -= bytes2shift;      
+      bufsize -= bytes2shift;
+      buffer += bytes2shift;
 
-    if(jtag->cmd_buf.len &&
-       cmd_size(jtag->cmd_buf.data.cmd.code) <= jtag->cmd_buf.len) {
-      if(jtag->cmd_buf.data.cmd.code & 0x80) {
-	cmd_parse(jtag);
-      } else  {
-	int skip = cmd_shift_parse(jtag, buffer, bufsize);
-	buffer += skip;
-	bufsize -= skip;
+      // has all data been used up? Prepare for next reply
+      if(!bufsize) {
+	tud_vendor_n_read_flush(itf);
+	return;
       }
-	
-      // flush the command buffer
-      jtag->cmd_buf.len = 0;
     }
-  }  
 
-  // re-enable receiver, now that all data has been processed. But make sure
-  // we can actually accept more data
-  if(!check_reply_buffer(jtag)) {
-    jtag->rx_disabled = true;
+    // parse incoming command  
+    while(bufsize) {
+      // move next byte into command buffer
+      // printf("BUF %d -> %02x to %d\n", bufsize, *buffer, jtag->cmd_buf.len);
+      jtag->cmd_buf.data.bytes[jtag->cmd_buf.len++] = *buffer++;
+      bufsize--;
+      
+      if(jtag->cmd_buf.len &&
+	 cmd_size(jtag->cmd_buf.data.cmd.code) <= jtag->cmd_buf.len) {
+	if(jtag->cmd_buf.data.cmd.code & 0x80) {
+	  cmd_parse(jtag);
+	} else  {
+	  int skip = cmd_shift_parse(jtag, buffer, bufsize);
+	  buffer += skip;
+	  bufsize -= skip;
+	}
+	
+	// flush the command buffer
+	jtag->cmd_buf.len = 0;
+      }
+    }  
 
-    printf("disable rx\n");
-    for(;;);
+    // re-enable receiver, now that all data has been processed. But make sure
+    // we can actually accept more data
+    if(!check_reply_buffer(jtag)) {
+      // this is untested as we've recently been unable to trigger this      
+      usb_debugf("FLOW: disable receiver");
+      jtag->rx_disabled = true;      
+    } else
+      tud_vendor_n_read_flush(itf);
   } else
-    tud_vendor_n_read_flush(itf);
-
-  // TODO: check why the following is needed
-  check_for_outgoing_data(jtag);
+    usb_debugf("No in MPSSE mode");
 }
 
 void tud_vendor_tx_cb(uint8_t itf, uint32_t bufsize) {
   struct jtag *jtag = &jtag_engine[itf];
+  jtag->tx_pending = false;
 
 #ifdef DEBUG_DATA_TRANSFER
   usb_debugf("tud_vendor_tx_cb(%d)", itf);
 #endif
-  jtag->tx_pending = false;
-  check_for_outgoing_data(jtag);
 }
 
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const* request) {
@@ -538,7 +605,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
       
     case 0x00:
       usb_debugf("RESET, #%d=%d", request->wIndex, request->wValue);
-      if(request->wValue == 0) check_for_outgoing_data(jtag);  // TODO: <<<<---- remove this
+      if(request->wValue == 2) send_status_and_data(jtag);
       break;
 
     case 0x01:
@@ -571,6 +638,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
       
     case 0x09:
       usb_debugf("SET LATENCY TIMER, #%d=%d", request->wIndex, request->wValue);
+      jtag->latency_timer = request->wValue & 0xff;
       break;
       
     case 0x0b:
@@ -581,7 +649,15 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 	//  port_gpio_set_dir(jtag, pkt->wValue & 0xff);
       }
       break;
-	
+
+    case 0x91:
+      usb_debugf("WRITE EEPROM, #%d=%04x", request->wIndex, request->wValue);
+      break;
+
+    case 0x92:
+      usb_debugf("ERASE EEPROM, #%d=0x%04x", request->wIndex, request->wValue);
+      break;
+
     default:
       usb_debugf("Unsupported request %02x", request->bRequest);
       return false;
@@ -591,23 +667,51 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
     tud_control_status(rhport, request);
     return true;
   } else {
-    usb_debugf("tud_vendor_control_xfer_cb(if=0x%02x stage=%d req=0x%02x type=0x%02x dir=%s wValue=0x%04x wIndex=0x%04x wLength=%d)",
-	       request->wIndex, stage, request->bRequest, request->bmRequestType_bit.type,
-	       dir_in ? "IN" : "OUT", request->wValue, request->wIndex, request->wLength);
-    
-    usb_debugf("UNEXPECTED IN");
-    
-    /* ... in transfer */
+    //    usb_debugf("tud_vendor_control_xfer_cb(if=0x%02x stage=%d req=0x%02x "
+    //	       "type=0x%02x dir=%s wValue=0x%04x wIndex=0x%04x wLength=%d)",
+    //	       request->wIndex, stage, request->bRequest, request->bmRequestType_bit.type,
+    //	       dir_in ? "IN" : "OUT", request->wValue, request->wIndex, request->wLength);
 
-#if 0
-    // a reply would be sent like this:
-    ctrl_rsp[0] = 0x00;
-    rsp_len = 1;
- 
-    return tud_control_xfer(rhport, request, ctrl_rsp, rsp_len);
-#endif
+    switch(request->bRequest) {
+    case 0x05:
+      usb_debugf("POLL MODEM STATUS");
+      return tud_control_xfer(rhport, request, REPLY_STATUS, 2);
+      break;
+      
+    case 0x0a:
+      usb_debugf("GET LATENCY TIMER = %d", jtag->latency_timer);
+      return tud_control_xfer(rhport, request, &(jtag->latency_timer), 1);
 
+      break;
+
+    case 0x90: // read eeprom      
+      usb_debugf("READ EEPROM, #%d=0xffff", request->wIndex);
+      // just return 0xffff as we don't implement the eeprom
+      return tud_control_xfer(rhport, request, "\xff\xff", 2);
+      break;
+	
+    default:
+      usb_debugf("Unsupported vendor in request 0x%02x, #%d=%d",
+		 request->bRequest, request->wIndex, request->wValue);
+      break;    
+    }
   }
     
   return false;
+}
+
+void usb_jtag_poll(void) {
+  for(int i=0;i<JTAG_CHANNELS;i++) {
+
+    // check for latency timer timeout
+    TickType_t now = xTaskGetTickCount();
+    if((now - jtag_engine[i].latency_timer_last_event) >=
+       pdMS_TO_TICKS(jtag_engine[i].latency_timer)) {
+
+      // usb_debugf("poll @%d", now);
+      send_status_and_data(&jtag_engine[i]);
+      
+      jtag_engine[i].latency_timer_last_event = now;      
+    }
+  }
 }
