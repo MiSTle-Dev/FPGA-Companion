@@ -3,7 +3,7 @@
 #
 #
 # to build for waveshare rp2040-zero do
-#  cmake -DBOARD=WS2040_ZERO ..
+#  cmake -DBOARD=WS2040ZERO ..
 # to build for Pico2 or Pico2-W do
 #  cmake -DBOARD=PICO2 ..
 #
@@ -25,9 +25,9 @@ message("==============================")
 
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
-option(BOARD "Board type. Can be PICO, PICO2, WS2040_ZERO, SH20KLITE or DEV20K" PICO)
+option(BOARD "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K" PICO)
 
-set(BOARDS PICO PICO2 WS2040_ZERO SH20KLITE DEV20K)
+set(BOARDS PICO PICO2 WS2040ZERO SH20KLITE DEV20K)
 if( NOT ${BOARD} IN_LIST BOARDS)
     message(FATAL_ERROR "BOARD must be one of ${BOARDS}")
 endif()
@@ -94,7 +94,7 @@ if(${BOARD} STREQUAL PICO)
 elseif(${BOARD} STREQUAL PICO2)
    add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=1)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico2 or Pico2-W.")
-elseif(${BOARD} STREQUAL WS2040_ZERO)
+elseif(${BOARD} STREQUAL WS2040ZERO)
    add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=2)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Waveshare RP2040-Zero.")
 elseif(${BOARD} STREQUAL SH20KLITE)
@@ -109,7 +109,7 @@ elseif(${BOARD} STREQUAL DEV20K)
    target_sources(${PROJECT} PRIVATE usb_descriptors.c)
    target_link_libraries(${PROJECT} PRIVATE tinyusb_device)
 else()
-   message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040_ZERO, SH20KLITE or DEV20K")
+   message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
 endif()
 
 target_include_directories(${PROJECT} PRIVATE
@@ -147,7 +147,7 @@ add_custom_target(reset
     COMMENT "Reset target using openocd"
 )
 
-if(${BOARD} STREQUAL WS2040_ZERO)
+if(${BOARD} STREQUAL WS2040ZERO)
   add_custom_target(term COMMAND term.sh /dev/ttyACM0 460800)
 else()
   add_custom_target(term COMMAND term.sh /dev/ttyACM0 921600)

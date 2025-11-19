@@ -222,7 +222,7 @@ To build the firmware for the RP2040-Zero use the following
 command:
 
 ```bash
-cmake -DBOARD=WS2040_ZERO ..
+cmake -DBOARD=WS2040ZERO ..
 ```
 
 The build process will then end with the following message:
