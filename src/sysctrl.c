@@ -305,12 +305,16 @@ void sys_handle_interrupts(unsigned char pending, bool ignore_coldboot) {
   //    audio_handle_event();
 }
 
+#ifndef FPGA_BOOT_TIMEOUT
+#define FPGA_BOOT_TIMEOUT   10000   // prolonged for GW5AST138K
+#endif
+
 bool sys_wait4fpga(void) {
   sys_debugf("Waiting for FPGA to become ready");
   
   // try to establish connection to FPGA for five seconds. Assume the FPGA is
   // not properly configured after that
-  int fpga_ok, timeout = 1000; // prolonged for GW5AST138K
+  int fpga_ok, timeout = FPGA_BOOT_TIMEOUT/10;  // timeout is in 10ms units
   do {
     fpga_ok = sys_status_is_valid();
     if(!fpga_ok) {
@@ -320,14 +324,15 @@ bool sys_wait4fpga(void) {
   } while(timeout && !fpga_ok);
 
   if(timeout) {
-    sys_debugf("FPGA ready after %dms!", (1000-timeout)*10);
+    sys_debugf("FPGA ready after %dms!", FPGA_BOOT_TIMEOUT-10*timeout);
 
     sys_set_rgb(0x000040);  // blue
     return true;
   }
   
-  sys_debugf("FPGA not ready after 5 seconds!");
-  // this is basically useless and will only work if the
+  sys_debugf("FPGA not ready after %d seconds!", FPGA_BOOT_TIMEOUT/1000);
+
+  // Set LED to red. This is basically useless and will only work if the
   // FPGA receives requests but cannot answer them
   sys_set_rgb(0x400000);  // red
   return false;

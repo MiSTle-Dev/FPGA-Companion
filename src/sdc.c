@@ -120,13 +120,28 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
 #endif
 
 static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, UINT count) {
-  sdc_debugf("sdc_read(%p,%lu,%u)", buff, (unsigned long)sector, count);  
+  // sdc_debugf("sdc_read(%p,%lu,%u)", buff, (unsigned long)sector, count);  
+
+  // mcu_hw may define a SDC_DIRECT_READ when the MCU can get direct access
+  // (not though the FPGA) to the SD card.
+#ifdef SDC_DIRECT_READ
+  if(SDC_DIRECT_READ(sector, buff))
+    return 0;
+#endif
+
   sdc_read_sector(sector, buff);
+  
   return 0;
 }
 
 static SDC_RESULT sdc_write(const BYTE *buff, LBA_t sector, UINT count) {
   sdc_debugf("sdc_write(%p,%lu,%u)", buff, (unsigned long)sector, count);  
+
+#ifdef SDC_DIRECT_WRITE
+  if(SDC_DIRECT_WRITE(sector, buff))
+    return 0;
+#endif
+
   sdc_write_sector(sector, buff);
   return 0;
 }

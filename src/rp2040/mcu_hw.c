@@ -42,7 +42,7 @@
 #elif MISTLE_BOARD == 4
 #warning "Building for MiSTeryDev20k"
 #include "../jtag.h"
-#include "./sdc_local.h"
+#include "./sdc_direct.h"
 #define ENABLE_JTAG
 
 // FPGA JTAG pins
@@ -895,29 +895,33 @@ const struct state_flow_S {
   uint8_t tms[2];
   const char *name;  
 } state_flow[] = {
-  { {JTAG_STATE_RUN_TEST_IDLE, JTAG_STATE_TEST_LOGIC_RESET }, "Test-Logic-Reset" },
-  { {JTAG_STATE_RUN_TEST_IDLE, JTAG_STATE_SELECT_DR_SCAN   }, "Run-Test/Idle"    },
+  //  next state when TMS == 0    next state when TMS == 1      state name
+  { {JTAG_STATE_RUN_TEST_IDLE, JTAG_STATE_TEST_LOGIC_RESET }, "Test-Logic-Reset" }, // 0
+  { {JTAG_STATE_RUN_TEST_IDLE, JTAG_STATE_SELECT_DR_SCAN   }, "Run-Test/Idle"    }, // 1
   
-  { {JTAG_STATE_CAPTURE_DR,    JTAG_STATE_SELECT_IR_SCAN   }, "Select-DR-Scan"   },
-  { {JTAG_STATE_SHIFT_DR,      JTAG_STATE_EXIT1_DR         }, "Capture-DR"       },
-  { {JTAG_STATE_SHIFT_DR,      JTAG_STATE_EXIT1_DR         }, "Shift-DR"         },
-  { {JTAG_STATE_PAUSE_DR,      JTAG_STATE_UPDATE_DR        }, "Exit1-DR"         },
-  { {JTAG_STATE_PAUSE_DR,      JTAG_STATE_EXIT2_DR         }, "Pause-DR"         },
-  { {JTAG_STATE_SHIFT_DR,      JTAG_STATE_UPDATE_DR        }, "Exit2-DR"         },
-  { {JTAG_STATE_RUN_TEST_IDLE, JTAG_STATE_SELECT_DR_SCAN   }, "Update-DR"        },
+  { {JTAG_STATE_CAPTURE_DR,    JTAG_STATE_SELECT_IR_SCAN   }, "Select-DR-Scan"   }, // 2
+  { {JTAG_STATE_SHIFT_DR,      JTAG_STATE_EXIT1_DR         }, "Capture-DR"       }, // 3
+  { {JTAG_STATE_SHIFT_DR,      JTAG_STATE_EXIT1_DR         }, "Shift-DR"         }, // 4
+  { {JTAG_STATE_PAUSE_DR,      JTAG_STATE_UPDATE_DR        }, "Exit1-DR"         }, // 5
+  { {JTAG_STATE_PAUSE_DR,      JTAG_STATE_EXIT2_DR         }, "Pause-DR"         }, // 6
+  { {JTAG_STATE_SHIFT_DR,      JTAG_STATE_UPDATE_DR        }, "Exit2-DR"         }, // 7
+  { {JTAG_STATE_RUN_TEST_IDLE, JTAG_STATE_SELECT_DR_SCAN   }, "Update-DR"        }, // 8
   
-  { {JTAG_STATE_CAPTURE_IR,    JTAG_STATE_TEST_LOGIC_RESET }, "Select-IR-Scan"   },
-  { {JTAG_STATE_SHIFT_IR,      JTAG_STATE_EXIT1_IR         }, "Capture-IR"       },
-  { {JTAG_STATE_SHIFT_IR,      JTAG_STATE_EXIT1_IR         }, "Shift-IR"         },
-  { {JTAG_STATE_PAUSE_IR,      JTAG_STATE_UPDATE_IR        }, "Exit1-IR"         },
-  { {JTAG_STATE_PAUSE_IR,      JTAG_STATE_EXIT2_IR         }, "Pause-IR"         },
-  { {JTAG_STATE_SHIFT_IR,      JTAG_STATE_UPDATE_IR        }, "Exit2-IR"         },
-  { {JTAG_STATE_RUN_TEST_IDLE, JTAG_STATE_SELECT_IR_SCAN   }, "Update-IR"        }  
+  { {JTAG_STATE_CAPTURE_IR,    JTAG_STATE_TEST_LOGIC_RESET }, "Select-IR-Scan"   }, // 9
+  { {JTAG_STATE_SHIFT_IR,      JTAG_STATE_EXIT1_IR         }, "Capture-IR"       }, // 10
+  { {JTAG_STATE_SHIFT_IR,      JTAG_STATE_EXIT1_IR         }, "Shift-IR"         }, // 11
+  { {JTAG_STATE_PAUSE_IR,      JTAG_STATE_UPDATE_IR        }, "Exit1-IR"         }, // 12
+  { {JTAG_STATE_PAUSE_IR,      JTAG_STATE_EXIT2_IR         }, "Pause-IR"         }, // 13
+  { {JTAG_STATE_SHIFT_IR,      JTAG_STATE_UPDATE_IR        }, "Exit2-IR"         }, // 14
+  { {JTAG_STATE_RUN_TEST_IDLE, JTAG_STATE_SELECT_DR_SCAN   }, "Update-IR"        }  // 15
 };
 
 static uint8_t tap_state = JTAG_STATE_TEST_LOGIC_RESET;
 static uint8_t tap_ir_bits;
 static uint32_t tap_ir;
+static uint32_t tap_dr_bits;
+static uint8_t tap_dr[4], tap_dr_byte;  // we capture only the first 32 bits
+static uint32_t tap_dr_sum;
 
 const struct gowin_ir_S {
   int ir;
@@ -925,23 +929,24 @@ const struct gowin_ir_S {
 } gowin_ir[] = {
   { 0x00, "Bypass" },
   { 0x02, "Noop" },
-  { 0x03, "SRAM Read" },
-  { 0x05, "SRAM Erase" },
-  { 0x09, "SRAM Erase Done" },
+  { 0x03, "Read SRAM" },
+  { 0x05, "Erase SRAM" },
+  { 0x09, "XFER Done" },
   { 0x11, "IDCode" },
   { 0x12, "Address Init" },
   { 0x13, "UserCode" },
   { 0x15, "ConfigEnable" },
   { 0x16, "Transfer SPI" },
-  { 0x17, "Transfer Configuration Data" },
+  { 0x17, "Transfer Bitstream" },
   { 0x21, "Program Key" },  
   { 0x23, "Security" },  
   { 0x24, "Program EFuse" },  
-  { 0x29, "Program Key" },  
   { 0x25, "Read Key" },
+  { 0x29, "Program Key" },  
   { 0x3a, "ConfigDisable" },
   { 0x3c, "Reconfig" },
-  { 0x41, "Status Register" },
+  { 0x3d, "BSCAN 2 SPI" },
+  { 0x41, "Status" },
   { 0x42, "GAO#1" },
   { 0x43, "GAO#2" },
   { 0x71, "EFlash Program" },  
@@ -951,8 +956,36 @@ const struct gowin_ir_S {
   {   -1, "<unknown command>" }  
 };
 
-static void jtag_tap_advance_state(uint8_t tms) {
-  tap_state = state_flow[tap_state].tms[tms];  
+static void jtag_tap_advance_state(uint8_t tms, uint8_t tdi) {
+  // capture instruction register write
+  if(tap_state == JTAG_STATE_SHIFT_IR) {
+    if(tdi) tap_ir |= (1<<tap_ir_bits);
+    tap_ir_bits++;
+  }
+  
+  // capture data register write
+  if(tap_state == JTAG_STATE_SHIFT_DR) {
+    if(tdi && ((tap_dr_bits/8)<sizeof(tap_dr)))
+      tap_dr[tap_dr_bits/8] |= (1<<(tap_dr_bits&7));
+
+    // update sum, whenever the last bit of a byte
+    // has been written
+    if(tdi) tap_dr_byte |= (1<<(tap_dr_bits&7));
+    if((tap_dr_bits&7) == 7) {
+      tap_dr_sum += tap_dr_byte;
+      tap_dr_byte = 0;
+    }
+    
+    tap_dr_bits++;
+  }
+
+  // check if we'd do into TEST_LOGIC_RESET state
+  if(tap_state != JTAG_STATE_TEST_LOGIC_RESET &&
+     state_flow[tap_state].tms[tms] == JTAG_STATE_TEST_LOGIC_RESET) {
+    jtag_highlight_debugf("TEST LOGIC RESET");
+  }
+    
+  tap_state = state_flow[tap_state].tms[tms];
 
   // clear IR if we just entered the capture IR state
   if(tap_state == JTAG_STATE_CAPTURE_IR) {
@@ -960,19 +993,34 @@ static void jtag_tap_advance_state(uint8_t tms) {
     tap_ir = 0;
   }
 
+  if(tap_state == JTAG_STATE_CAPTURE_DR) {
+    tap_dr_bits = 0;
+    for(unsigned int i=0;i<sizeof(tap_dr);i++) tap_dr[i] = 0;
+    tap_dr_sum = 0;
+    tap_dr_byte = 0;
+  }
+    
   // display IR if we just entered the update IR state
   if(tap_state == JTAG_STATE_UPDATE_IR) {
     // since we know which FPGA we are dealing with, we can disect
     // this even further
     int i;
     for(i=0;gowin_ir[i].ir != -1 && gowin_ir[i].ir != (int)tap_ir;i++);
-    jtag_highlight_debugf("IR %08lx (%d bits): %s", tap_ir, tap_ir_bits, gowin_ir[i].name);
+    jtag_highlight_debugf("IR %02lx/%d: GOWIN %s", tap_ir, tap_ir_bits, gowin_ir[i].name);
+  }
+
+  if(tap_state == JTAG_STATE_UPDATE_DR) {
+    if(!(tap_dr_bits&7))  jtag_highlight_debugf("DR %lu bytes, sum %ld", tap_dr_bits/8, tap_dr_sum);
+    else jtag_highlight_debugf("DR %lu bytes + %lu bits, sum %ld", tap_dr_bits/8, tap_dr_bits&7, tap_dr_sum);
+    hexdump(tap_dr, sizeof(tap_dr));
   }
 }
 
+#ifdef DEBUG_JTAG
 static const char *jtag_tap_state_name(void) {
   return state_flow[tap_state].name;
 }
+#endif
 #endif
 
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
@@ -1002,16 +1050,14 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
     gpio_put(PIN_JTAG_TMS, (data & mask)?1:0);  
     gpio_put(PIN_JTAG_TCK, 1);
 
-#ifdef DEBUG_JTAG
 #ifdef DEBUG_TAP
-    // this may put zeroes into the IR 
-    if(tap_state == JTAG_STATE_SHIFT_IR)
-      tap_ir_bits++;
-
-    jtag_tap_advance_state((data & mask)?1:0);
+    jtag_tap_advance_state((data & mask)?1:0, tdi);
+#ifdef DEBUG_JTAG
     jtag_debugf("TMS %d TDI %d TDO %d -> %s", (data & mask)?1:0, tdi, gpio_get(PIN_JTAG_TDO),
 		jtag_tap_state_name());
+#endif
 #else
+#ifdef DEBUG_JTAG
     jtag_debugf("TMS %d TDI %d TDO %d", (data & mask)?1:0, tdi, gpio_get(PIN_JTAG_TDO));
 #endif
 #endif
@@ -1032,30 +1078,27 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
 #ifdef DEBUG_TAP
   // data transmissions are only expected in states SHIFT_DR and SHIFT_IR
   if((tap_state != JTAG_STATE_SHIFT_IR) && (tap_state != JTAG_STATE_SHIFT_DR))
-    jtag_debugf("Warning: data i/o in non-shifting state!");  
+    jtag_debugf("Warning: data i/o in non-shifting state %d!", tap_state);
 #endif
-  
+
   // data transmission always keeps TMS at zero
   gpio_put(PIN_JTAG_TMS, 0);
 
   while(len) {
-    // TOOD: Don't touch TDI at all if we are reading, but not writing    
+    // send 1 of nothing was given
     int tx_bit = txd?((*txd & mask)?1:0):1;
     
     // set data bit and clock tck at once
     gpio_put(PIN_JTAG_TDI, tx_bit);  
     gpio_put(PIN_JTAG_TCK, 1);
 
-    // jtag_debugf("TMS 0 TDI %d TDO %d", tx_bit, gpio_get(PIN_JTAG_TDO));
-
 #ifdef DEBUG_TAP
-    if(tap_state == JTAG_STATE_SHIFT_IR) {
-      if(tx_bit) tap_ir |= (1<<tap_ir_bits);
-      tap_ir_bits++;
-    }
+    jtag_tap_advance_state(0, tx_bit);
 #endif
+  
+    // jtag_debugf("TMS 0 TDI %d TDO %d", tx_bit, gpio_get(PIN_JTAG_TDO));
     
-    if(rxd) {    
+    if(rxd) {
       // shift in from lsb
       if(gpio_get(PIN_JTAG_TDO)) *rxd |=  mask;
       else                       *rxd &= ~mask;
@@ -1103,67 +1146,21 @@ static void mcu_hw_jtag_init(void) {
   mcu_hw_jtag_set_pins(0x00, 0x00);
 }
 
-static void user_task(__attribute__((unused)) void *parms) {
-  static char buffer[32];
-  static int buffer_use = 0;
-  
-  debugf("----------------------------------");
-  debugf("----------- Commands -------------");
-  debugf("----------------------------------");
-  debugf("stop    - stop FPGA");
-  debugf("start   - (re)start FPGA");
-  debugf("init    - init local sdc access");
-  debugf("release - release sdc");
-  debugf("test    - test sdc access");
-  debugf("reset   - reset mcu");
-  
-  while(1) {
-    // listen for incoming commands
-    int c = getchar();
-    if(buffer_use && c == 127) {
-      buffer[--buffer_use] = '\0';       
-    } else if(buffer_use < 31 && c >= 32) {
-      buffer[buffer_use++] = c;      
-      buffer[buffer_use] = '\0';      
-    } else if(c == '\r') {
-      buffer_use = 0;
-
-      if(!strcasecmp(buffer, "stop")) {
-	debugf("Force FPGA reconfig");
-	gpio_put(PIN_nCFG, 0);	
-
-	// alternally the FPGA may be put into a mode != 00 to
-	// suppress MSPI loading	
-	// gpio_put(PIN_MODE0, 1);
-	// gpio_put(PIN_MODE1, 0);
-	// gpio_put(PIN_nCFG, 0);
-	// gpio_put(PIN_nCFG, 1);
-      } else if(!strcasecmp(buffer, "start")) {
-	debugf("Release FPGA reconfig");
-	gpio_put(PIN_nCFG, 1);
-	// gpio_put(PIN_MODE0, 0);
-	// gpio_put(PIN_MODE1, 0);
-	// gpio_put(PIN_nCFG, 0);
-	// gpio_put(PIN_nCFG, 1);
-      } else if(!strcasecmp(buffer, "init")) {
-	// gain access to local sd card
-	sdc_local_init();
-      } else if(!strcasecmp(buffer, "test")) {
-	// try to communicate with sd card
-	sdc_local_test();
-      } else if(!strcasecmp(buffer, "release")) {
-	// release card
-	sdc_local_release();
-      } else if(!strcasecmp(buffer, "reset")) {
-	mcu_hw_reset();
-      } else
-	debugf("Unknown command %s", buffer);
-    }
-    
-    
-    // vTaskDelay(pdMS_TO_TICKS(1000));
+void mcu_hw_fpga_reconfig(bool run) {
+  // alternally the FPGA may be put into a mode != 00 to
+  // suppress MSPI loading
+  if(!run) {
+    gpio_put(PIN_MODE0, 1); gpio_set_dir(PIN_MODE0, GPIO_OUT);
+    gpio_put(PIN_MODE1, 0); gpio_set_dir(PIN_MODE1, GPIO_OUT);
   }
-  
+    
+  // trigger FPGA reconfiguration
+  gpio_put(PIN_nCFG, 0);  vTaskDelay(pdMS_TO_TICKS(1));
+  gpio_put(PIN_nCFG, 1);  vTaskDelay(pdMS_TO_TICKS(100));
+
+  // make mode pins input, so the buttons S1/S2 connected to them work
+  gpio_set_dir(PIN_MODE0, GPIO_IN);
+  gpio_set_dir(PIN_MODE1, GPIO_IN);  
 }
 #endif
 
@@ -1205,19 +1202,19 @@ void mcu_hw_init(void) {
 
   // initialize the LED gpios
 #ifdef LED_MOUSE_PIN
-  debugf("LED MOUSE =    GP%d", LED_MOUSE_PIN);
+  debugf("LED MOUSE    = %d", LED_MOUSE_PIN);
   gpio_init(LED_MOUSE_PIN);
   gpio_set_dir(LED_MOUSE_PIN, GPIO_OUT);
   gpio_put(LED_MOUSE_PIN, 0);
 #endif
 #ifdef LED_KEYBOARD_PIN
-  debugf("LED KEYBOARD = GP%d", LED_KEYBOARD_PIN);
+  debugf("LED KEYBOARD = %d", LED_KEYBOARD_PIN);
   gpio_init(LED_KEYBOARD_PIN);
   gpio_set_dir(LED_KEYBOARD_PIN, GPIO_OUT);
   gpio_put(LED_KEYBOARD_PIN, 0);
 #endif
 #ifdef LED_JOYSTICK_PIN
-  debugf("LED JOYSTICK = GP%d", LED_JOYSTICK_PIN);
+  debugf("LED JOYSTICK = %d", LED_JOYSTICK_PIN);
   gpio_init(LED_JOYSTICK_PIN);
   gpio_set_dir(LED_JOYSTICK_PIN, GPIO_OUT);
   gpio_put(LED_JOYSTICK_PIN, 0);
@@ -1283,9 +1280,5 @@ void mcu_hw_init(void) {
 
 #ifdef ENABLE_JTAG
   mcu_hw_jtag_init();
-  jtag_test();
-
-  // create a task for user interaction via the serial debug port
-  xTaskCreate(user_task, (char *)"user_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);  
 #endif
 }
