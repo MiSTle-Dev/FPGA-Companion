@@ -41,7 +41,7 @@ void mcu_hw_fpga_reconfig(bool state);
 
 // this board also has the ability to boot the FPGA from SD card
 #include "sdc_direct.h"
-#define FPGA_BOOT_TIMEOUT 2000    // give FPGA 2 seconds to boot
+#define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
 #define BOOT_FROM_SDC sdc_boot    // afterwards this will be called
 
 // give file system driver in sdc.c access to the local sd card
