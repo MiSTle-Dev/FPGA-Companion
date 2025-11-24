@@ -29,6 +29,11 @@
 #include "bflb_clock.h"
 #include "bflb_flash.h"
 #include <lwip/tcpip.h>
+#include "lwip/tcp.h"
+#include "lwip/dns.h"
+#include "lwip/pbuf.h"
+#include <lwip/sockets.h>
+#include <lwip/netdb.h>
 #if __has_include("bl_fw_api.h")
 #include "bl_fw_api.h"        // old SDK 2.0, buggy and WIFI not working
 #else
@@ -47,10 +52,7 @@
 #include "bl616_tzc_sec.h"
 #include "task.h"
 #include "timers.h"
-#include <lwip/sockets.h>
-#include <lwip/netdb.h>
 #include "bflb_irq.h"
-#include "lwip/dns.h"
 #include "../at_wifi.h"
 
 extern uint32_t __HeapBase;
@@ -533,7 +535,7 @@ void usb_host(void) {
 
   usb_debugf("init usb hid host");
 
-  usbh_initialize(0, USB_BASE);
+  usbh_initialize(0, USB_BASE, NULL);
 
   // initialize all HID info entries
   for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
@@ -1035,11 +1037,14 @@ void mcu_hw_port_byte(unsigned char byte) {
 #define WIFI_STATE_CONNECTED    3
 
 static int wifi_state = WIFI_STATE_UNKNOWN;
+unsigned int petsc2;
+
 static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
 static int s_retry_num = 0;
 static wifi_conf_t conf = { .country_code = "CN" }; // "CN","US","JP","EU"
 static QueueHandle_t wifi_event_queue;
+volatile uint32_t int w_state = 0;
 
 void wifi_event_handler(uint32_t code) {
   switch (code) {
@@ -1058,17 +1063,19 @@ void wifi_event_handler(uint32_t code) {
   } break;
   case CODE_WIFI_ON_CONNECTED: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_CONNECTED", __func__);
-    unsigned char evt = 3; 
+    unsigned char evt = 3;
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_GOT_IP: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_GOT_IP", __func__);
     unsigned char evt = 4; 
+    w_state = 1;
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_DISCONNECT: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_DISCONNECT", __func__);
     unsigned char evt = 2; 
+    w_state = 0;
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_AP_STARTED: {
@@ -1178,8 +1185,8 @@ static const char *auth_mode_str(int authmode) {
 static void wifi_scan_item_cb(void *env, void *arg, wifi_mgmr_scan_item_t *item) {
   debugf("scan item cb %s", item->ssid);
 
-  char str[64];
-  snprintf(str, 64, "SSID %s, RSSI %d, CH %d, %s\r\n", item->ssid, item->rssi,
+  char str[74];
+  snprintf(str, sizeof(str), "SSID %s, RSSI %d, CH %d, %s\r\n", item->ssid, item->rssi,
 	   item->channel, auth_mode_str(item->auth));
 
   at_wifi_puts(str);
@@ -1216,22 +1223,22 @@ static void wifi_info()
 
     ip4addr_ntoa_r((ip4_addr_t *) &ip.addr, str_tmp, sizeof(str_tmp));
     debugf("IP  :%s \r\n", str_tmp);
-    snprintf(str, 64, "IP  :%s \r\n", str_tmp);
+    snprintf(str, sizeof(str), "IP  :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
     ip4addr_ntoa_r((ip4_addr_t *) &mask.addr, str_tmp, sizeof(str_tmp));
     debugf("MASK:%s \r\n", str_tmp);
-    snprintf(str, 64, "MASK:%s \r\n", str_tmp);
+    snprintf(str, sizeof(str), "MASK:%s \r\n", str_tmp);
     at_wifi_puts(str);
     
     ip4addr_ntoa_r((ip4_addr_t *) &gw.addr, str_tmp, sizeof(str_tmp));
     debugf("GW  :%s \r\n", str_tmp);
-    snprintf(str, 64, "GW  :%s \r\n", str_tmp);
+    snprintf(str, sizeof(str), "GW  :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
     ip4addr_ntoa_r((ip4_addr_t *) &dns.addr, str_tmp, sizeof(str_tmp));
     debugf("DNS  :%s \r\n", str_tmp);
-    snprintf(str, 64, "DNS :%s \r\n", str_tmp);
+    snprintf(str, sizeof(str), "DNS :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
 }
@@ -1265,10 +1272,6 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
       }
     }
 }
-
-#include "lwip/dns.h"
-#include "lwip/pbuf.h"
-#include "lwip/tcp.h"
 
 static struct tcp_pcb *tcp_pcb = NULL;
 
@@ -1361,8 +1364,8 @@ void mcu_hw_tcp_connect(char *host, int port) {
   static int lport;
   static ip_addr_t address;
 
-  char str[64];
-  snprintf(str, 64, "\r\nconnecting to host: %s port: %d \r\n", host, port);
+  char str[74];
+  snprintf(str, sizeof(str), "\r\nconnecting to host: %s port: %d \r\n", host, port);
   at_wifi_puts(str);
 
   lport = port;
