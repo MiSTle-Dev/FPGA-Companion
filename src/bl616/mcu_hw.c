@@ -1044,7 +1044,7 @@ static char *wifi_key = NULL;
 static int s_retry_num = 0;
 static wifi_conf_t conf = { .country_code = "CN" }; // "CN","US","JP","EU"
 static QueueHandle_t wifi_event_queue;
-volatile uint32_t int w_state = 0;
+uint32_t w_state = 0;
 
 void wifi_event_handler(uint32_t code) {
   switch (code) {
@@ -1123,42 +1123,44 @@ static void wifi_init(void) {
 
 static void wait4event(char code, char code2) {
   char evt = -1;
-  while(code != evt && code2 != evt) {
-    if(xQueueReceive(wifi_event_queue, &evt, pdMS_TO_TICKS(100))) {
-      debugf("event: %d", evt);
+  for (int i = 0;i<10*30;i++) {
+    if (code != evt && code2 != evt) {
+      if(xQueueReceive(wifi_event_queue, &evt, pdMS_TO_TICKS(100))) {
+        debugf("event: %d", evt);
 
-      switch(evt) {
-      case 1:
-        debugf("  -> scan done");
-        break;
-      case 2:
-        debugf("  -> disconnect");
-        if (s_retry_num < 10) {
-          // connect
-          wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0);
-          s_retry_num++;
-          debugf("retry to connect to the AP");
-          at_wifi_puts(".");
-        } else {
-          at_wifi_puts("\r\nConnection failed!\r\n");
-          debugf("finally failed");
-        }	
-        break;
-      case 3:
-        debugf("  -> connect");
-        break;
-      case 4:
-        debugf("  -> got ip");
-        at_wifi_puts("\r\nConnected\r\n");
-        break;	
-      case 5:
-        debugf("  -> init done");
-	      break;
+        switch(evt) {
+        case 1:
+          debugf("  -> scan done");
+          break;
+        case 2:
+          debugf("  -> disconnect");
+          if (s_retry_num < 10) {
+            // connect
+            wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0);
+            s_retry_num++;
+            debugf("retry to connect to the AP");
+            at_wifi_puts(".");
+          } else {
+            at_wifi_puts("\r\nConnection failed!\r\n");
+            debugf("finally failed");
+          }	
+          break;
+        case 3:
+          debugf("  -> connect");
+          break;
+        case 4:
+          debugf("  -> got ip");
+          at_wifi_puts("\r\nConnected\r\n");
+          break;	
+        case 5:
+          debugf("  -> init done");
+          break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
       }
-      vTaskDelay(pdMS_TO_TICKS(100));
     }
+    debugf("wait done");
   }
-  debugf("wait done");
 }
 
 static const char *auth_mode_str(int authmode) {
@@ -1262,7 +1264,8 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
   if (0 != wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0)) {
     debugf("\r\nWiFI: STA failed!\r\n");
   } else {
-    vTaskDelay(7000);
+    //vTaskDelay(7000);
+    wait4event(4, 4);
     if (wifi_mgmr_sta_state_get() == 1 ) {
       at_wifi_puts("\r\nWiFI: Connected\r\n");
       wifi_info();
