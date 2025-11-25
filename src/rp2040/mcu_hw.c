@@ -1084,38 +1084,61 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
   // data transmission always keeps TMS at zero
   gpio_put(PIN_JTAG_TMS, 0);
 
-  while(len) {
-    // send 1 of nothing was given
-    int tx_bit = txd?((*txd & mask)?1:0):1;
-    
-    // set data bit and clock tck at once
-    gpio_put(PIN_JTAG_TDI, tx_bit);  
-    gpio_put(PIN_JTAG_TCK, 1);
-
+  // special version for txd-only with a multiple of 8 bits
+  // as that's the most common case
+  if(txd && !rxd && !(len&7)) {
 #ifdef DEBUG_TAP
-    jtag_tap_advance_state(0, tx_bit);
+    for(int i=0;i<len;i++)
+      jtag_tap_advance_state(0, txd[i>>3] & (1<<(i&7)));
 #endif
-  
-    // jtag_debugf("TMS 0 TDI %d TDO %d", tx_bit, gpio_get(PIN_JTAG_TDO));
-    
-    if(rxd) {
-      // shift in from lsb
-      if(gpio_get(PIN_JTAG_TDO)) *rxd |=  mask;
-      else                       *rxd &= ~mask;
-    }
-    
-    gpio_put(PIN_JTAG_TCK, 0);
 
-    // advance bit mask
-    mask <<= 1;
-    if(!mask) {
-      mask = 0x01;
-      if(rxd) rxd++;      
+    len >>= 3;
+    while(len--) {
+      // set data bit and clock tck at once
+      gpio_put(PIN_JTAG_TDI, *txd & 0x01); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      gpio_put(PIN_JTAG_TDI, *txd & 0x02); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      gpio_put(PIN_JTAG_TDI, *txd & 0x04); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      gpio_put(PIN_JTAG_TDI, *txd & 0x08); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      gpio_put(PIN_JTAG_TDI, *txd & 0x10); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      gpio_put(PIN_JTAG_TDI, *txd & 0x20); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      gpio_put(PIN_JTAG_TDI, *txd & 0x40); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      gpio_put(PIN_JTAG_TDI, *txd & 0x80); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      txd++;
+    }
+  } else {  
+    while(len) {
+      // send 1 of nothing was given
+      int tx_bit = txd?((*txd & mask)?1:0):1;
+      
+      // set data bit and clock tck at once
+      gpio_put(PIN_JTAG_TDI, tx_bit);  
+      gpio_put(PIN_JTAG_TCK, 1);
+      
+#ifdef DEBUG_TAP
+      jtag_tap_advance_state(0, tx_bit);
+#endif
+      
+      // jtag_debugf("TMS 0 TDI %d TDO %d", tx_bit, gpio_get(PIN_JTAG_TDO));
+      
+      if(rxd) {
+	// shift in from lsb
+	if(gpio_get(PIN_JTAG_TDO)) *rxd |=  mask;
+	else                       *rxd &= ~mask;
+      }
+      
+      gpio_put(PIN_JTAG_TCK, 0);
+      
+      // advance bit mask
+      mask <<= 1;
+      if(!mask) {
+	mask = 0x01;
+	if(rxd) rxd++;      
       if(txd) txd++;
-    }
-    len--;
-  }    
-
+      }
+      len--;
+    }    
+  }
+    
   // We aren't really shifting, but instead setting bits
   // via mask. This makes a difference for the last byte
   // when not reading all 8 bits

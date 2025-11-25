@@ -81,12 +81,8 @@ uint32_t jtag_command_read32(uint8_t cmd) {
   uint32_t retval = 0;
   
   jtag_command(cmd);
-
   jtag_shiftDR(NULL, (uint8_t*)&retval, 32);
 
-  // The following should work the same
-  // jtag_shiftDR_part(NULL, (uint8_t*)&retval, 32, JTAG_FLAG_BEGIN | JTAG_FLAG_END);
-  
   return retval;
 }
 
@@ -114,6 +110,7 @@ bool jtag_open(void) {
   // read FPGA idcode via JTAG. Should be 0x81b for the GW2AR-18
   uint32_t idcode = jtag_identify();
 
+  // return into Test-Logic-Reset state
   mcu_hw_jtag_tms(1, 0b11111, 5);
   
   return(idcode == IDCODE_GW2AR18);
@@ -252,7 +249,7 @@ bool jtag_gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool first, bool
 bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
   // The following is being implemented by openFPGAloader. But it doesn't seem to be
   // necessary and it's also not mentioned in the Gowin JTAG programming guide TN653
-  if(checksum) {
+  if(checksum != 0xffffffff) {
     jtag_command(0x0a);
     jtag_shiftDR((uint8_t *)&checksum, NULL, 32);
     jtag_command(0x08);

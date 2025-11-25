@@ -31,6 +31,5 @@
 
 int puff(unsigned char *dest,           /* pointer to destination pointer */
          unsigned long *destlen,        /* amount of output space */
-	 // const unsigned char *source,   /* pointer to source data pointer */
-	 unsigned char (*source)(void),   /* function to read input */
+	 unsigned char (*source)(void), /* function to read input */
          unsigned long *sourcelen);     /* amount of input available */
