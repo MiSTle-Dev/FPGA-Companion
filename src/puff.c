@@ -798,9 +798,8 @@ local int dynamic(struct state *s)
  *   block (if it was a fixed or dynamic block) are undefined and have no
  *   expected values to check.
  */
-int puff(unsigned char *dest,           /* pointer to destination pointer */
+int puff(unsigned char *dest,           /* pointer to destination */
          unsigned long *destlen,        /* amount of output space */
-         // const unsigned char *source,   /* pointer to source data pointer */
 	 unsigned char (*source)(void), /* function to read input */	 
          unsigned long *sourcelen)      /* amount of input available */
 {

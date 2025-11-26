@@ -156,7 +156,7 @@ void tud_umount_cb(void) {
   usb_debugf("tud_umount_cb()");
 }
 
-void tud_suspend_cb(bool remote_wakeup_en) {
+void tud_suspend_cb(__attribute__((unused)) bool remote_wakeup_en) {
   usb_debugf("tud_suspend_cb()");
 }
 
@@ -522,7 +522,7 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize) {
       usb_debugf("Continue pending write %d of %d", bytes2shift, jtag->pending_writes);
 #endif
       
-      jtag_data((jtag->pending_write_cmd&8)?1:0, buffer,
+      jtag_data((jtag->pending_write_cmd&8)?1:0, (uint8_t*)buffer,
 		(jtag->pending_write_cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL,
 		(uint32_t)bytes2shift*8);
       if(jtag->pending_write_cmd & 0x20) jtag->reply_len += bytes2shift;
@@ -550,7 +550,7 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize) {
 	if(jtag->cmd_buf.data.cmd.code & 0x80) {
 	  cmd_parse(jtag);
 	} else  {
-	  int skip = cmd_shift_parse(jtag, buffer, bufsize);
+	  int skip = cmd_shift_parse(jtag, (uint8_t*)buffer, bufsize);
 	  buffer += skip;
 	  bufsize -= skip;
 	}
@@ -572,7 +572,7 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize) {
     usb_debugf("No in MPSSE mode");
 }
 
-void tud_vendor_tx_cb(uint8_t itf, uint32_t bufsize) {
+void tud_vendor_tx_cb(uint8_t itf, __attribute__((unused)) uint32_t bufsize) {
   struct jtag *jtag = &jtag_engine[itf];
   jtag->tx_pending = false;
 
@@ -615,7 +615,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
     case 0x02:
       usb_debugf("SET FLOW CONTROL, #%d=%d", request->wIndex, request->wValue);
       break;
-      
+
     case 0x03:
       usb_debugf("SET BAUD RATE, #%d=%d", request->wIndex, request->wValue);
       break;
