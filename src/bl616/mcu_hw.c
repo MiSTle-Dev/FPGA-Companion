@@ -1044,7 +1044,6 @@ static char *wifi_key = NULL;
 static int s_retry_num = 0;
 static wifi_conf_t conf = { .country_code = "CN" }; // "CN","US","JP","EU"
 static QueueHandle_t wifi_event_queue;
-uint32_t w_state = 0;
 
 void wifi_event_handler(uint32_t code) {
   switch (code) {
@@ -1063,19 +1062,17 @@ void wifi_event_handler(uint32_t code) {
   } break;
   case CODE_WIFI_ON_CONNECTED: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_CONNECTED", __func__);
-    unsigned char evt = 3;
+    unsigned char evt = 3; 
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_GOT_IP: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_GOT_IP", __func__);
     unsigned char evt = 4; 
-    w_state = 1;
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_DISCONNECT: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_DISCONNECT", __func__);
     unsigned char evt = 2; 
-    w_state = 0;
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_AP_STARTED: {
@@ -1264,7 +1261,6 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
   if (0 != wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0)) {
     debugf("\r\nWiFI: STA failed!\r\n");
   } else {
-    //vTaskDelay(7000);
     wait4event(4, 4);
     if (wifi_mgmr_sta_state_get() == 1 ) {
       at_wifi_puts("\r\nWiFI: Connected\r\n");
@@ -1353,7 +1349,6 @@ void mcu_hw_tcp_disconnect(void) {
 // Call back with a DNS result
 static void dns_found(__attribute__((unused)) const char *hostname, const ip_addr_t *ipaddr, void *arg) {
   if (ipaddr) {
-    // state->ntp_server_address = *ipaddr;
     at_wifi_puts("Using address ");
     at_wifi_puts(ipaddr_ntoa(ipaddr));
     at_wifi_puts("\r\n");

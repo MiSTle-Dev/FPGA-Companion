@@ -48,6 +48,12 @@ git submodule update
 CROSS_COMPILE=<where you downloaded the toolchain>/toolchain_gcc_t-head_linux/bin/riscv64-unknown-elf- BL_SDK_BASE=<where you downloaded the sdk>/bouffalo_sdk/ make
 ```
 
+for a specific board select in between: m0sdock nano20k console60k mega60k mega138kpro primer25k
+
+```shell
+BL_SDK_BASE=<where you downloaded the sdk>/bouffalo_sdk/ make TANG_BOARD=console60k
+```
+
 You can simplify the ```make``` a bit by setting in your bashrc BL_SDK_BASE and include the toolchain_gcc_t-head_linux in the search path.
 
 ```bash
@@ -98,6 +104,12 @@ BL_SDK_BASE=<where you downloaded the sdk>/bouffalo_sdk/ make CHIP=bl616 COMX=/d
 ```
 
 If you have downloaded the firmware from the [release page](https://github.com/MiSTle-Dev/FPGA-Companion/releases) you can use the graphical [BLFlashCube](https://github.com/CherryUSB/bouffalo_sdk/tree/master/tools/bflb_tools/bouffalo_flash_cube) tool using the ```fpga_companion_bl616_cfg.ini``` file.
+
+or alternatively for the .ini file including the companion fw and the fpga-companion:
+
+```shell
+BLFlashCube-ubuntu --port /dev/ttyACMtbd --chipname=bl616 --config buildall/flash_nano20k.ini
+```
 
 After successful download you need to unplug the device again and reinsert it *without* the BOOT button pressed to boot into the newly installed firmware.
 
@@ -171,10 +183,12 @@ Compile the firmware for **M0S Dock**
 cd %HOMEPATH%/Documents\FPGA-Companion\src\bl616
 make clean
 make
+```
 
-or for a specific board
+for a specific board select in between: m0sdock nano20k console60k mega60k mega138kpro primer25k
+
+```shell
 make TANG_BOARD=console60k
-( m0sdock nano20k console60k mega60k mega138kpro primer25k )
 ```
 
 ## tang onboard bl616
@@ -204,11 +218,11 @@ make CHIP=bl616 COMX=COMabc  flash
 
 If you have downloaded the firmware from the [release page](https://github.com/MiSTle-Dev/FPGA-Companion/releases) you can use the graphical [BLFlashCube](https://github.com/CherryUSB/bouffalo_sdk/tree/master/tools/bflb_tools/bouffalo_flash_cube) tool using the ```fpga_companion_bl616_cfg.ini``` file.
 
-or alternatively the shell based tool:
+or alternatively a shell based tool:
 
 ```shell
 cd %HOMEPATH%/Documents\FPGA-Companion\src\bl616
-BLFlashCommand.exe --port COM_tbd --config %HOMEPATH%/Documents\FPGA-Companion\src\bl616\buildall\flash_nano20k.ini
+BLFlashCommand.exe --port COM_tbd --chipname=bl616 --config %HOMEPATH%/Documents\FPGA-Companion\src\bl616\buildall\flash_nano20k.ini
 ```
 
 After successful download you need to unplug the device again and reinsert it *without* the BOOT button pressed to boot into the newly installed firmware.
