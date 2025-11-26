@@ -247,3 +247,14 @@ uint8_t pet2asc(uint8_t c) {
   
     return c;
   }
+
+uint8_t asc2pet(uint8_t c) {
+  if (c > 64 && c < 91)
+    c += 128;
+  else if (c > 96 && c < 123)
+    c -= 32;
+  else if (c > 192 && c < 219)
+    c -= 128;
+
+  return c;
+}

@@ -17,13 +17,22 @@
 /* Enable print with color */
 #define CONFIG_USB_PRINTF_COLOR_ENABLE
 
-/* data align size when use dma */
-#ifndef CONFIG_USB_ALIGN_SIZE
+// #define CONFIG_USB_DCACHE_ENABLE
+
+/* data align size when use dma or use dcache */
+#ifdef CONFIG_USB_DCACHE_ENABLE
+#define CONFIG_USB_ALIGN_SIZE 32 // 32 or 64
+#else
 #define CONFIG_USB_ALIGN_SIZE 4
 #endif
 
 /* attribute data into no cache ram */
 #define USB_NOCACHE_RAM_SECTION __attribute__((section(".noncacheable")))
+
+/* use usb_memcpy default for high performance but cost more flash memory.
+ * And, arm libc has a bug that memcpy() may cause data misalignment when the size is not a multiple of 4.
+*/
+// #define CONFIG_USB_MEMCPY_DISABLE
 
 /* ================= USB Device Stack Configuration ================ */
 
@@ -46,6 +55,20 @@
 /* Enable test mode */
 // #define CONFIG_USBDEV_TEST_MODE
 
+/* enable advance desc register api */
+//#define CONFIG_USBDEV_ADVANCE_DESC
+
+/* move ep0 setup handler from isr to thread */
+// #define CONFIG_USBDEV_EP0_THREAD
+
+#ifndef CONFIG_USBDEV_EP0_PRIO
+#define CONFIG_USBDEV_EP0_PRIO 4
+#endif
+
+#ifndef CONFIG_USBDEV_EP0_STACKSIZE
+#define CONFIG_USBDEV_EP0_STACKSIZE 2048
+#endif
+
 #ifndef CONFIG_USBDEV_MSC_MAX_LUN
 #define CONFIG_USBDEV_MSC_MAX_LUN 1
 #endif
@@ -66,6 +89,10 @@
 #define CONFIG_USBDEV_MSC_VERSION_STRING "0.01"
 #endif
 
+/* move msc read & write from isr to while(1), you should call usbd_msc_polling in while(1) */
+// #define CONFIG_USBDEV_MSC_POLLING
+
+/* move msc read & write from isr to thread */
 // #define CONFIG_USBDEV_MSC_THREAD
 
 #ifndef CONFIG_USBDEV_MSC_PRIO
@@ -80,7 +107,7 @@
  * you can change to 2K ~ 16K and must be larger than TCP RX windows size in order to avoid being overflow.
  */
 #ifndef CONFIG_USBHOST_RNDIS_ETH_MAX_RX_SIZE
-#define CONFIG_USBHOST_RNDIS_ETH_MAX_RX_SIZE (16*1024)
+#define CONFIG_USBHOST_RNDIS_ETH_MAX_RX_SIZE (2048)
 #endif
 
 /* Because lwip do not support multi pbuf at a time, so increasing this variable has no performance improvement */
@@ -92,7 +119,7 @@
  * you can change to 2K ~ 16K and must be larger than TCP RX windows size in order to avoid being overflow.
  */
 #ifndef CONFIG_USBHOST_CDC_NCM_ETH_MAX_RX_SIZE
-#define CONFIG_USBHOST_CDC_NCM_ETH_MAX_RX_SIZE (16*1024)
+#define CONFIG_USBHOST_CDC_NCM_ETH_MAX_RX_SIZE (2048)
 #endif
 /* Because lwip do not support multi pbuf at a time, so increasing this variable has no performance improvement */
 #ifndef CONFIG_USBHOST_CDC_NCM_ETH_MAX_TX_SIZE
@@ -114,7 +141,7 @@
  * you can change to 2K ~ 16K and must be larger than TCP RX windows size in order to avoid being overflow.
  */
 #ifndef CONFIG_USBHOST_RTL8152_ETH_MAX_RX_SIZE
-#define CONFIG_USBHOST_RTL8152_ETH_MAX_RX_SIZE (16*1024)
+#define CONFIG_USBHOST_RTL8152_ETH_MAX_RX_SIZE (2048)
 #endif
 /* Because lwip do not support multi pbuf at a time, so increasing this variable has no performance improvement */
 #ifndef CONFIG_USBHOST_RTL8152_ETH_MAX_TX_SIZE
@@ -192,7 +219,7 @@
 #define CONFIG_USB_EHCI_FRAME_LIST_SIZE 1024
 #define CONFIG_USB_EHCI_QH_NUM          10
 #define CONFIG_USB_EHCI_QTD_NUM         (CONFIG_USB_EHCI_QH_NUM * 3)
-#define CONFIG_USB_EHCI_ITD_NUM         5
+#define CONFIG_USB_EHCI_ITD_NUM         4
 #define CONFIG_USB_EHCI_HCOR_RESERVED_DISABLE
 // #define CONFIG_USB_EHCI_CONFIGFLAG
 // #define CONFIG_USB_EHCI_ISO
@@ -212,7 +239,5 @@
 #ifndef usb_ramaddr2phyaddr
 #define usb_ramaddr2phyaddr(addr) (addr)
 #endif
-#define CONFIG_USB_HS
-#define ATTR_FAST_RAM_SECTION __attribute__((section(".fast")))
 
 #endif

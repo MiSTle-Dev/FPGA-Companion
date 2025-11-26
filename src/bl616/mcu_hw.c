@@ -29,6 +29,11 @@
 #include "bflb_clock.h"
 #include "bflb_flash.h"
 #include <lwip/tcpip.h>
+#include "lwip/tcp.h"
+#include "lwip/dns.h"
+#include "lwip/pbuf.h"
+#include <lwip/sockets.h>
+#include <lwip/netdb.h>
 #if __has_include("bl_fw_api.h")
 #include "bl_fw_api.h"        // old SDK 2.0, buggy and WIFI not working
 #else
@@ -47,10 +52,7 @@
 #include "bl616_tzc_sec.h"
 #include "task.h"
 #include "timers.h"
-#include <lwip/sockets.h>
-#include <lwip/netdb.h>
 #include "bflb_irq.h"
-#include "lwip/dns.h"
 #include "../at_wifi.h"
 
 extern uint32_t __HeapBase;
@@ -533,7 +535,7 @@ void usb_host(void) {
 
   usb_debugf("init usb hid host");
 
-  usbh_initialize(0, USB_BASE);
+  usbh_initialize(0, USB_BASE, NULL);
 
   // initialize all HID info entries
   for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
@@ -1035,6 +1037,8 @@ void mcu_hw_port_byte(unsigned char byte) {
 #define WIFI_STATE_CONNECTED    3
 
 static int wifi_state = WIFI_STATE_UNKNOWN;
+unsigned int petsc2;
+
 static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
 static int s_retry_num = 0;
@@ -1116,42 +1120,44 @@ static void wifi_init(void) {
 
 static void wait4event(char code, char code2) {
   char evt = -1;
-  while(code != evt && code2 != evt) {
-    if(xQueueReceive(wifi_event_queue, &evt, pdMS_TO_TICKS(100))) {
-      debugf("event: %d", evt);
+  for (int i = 0;i<10*30;i++) {
+    if (code != evt && code2 != evt) {
+      if(xQueueReceive(wifi_event_queue, &evt, pdMS_TO_TICKS(100))) {
+        debugf("event: %d", evt);
 
-      switch(evt) {
-      case 1:
-        debugf("  -> scan done");
-        break;
-      case 2:
-        debugf("  -> disconnect");
-        if (s_retry_num < 10) {
-          // connect
-          wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0);
-          s_retry_num++;
-          debugf("retry to connect to the AP");
-          at_wifi_puts(".");
-        } else {
-          at_wifi_puts("\r\nConnection failed!\r\n");
-          debugf("finally failed");
-        }	
-        break;
-      case 3:
-        debugf("  -> connect");
-        break;
-      case 4:
-        debugf("  -> got ip");
-        at_wifi_puts("\r\nConnected\r\n");
-        break;	
-      case 5:
-        debugf("  -> init done");
-	      break;
+        switch(evt) {
+        case 1:
+          debugf("  -> scan done");
+          break;
+        case 2:
+          debugf("  -> disconnect");
+          if (s_retry_num < 10) {
+            // connect
+            wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0);
+            s_retry_num++;
+            debugf("retry to connect to the AP");
+            at_wifi_puts(".");
+          } else {
+            at_wifi_puts("\r\nConnection failed!\r\n");
+            debugf("finally failed");
+          }	
+          break;
+        case 3:
+          debugf("  -> connect");
+          break;
+        case 4:
+          debugf("  -> got ip");
+          at_wifi_puts("\r\nConnected\r\n");
+          break;	
+        case 5:
+          debugf("  -> init done");
+          break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
       }
-      vTaskDelay(pdMS_TO_TICKS(100));
     }
+    debugf("wait done");
   }
-  debugf("wait done");
 }
 
 static const char *auth_mode_str(int authmode) {
@@ -1178,8 +1184,8 @@ static const char *auth_mode_str(int authmode) {
 static void wifi_scan_item_cb(void *env, void *arg, wifi_mgmr_scan_item_t *item) {
   debugf("scan item cb %s", item->ssid);
 
-  char str[64];
-  snprintf(str, 64, "SSID %s, RSSI %d, CH %d, %s\r\n", item->ssid, item->rssi,
+  char str[74];
+  snprintf(str, sizeof(str), "SSID %s, RSSI %d, CH %d, %s\r\n", item->ssid, item->rssi,
 	   item->channel, auth_mode_str(item->auth));
 
   at_wifi_puts(str);
@@ -1216,22 +1222,22 @@ static void wifi_info()
 
     ip4addr_ntoa_r((ip4_addr_t *) &ip.addr, str_tmp, sizeof(str_tmp));
     debugf("IP  :%s \r\n", str_tmp);
-    snprintf(str, 64, "IP  :%s \r\n", str_tmp);
+    snprintf(str, sizeof(str), "IP  :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
     ip4addr_ntoa_r((ip4_addr_t *) &mask.addr, str_tmp, sizeof(str_tmp));
     debugf("MASK:%s \r\n", str_tmp);
-    snprintf(str, 64, "MASK:%s \r\n", str_tmp);
+    snprintf(str, sizeof(str), "MASK:%s \r\n", str_tmp);
     at_wifi_puts(str);
     
     ip4addr_ntoa_r((ip4_addr_t *) &gw.addr, str_tmp, sizeof(str_tmp));
     debugf("GW  :%s \r\n", str_tmp);
-    snprintf(str, 64, "GW  :%s \r\n", str_tmp);
+    snprintf(str, sizeof(str), "GW  :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
     ip4addr_ntoa_r((ip4_addr_t *) &dns.addr, str_tmp, sizeof(str_tmp));
     debugf("DNS  :%s \r\n", str_tmp);
-    snprintf(str, 64, "DNS :%s \r\n", str_tmp);
+    snprintf(str, sizeof(str), "DNS :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
 }
@@ -1255,7 +1261,7 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
   if (0 != wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0)) {
     debugf("\r\nWiFI: STA failed!\r\n");
   } else {
-    vTaskDelay(7000);
+    wait4event(4, 4);
     if (wifi_mgmr_sta_state_get() == 1 ) {
       at_wifi_puts("\r\nWiFI: Connected\r\n");
       wifi_info();
@@ -1265,10 +1271,6 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
       }
     }
 }
-
-#include "lwip/dns.h"
-#include "lwip/pbuf.h"
-#include "lwip/tcp.h"
 
 static struct tcp_pcb *tcp_pcb = NULL;
 
@@ -1347,7 +1349,6 @@ void mcu_hw_tcp_disconnect(void) {
 // Call back with a DNS result
 static void dns_found(__attribute__((unused)) const char *hostname, const ip_addr_t *ipaddr, void *arg) {
   if (ipaddr) {
-    // state->ntp_server_address = *ipaddr;
     at_wifi_puts("Using address ");
     at_wifi_puts(ipaddr_ntoa(ipaddr));
     at_wifi_puts("\r\n");
@@ -1361,8 +1362,8 @@ void mcu_hw_tcp_connect(char *host, int port) {
   static int lport;
   static ip_addr_t address;
 
-  char str[64];
-  snprintf(str, 64, "\r\nconnecting to host: %s port: %d \r\n", host, port);
+  char str[74];
+  snprintf(str, sizeof(str), "\r\nconnecting to host: %s port: %d \r\n", host, port);
   at_wifi_puts(str);
 
   lport = port;
