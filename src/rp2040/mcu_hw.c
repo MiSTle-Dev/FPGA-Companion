@@ -1041,6 +1041,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
 
 // send up to 8 TMS bits with a given fixed TDI state
 uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
+  int dlen = len & 7;
   uint8_t mask = 1;
   uint8_t rx = 0;
 
@@ -1067,7 +1068,10 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
     gpio_put(PIN_JTAG_TCK, 0);
 
     mask <<= 1;
-  }    
+  }
+
+  // adjust for the fact that we aren't really shifting
+  rx <<= 8-dlen;
   return rx;
 }
 
@@ -1118,7 +1122,9 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
       jtag_tap_advance_state(0, tx_bit);
 #endif
       
-      // jtag_debugf("TMS 0 TDI %d TDO %d", tx_bit, gpio_get(PIN_JTAG_TDO));
+#ifdef DEBUG_JTAG
+      jtag_debugf("TMS 0 TDI %d TDO %d", tx_bit, gpio_get(PIN_JTAG_TDO));
+#endif
       
       if(rxd) {
 	// shift in from lsb
