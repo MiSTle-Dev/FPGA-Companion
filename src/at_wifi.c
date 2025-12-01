@@ -45,12 +45,25 @@ static void port_putc(unsigned char byte) {
   sys_port_write(0, &byte, 1);
 }
 
-void at_wifi_puts(const char *str) {
+void at_wifi_puts(char *str) {
+  // do ascii translation if requested
+  if (petsc2 == 1) {
+    int len = strlen(str);
+    for (int i = 0; i < len; i++) {
+      str[i] = asc2pet(str[i]);
+    }
+  }
   at_wifi_escape_tick = xTaskGetTickCount();
   sys_port_write(0, (const unsigned char*)str, strlen(str));
 }
 
-void at_wifi_puts_n(const char *str, int len) {
+void at_wifi_puts_n(char *str, int len) {
+  // do ascii translation if requested
+  if (petsc2 == 1) {
+    for (int i = 0; i < len; i++) {
+      str[i] = asc2pet(str[i]);
+    }
+  }
   at_wifi_escape_tick = xTaskGetTickCount();
   // this is actually being used by the hardware layer to send data into the core
   sys_port_write(0, (const unsigned char*)str, len);
