@@ -33,7 +33,7 @@
 #define AT_WIFI_STATE_USER_OFFLINE 2
 
 static int at_wifi_state = AT_WIFI_STATE_OFFLINE;
-static unsigned int petsc2 = 0;  // default ASC-2 mode
+static volatile unsigned int petsc2 = 0;  // default ASC-2 mode
 
 static int at_wifi_escape_state = 0;
 static TickType_t at_wifi_escape_tick = 0;

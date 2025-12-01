@@ -1037,7 +1037,7 @@ void mcu_hw_port_byte(unsigned char byte) {
 #define WIFI_STATE_CONNECTED    3
 
 static int wifi_state = WIFI_STATE_UNKNOWN;
-volatile unsigned int petsc2;
+//static volatile unsigned int petsc2;
 
 static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
@@ -1104,7 +1104,7 @@ static void wifi_init(void) {
   
   debugf("PHY RF init success!");
 
-  petsc2 = 0;
+  // petsc2 = 0;
   tcpip_init(NULL, NULL);
   
   /* enable wifi clock */
