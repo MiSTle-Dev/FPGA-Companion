@@ -523,7 +523,6 @@ static void led_timer_w(__attribute__((unused)) TimerHandle_t pxTimer) {
 #define WIFI_STATE_CONNECTED    3
 
 static int wifi_state = WIFI_STATE_UNKNOWN;
-unsigned int petsc2;
 
 static void mcu_hw_wifi_init(void) {
 #ifdef PICO_RP2350
@@ -605,16 +604,6 @@ void mcu_hw_wifi_scan(void) {
   }
 
 void mcu_hw_wifi_connect(char *ssid, char *key) {
-  if (petsc2 == 1) {
-    int len = strlen(ssid);
-    for (int i = 0; i < len; i++) {
-        ssid[i] = pet2asc(ssid[i]);
-    }
-    len = strlen(key);
-    for (int i = 0; i < len; i++) {
-        key[i] = pet2asc(key[i]);
-    }
-  }
 
   debugf("WiFI: connect to %s/%s", ssid, key);
   
@@ -729,13 +718,6 @@ void mcu_hw_tcp_connect(char *host, int port) {
   static int lport;
   static ip_addr_t address;
 
-  if (petsc2 == 1) {
-    int len = strlen(host);
-    for (int i = 0; i < len; i++) {
-        host[i] = pet2asc(host[i]);
-    }
-  }
-
   lport = port;
   debugf("connecting to %s %d", host, lport);
   
@@ -813,7 +795,6 @@ void mcu_hw_main_loop(void) {
 static void wifi_task(__attribute__((unused)) void *parms) {
   debugf("WiFi init task ...");
 
-  petsc2 = 0;  // default ASC-2 mode
   mcu_hw_wifi_init();
 
   // only used for init

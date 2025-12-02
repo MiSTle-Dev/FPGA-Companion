@@ -1037,7 +1037,6 @@ void mcu_hw_port_byte(unsigned char byte) {
 #define WIFI_STATE_CONNECTED    3
 
 static int wifi_state = WIFI_STATE_UNKNOWN;
-//static volatile unsigned int petsc2;
 
 static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
@@ -1104,7 +1103,6 @@ static void wifi_init(void) {
   
   debugf("PHY RF init success!");
 
-  // petsc2 = 0;
   tcpip_init(NULL, NULL);
   
   /* enable wifi clock */
@@ -1244,18 +1242,6 @@ static void wifi_info()
 }
 
 void mcu_hw_wifi_connect(char *ssid, char *key) {
-/*
-  if (petsc2 == 1) {
-    int len = strlen(ssid);
-    for (int i = 0; i < len; i++) {
-        ssid[i] = pet2asc(ssid[i]);
-    }
-    len = strlen(key);
-    for (int i = 0; i < len; i++) {
-        key[i] = pet2asc(key[i]);
-    }
-  }
-*/
   debugf("WiFI: connect to %s/%s", ssid, key);
   
   at_wifi_puts("WiFI: Connecting...");
@@ -1375,17 +1361,6 @@ void mcu_hw_tcp_connect(char *host, int port) {
   static int lport;
   static ip_addr_t address;
 
-  char str[74];
-  snprintf(str, sizeof(str), "\r\nconnecting to host: %s port: %d \r\n", host, port);
-  at_wifi_puts(str);
-/*
-  if (petsc2 == 1) {
-    int len = strlen(host);
-    for (int i = 0; i < len; i++) {
-        host[i] = pet2asc(host[i]);
-    }
-  }
-*/
   lport = port;
   debugf("connecting to %s %d", host, lport);
   

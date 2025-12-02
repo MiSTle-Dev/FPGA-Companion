@@ -249,15 +249,15 @@ void at_wifi_init(void) {
 }
 
 uint8_t pet2asc(uint8_t c) {
-    if ('A' <=  c && c <= 'Z')
-      c += 'a' - 'A';
-    else if ('a' <=  c && c <= 'z')
-      c -= 'a' - 'A';
-    else if (192 <= c && c <= 223) 
-      c -= 96;
-    else if (224 <= c && c <= 254)
-      c -= 64;
-  
+    if (c >= 0x41 && c <= 0x5a)
+      c += 'a' - 0x41;
+    else if (c >= 0xc1 && c <= 0xda)
+      c += 'A' - 0xc1;
+    else if ((c & 127) < 32)
+      c = '-';
+    else if (c > 0xda)
+      c = '+';
+
     return c;
   }
 
