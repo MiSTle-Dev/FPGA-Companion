@@ -108,7 +108,7 @@ If you have downloaded the firmware from the [release page](https://github.com/M
 or alternatively for the .ini file including the companion fw and the fpga-companion:
 
 ```shell
-BLFlashCube-ubuntu --port /dev/ttyACMtbd --chipname=bl616 --config buildall/flash_nano20k.ini
+BLFlashCube-ubuntu --interface=uart --baudrate=2000000 --port=/dev/ttyACMtbd --chipname=bl616 --cpu_id= --config buildall/flash_nano20k.ini
 ```
 
 After successful download you need to unplug the device again and reinsert it *without* the BOOT button pressed to boot into the newly installed firmware.
@@ -222,7 +222,7 @@ or alternatively a shell based tool:
 
 ```shell
 cd %HOMEPATH%/Documents\FPGA-Companion\src\bl616
-BLFlashCommand.exe --port COM_tbd --chipname=bl616 --config %HOMEPATH%/Documents\FPGA-Companion\src\bl616\buildall\flash_nano20k.ini
+BLFlashCommand.exe --interface=uart --baudrate=2000000 --port=COM_tbd --chipname=bl616 --cpu_id= --config %HOMEPATH%/Documents\FPGA-Companion\src\bl616\buildall\flash_nano20k.ini
 ```
 
 After successful download you need to unplug the device again and reinsert it *without* the BOOT button pressed to boot into the newly installed firmware.

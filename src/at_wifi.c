@@ -33,7 +33,7 @@
 #define AT_WIFI_STATE_USER_OFFLINE 2
 
 static int at_wifi_state = AT_WIFI_STATE_OFFLINE;
-static unsigned int petsc2 = 0;  // default ASC-2 mode
+static volatile unsigned int petsc2 = 0;  // default ASC-2 mode
 
 static int at_wifi_escape_state = 0;
 static TickType_t at_wifi_escape_tick = 0;
@@ -45,12 +45,25 @@ static void port_putc(unsigned char byte) {
   sys_port_write(0, &byte, 1);
 }
 
-void at_wifi_puts(const char *str) {
+void at_wifi_puts(char *str) {
+  // do ascii translation if requested
+  if (petsc2 == 1) {
+    int len = strlen(str);
+    for (int i = 0; i < len; i++) {
+      str[i] = asc2pet(str[i]);
+    }
+  }
   at_wifi_escape_tick = xTaskGetTickCount();
   sys_port_write(0, (const unsigned char*)str, strlen(str));
 }
 
-void at_wifi_puts_n(const char *str, int len) {
+void at_wifi_puts_n(char *str, int len) {
+  // do ascii translation if requested
+  if (petsc2 == 1) {
+    for (int i = 0; i < len; i++) {
+      str[i] = asc2pet(str[i]);
+    }
+  }
   at_wifi_escape_tick = xTaskGetTickCount();
   // this is actually being used by the hardware layer to send data into the core
   sys_port_write(0, (const unsigned char*)str, len);
@@ -236,15 +249,15 @@ void at_wifi_init(void) {
 }
 
 uint8_t pet2asc(uint8_t c) {
-    if ('A' <=  c && c <= 'Z')
-      c += 'a' - 'A';
-    else if ('a' <=  c && c <= 'z')
-      c -= 'a' - 'A';
-    else if (192 <= c && c <= 223) 
-      c -= 96;
-    else if (224 <= c && c <= 254)
-      c -= 64;
-  
+    if (c >= 0x41 && c <= 0x5a)
+      c += 'a' - 0x41;
+    else if (c >= 0xc1 && c <= 0xda)
+      c += 'A' - 0xc1;
+    else if ((c & 127) < 32)
+      c = '-';
+    else if (c > 0xda)
+      c = '+';
+
     return c;
   }
 

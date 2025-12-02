@@ -1037,7 +1037,6 @@ void mcu_hw_port_byte(unsigned char byte) {
 #define WIFI_STATE_CONNECTED    3
 
 static int wifi_state = WIFI_STATE_UNKNOWN;
-unsigned int petsc2;
 
 static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
@@ -1156,7 +1155,7 @@ static void wait4event(char code, char code2) {
         vTaskDelay(pdMS_TO_TICKS(100));
       }
     }
-    debugf("wait done");
+ //   debugf("wait done");
   }
 }
 
@@ -1361,10 +1360,6 @@ static void dns_found(__attribute__((unused)) const char *hostname, const ip_add
 void mcu_hw_tcp_connect(char *host, int port) {
   static int lport;
   static ip_addr_t address;
-
-  char str[74];
-  snprintf(str, sizeof(str), "\r\nconnecting to host: %s port: %d \r\n", host, port);
-  at_wifi_puts(str);
 
   lport = port;
   debugf("connecting to %s %d", host, lport);
