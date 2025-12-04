@@ -25,7 +25,7 @@ message("==============================")
 
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
-option(BOARD "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K" PICO)
+set(BOARD "PICO" CACHE STRING "Board type. Can be PICO, PICO2, WS2040_ZERO or SH20KLITE")
 
 set(BOARDS PICO PICO2 WS2040ZERO SH20KLITE DEV20K)
 if( NOT ${BOARD} IN_LIST BOARDS)
@@ -45,7 +45,7 @@ set(TARGET rp2040)
 endif()
 
 # Pull in SDK (must be before project)
-include("$ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake")
+include(./pico_sdk_import.cmake)
 
 project(${PROJECT} C CXX ASM)
 set(CMAKE_C_STANDARD 11)
@@ -125,7 +125,7 @@ target_link_libraries(${PROJECT} PRIVATE pico_stdlib pico_multicore)
 target_link_libraries(${PROJECT} PRIVATE FreeRTOS-Kernel FreeRTOS-Kernel-Heap4)
 target_link_libraries(${PROJECT} PRIVATE hardware_pio hardware_dma hardware_spi hardware_adc)
 target_link_libraries(${PROJECT} PRIVATE pico_cyw43_arch_lwip_sys_freertos)
-target_link_libraries(${PROJECT} PRIVATE tinyusb_host tinyusb_board u8g2)
+target_link_libraries(${PROJECT} PRIVATE tinyusb_common_base tinyusb_host tinyusb_common tinyusb_board u8g2)
 
 pico_add_extra_outputs(${PROJECT})
 pico_enable_stdio_usb(${PROJECT} 0)
