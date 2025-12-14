@@ -535,7 +535,7 @@ void usb_host(void) {
 
   usb_debugf("init usb hid host");
 
-  usbh_initialize(0, USB_BASE, NULL);
+  usbh_initialize(0, USB_BASE);
 
   // initialize all HID info entries
   for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
@@ -751,41 +751,6 @@ static void peripheral_clock_init(void) {
   GLB_Swap_MCU_SPI_0_MOSI_With_MISO(0);
 }
 
-#if defined(CONFIG_ANTI_ROLLBACK) && !defined(CONFIG_BOOT2)
-extern const blverinf_t app_ver;
-uint8_t efuse_version = 0xFF;
-
-static void bflb_check_anti_rollback(void)
-{
-    if (0 != bflb_get_app_version_from_efuse(&efuse_version)) {
-        printf("error! can't read app version in efuse\r\n");
-        while (1) {}
-    } else {
-        printf("app version in efuse is: %d\r\n", efuse_version);
-    }
-
-    if (app_ver.anti_rollback < efuse_version) {
-        printf("app version in application is: %d, less than app version in efuse, the application should not run up\r\n", app_ver.anti_rollback);
-    } else {
-        printf("app version in application is: %d, not less than app version in efuse, the application should run up\r\n", app_ver.anti_rollback);
-    }
-
-    /* change app version in efuse to app_ver.anti_rollback, default is 0 */
-    if (app_ver.anti_rollback > efuse_version) {
-        bflb_set_app_version_to_efuse(app_ver.anti_rollback); //be attention! app version in efuse is incremental(from 0 to 128), and cannot be reduced forever
-        printf("update app version in efuse to %d\r\n", app_ver.anti_rollback);
-
-        /* check app version in efuse */
-        if (0 != bflb_get_app_version_from_efuse(&efuse_version)) {
-            printf("error! can't read app version in efuse\r\n");
-            while (1) {}
-        } else {
-            printf("app version in efuse is: %d\r\n", efuse_version);
-        }
-    }
-}
-#endif
-
 static void console_init() {
   gpio = bflb_device_get_by_name("gpio");
   
@@ -907,18 +872,15 @@ static void mn_board_init(void) {
     /* version info dump */
     bl_show_component_version();
 
-#if defined(CONFIG_ANTI_ROLLBACK) && !defined(CONFIG_BOOT2)
-    bflb_check_anti_rollback();
-#endif
 
-  /* flash info dump */
+    /* flash info dump */
   bl_show_flashinfo();
   if (ret != 0) {
-        printf("flash init fail !!!\r\n");
+        debugf("flash init fail !!!\r\n");
       }
 
-    printf("uart  sig1:%08x, sig2:%08x\r\n", getreg32(GLB_BASE + GLB_UART_CFG1_OFFSET), getreg32(GLB_BASE + GLB_UART_CFG2_OFFSET));
-    printf("clock gen1:%08x, gen2:%08x\r\n", getreg32(GLB_BASE + GLB_CGEN_CFG1_OFFSET), getreg32(GLB_BASE + GLB_CGEN_CFG2_OFFSET));
+    debugf("uart  sig1:%08x, sig2:%08x\r\n", getreg32(GLB_BASE + GLB_UART_CFG1_OFFSET), getreg32(GLB_BASE + GLB_UART_CFG2_OFFSET));
+    debugf("clock gen1:%08x, gen2:%08x\r\n", getreg32(GLB_BASE + GLB_CGEN_CFG1_OFFSET), getreg32(GLB_BASE + GLB_CGEN_CFG2_OFFSET));
 
     log_start();
 
@@ -934,14 +896,14 @@ static void mn_board_init(void) {
     /* unlock */
     bflb_irq_restore(flag);
 
-    printf("board init done\r\n");
-    printf("===========================\r\n");
+    debugf("board init done\r\n");
+    debugf("===========================\r\n");
 }
 
 void mcu_hw_init(void) {
   mn_board_init();
 
-  printf("\r\n\r\n" LOGO "           FPGA Companion for BL616\r\n\r\n");
+  debugf("\r\n\r\n" LOGO "           FPGA Companion for BL616\r\n\r\n");
 
   gpio = bflb_device_get_by_name("gpio");
 
