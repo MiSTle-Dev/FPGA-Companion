@@ -20,6 +20,8 @@ sudo dnf install clang cmake gcc-arm-linux-gnu arm-none-eabi-gcc-cs-c++ arm-none
 
 ### Install the Pi Pico Toolchain (Windows11)
 
+Install [VSCode](https://code.visualstudio.com) and the [Raspberry Pi Pico](https://marketplace.visualstudio.com/items?itemName=raspberry-pi.raspberry-pi-pico) plugin.
+
 see > ```Install the Pi Pico Toolchain for VisualStudioCode``` as below
 
 ### Download and install the Pi Pico SDK
@@ -31,6 +33,7 @@ SDKs root directory.
 ```bash
 git clone https://github.com/raspberrypi/pico-sdk --recursive
 export PICO_SDK_PATH=<full-path-to-clones-sdk>
+export PICOTOOL_FETCH_FROM_GIT_PATH=<full-path-to-clones-sdk>
 ```
 
 ### PIO-USB component for TinyUSB
@@ -95,7 +98,7 @@ compilation:
 cd src/rp2040
 mkdir build
 cd build
-cmake ..
+cmake -DBOARD=PICO ..
 make
 ```
 
@@ -119,14 +122,14 @@ Install [VSCode](https://code.visualstudio.com) [Raspberry Pi Pico](https://mark
 Open Start Search, type “cmd” or Win + R and type “cmd”
 
 ```shell
-cd %HOMEPATH%/.pico-sdk\sdk\2.1.1\lib\tinyusb
+cd %HOMEPATH%/.pico-sdk\sdk\2.2.0\lib\tinyusb
 python tools/get_deps.py rp2040
 ```
 
 **Linux:**
 
 ```bash
-cd ~/.pico-sdk/sdk/2.1.1/lib/tinyusb
+cd ~/.pico-sdk/sdk/2.2.0/lib/tinyusb
 python tools/get_deps.py rp2040
 ```
 
@@ -135,7 +138,14 @@ python tools/get_deps.py rp2040
 The resulting file named ```fpga_companion.uf2``` is loaded onto the
 Pico as usual. Once successfully booted the Pico's LED will blink.
 
-For a *Waveshare RP2040-Zero* build select ```Switch Board``` and choose waveshare_rp2040_zero
+For a *Waveshare RP2040-Zero* build you need to modify the CMakeLists.txt manually:
+
+```bash
+set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
+# to
+set(BOARD WS2040ZERO CACHE STRING "Board type WS2040ZERO")
+# and leave set(PICO_BOARD pico_w CACHE STRING "Board type") as is
+```
 
 ## Pin usage
 

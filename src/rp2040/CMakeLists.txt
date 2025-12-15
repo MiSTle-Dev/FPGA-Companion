@@ -23,25 +23,28 @@ message("==============================")
 message("      Board is ${BOARD}")
 message("==============================")
 
+# workaround for VS Code extension for Raspberry Pi Pico development
+set(PICO_BOARD pico_w CACHE STRING "Board type")
+
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
-set(BOARD "PICO" CACHE STRING "Board type. Can be PICO, PICO2, WS2040_ZERO or SH20KLITE")
+set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
 
 set(BOARDS PICO PICO2 WS2040ZERO SH20KLITE DEV20K)
-if( NOT ${BOARD} IN_LIST BOARDS)
+if( NOT BOARD IN_LIST BOARDS)
     message(FATAL_ERROR "BOARD must be one of ${BOARDS}")
 endif()
 
 # This will also work for the the Pico-W and the regular Pico. The
 # firmware detects it and acts accordingly
 if(${BOARD} STREQUAL PICO2)
-message("Building for RP2350")
-set(PICO_BOARD pico2_w)
-set(TARGET rp2350)
+   message("Building for RP2350")
+   set(PICO_BOARD pico2_w)
+   set(TARGET rp2350)
 else()
-message("Building for RP2040")
-set(PICO_BOARD pico_w)
-set(TARGET rp2040)
+   message("Building for RP2040")
+   set(PICO_BOARD pico_w)
+   set(TARGET rp2040)
 endif()
 
 # Pull in SDK (must be before project)
@@ -50,6 +53,10 @@ include(./pico_sdk_import.cmake)
 project(${PROJECT} C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
+
+if (PICO_SDK_VERSION_STRING VERSION_LESS "2.2.0")
+    message(FATAL_ERROR "Raspberry Pi Pico SDK version 2.2.0 (or later) required. Your version is ${PICO_SDK_VERSION_STRING}")
+endif()
 
 pico_sdk_init()
 
