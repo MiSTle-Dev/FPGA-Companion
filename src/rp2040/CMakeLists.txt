@@ -23,22 +23,10 @@ message("==============================")
 message("      Board is ${BOARD}")
 message("==============================")
 
-# VSCode extension
-set(PICO_BOARD waveshare_rp2040_pizero CACHE STRING "Board type")
+# workaround for VS Code extension for Raspberry Pi Pico development
+set(PICO_BOARD pico_w CACHE STRING "Board type")
 
-if(PICO_BOARD STREQUAL waveshare_rp2040_zero)
-    message("Setting BOARD to WS2040ZERO")
-    option(BOARD WS2040ZERO CACHE STRING "Board type WS2040ZERO board")
-elseif(PICO_BOARD STREQUAL pico2_w)
-    message("Setting BOARD to PICO2")
-    set(BOARD PICO2 CACHE STRING "Board type PICO2 board")
-    set(TARGET rp2350)
-else()
-    if(NOT DEFINED ${BOARD})
-        message("Setting BOARD to PICO")
-        set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040_ZERO, SH20KLITE or DEV20K")
-    endif()
-endif()
+set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
 
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
@@ -49,17 +37,14 @@ endif()
 
 # This will also work for the the Pico-W and the regular Pico. The
 # firmware detects it and acts accordingly
-if(BOARD STREQUAL PICO2)
-    message("Building for RP2350")
-    set(PICO_BOARD pico2_w CACHE STRING "Board type pico2_w")
-    set(TARGET rp2350)
-elseif(BOARD STREQUAL WS2040ZERO)
-    message("Building for waveshare rp2040-zero")
-    set(PICO_BOARD waveshare_rp2040_zero CACHE STRING "Board type waveshare_rp2040_zero")
+if(${BOARD} STREQUAL PICO2)
+   message("Building for RP2350")
+   set(PICO_BOARD pico2_w)
+   set(TARGET rp2350)
 else()
-    message("Building for RP2040")
-    set(PICO_BOARD pico_w CACHE STRING "Board type pico_w")
-    set(TARGET rp2040)
+   message("Building for RP2040")
+   set(PICO_BOARD pico_w)
+   set(TARGET rp2040)
 endif()
 
 # Pull in SDK (must be before project)
