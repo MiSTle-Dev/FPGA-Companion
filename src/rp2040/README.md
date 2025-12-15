@@ -33,6 +33,7 @@ SDKs root directory.
 ```bash
 git clone https://github.com/raspberrypi/pico-sdk --recursive
 export PICO_SDK_PATH=<full-path-to-clones-sdk>
+export PICOTOOL_FETCH_FROM_GIT_PATH=<full-path-to-clones-sdk>
 ```
 
 ### PIO-USB component for TinyUSB

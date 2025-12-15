@@ -26,10 +26,10 @@ message("==============================")
 # workaround for VS Code extension for Raspberry Pi Pico development
 set(PICO_BOARD pico_w CACHE STRING "Board type")
 
-set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
-
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
+set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
+
 set(BOARDS PICO PICO2 WS2040ZERO SH20KLITE DEV20K)
 if( NOT BOARD IN_LIST BOARDS)
     message(FATAL_ERROR "BOARD must be one of ${BOARDS}")
