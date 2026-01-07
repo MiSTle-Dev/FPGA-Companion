@@ -850,8 +850,10 @@ uint32_t getFreeHeap(void) {
 
 #ifdef ENABLE_JTAG
 
-// #define DEBUG_JTAG    // debug raw JTAG IO
-// #define DEBUG_TAP     // set to follow the JTAG state machine
+static bool jtag_is_active = false;
+
+//#define DEBUG_JTAG    // debug raw JTAG IO
+//#define DEBUG_TAP     // set to follow the JTAG state machine
 
 #ifdef DEBUG_TAP
 #define JTAG_STATE_TEST_LOGIC_RESET  0
@@ -1004,6 +1006,10 @@ static const char *jtag_tap_state_name(void) {
 #endif
 #endif
 
+bool mcu_hw_jtag_is_active(void) {
+  return jtag_is_active;
+}
+
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   // bit order is TMS/TDO/TDI/TCK, for JTAG this will be IOII  
   uint8_t pins[] = { PIN_JTAG_TCK, PIN_JTAG_TDI, PIN_JTAG_TDO, PIN_JTAG_TMS };
@@ -1011,13 +1017,47 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
 #ifdef DEBUG_JTAG
   jtag_debugf("PIN DIR 0x%02x, DATA 0x%02x", dir, data);
 #endif
-  
+
   // only the lowest four bits are actually implemented
   // TODO: consider another bit for RECONF
   for(int i=0;i<4;i++) {
     if(dir & (1<<i))  gpio_put(pins[i], (data & (1<<i))?1:0);
     gpio_set_dir(pins[i], (dir & (1<<i))?GPIO_OUT:GPIO_IN);
   }  
+
+  // check if the pin direction pattern matches JTAG
+  if((dir & 0x0f) == 0x0b) {
+    jtag_is_active = true;
+    
+#ifdef DEBUG_JTAG
+    jtag_debugf("DIR pattern matches JTAG");
+#endif
+    // JTAG may actually be disabled on the FPGA. Try to detect the
+    // FPGA and if none is detected, try to reconfigure it
+
+    // send a bunch of 1's to return into Test-Logic-Reset state.
+    mcu_hw_jtag_tms(1, 0b11111, 5);
+  
+    // send TMS 0/1/0/0 to get into SHIFT-DR state
+    mcu_hw_jtag_tms(1, 0b0010, 4);
+
+    // shift data into DR
+    uint32_t idcode;
+    mcu_hw_jtag_data(NULL, (uint8_t*)&idcode, 32);
+    
+    // finally return into Test-Logic-Reset state.
+    mcu_hw_jtag_tms(1, 0b11111, 5);
+  
+    jtag_debugf("IDCODE = %08lx", idcode);
+
+    // anything bit all 1's or all 0's indicates that JTAG seems to
+    // be working
+    if((idcode == 0xffffffff) || (idcode == 0x00000000)) {
+      jtag_highlight_debugf("JTAG doesn't seem to work. Forcing non-flash reconfig");
+      mcu_hw_fpga_reconfig(false);
+    }
+  } else
+    jtag_is_active = false;
 }
 
 // send up to 8 TMS bits with a given fixed TDI state

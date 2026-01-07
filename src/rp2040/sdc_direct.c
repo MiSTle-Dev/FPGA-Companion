@@ -55,14 +55,12 @@ static uint8_t spi_direct_crc7(uint8_t crcIn, uint8_t data) {
 #ifdef SD_BITBANG
 static void sdc_direct_sd_clock(uint16_t n) {
   while(n--) {
-    gpio_put(PIN_SD_CLK, 0);
-    gpio_put(PIN_SD_CLK, 0);
-    gpio_put(PIN_SD_CLK, 0);
-    gpio_put(PIN_SD_CLK, 0);
-
     // Slightly reduced clock. Most cards won't work
     // with a faster clock. TODO: Measure what clock
     // this actually results in.
+    gpio_put(PIN_SD_CLK, 0); gpio_put(PIN_SD_CLK, 0);
+    gpio_put(PIN_SD_CLK, 0); gpio_put(PIN_SD_CLK, 0);
+
     gpio_put(PIN_SD_CLK, 1); gpio_put(PIN_SD_CLK, 1);
     gpio_put(PIN_SD_CLK, 1); gpio_put(PIN_SD_CLK, 1);
   }
@@ -765,6 +763,16 @@ bool sdc_direct_upload_core_fs(const char *name) {
 }
 
 void sdc_boot(void) {
+  // before doing anything, check if an SD card is inserted
+  
+  // -------- init SD control pins ---------
+  gpio_init(PIN_SD_DET);
+  gpio_set_dir(PIN_SD_DET, GPIO_IN);
+  if(gpio_get(PIN_SD_DET)) {
+    sdc_debugf("No card inserted");
+    return;
+  }
+  
   // the FPGA is not ready, but it may still drive the SD card.
   // So reconfigure the FPGA without allowing it to boot from flash
   mcu_hw_fpga_reconfig(false);  // TODO: reenable this

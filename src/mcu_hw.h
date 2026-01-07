@@ -38,6 +38,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
 uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
 void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 void mcu_hw_fpga_reconfig(bool state);
+bool mcu_hw_jtag_is_active(void);
 
 // this board also has the ability to boot the FPGA from SD card
 #include "sdc_direct.h"

@@ -13,7 +13,7 @@
 
 #define IDCODE_GW2AR18  0x81b
 
-void jtag_command(uint8_t cmd) {
+static void jtag_gowin_command(uint8_t cmd) {
   // stay in RUN-TEST/IDLE like openFPGAloader
   mcu_hw_jtag_tms(1, 0b000000, 6);
 
@@ -28,7 +28,7 @@ void jtag_command(uint8_t cmd) {
   mcu_hw_jtag_tms(1, 0b01, 2);
 }
 
-static void jtag_shiftDR(uint8_t *tx, uint8_t *rx, uint16_t len) {
+static void jtag_gowin_shiftDR(uint8_t *tx, uint8_t *rx, uint16_t len) {
   // This currently assumes that len is a multiple of 8
   if(len & 7) jtag_highlight_debugf("Warning, shiftDR len not a multiple of 8");
 
@@ -53,7 +53,7 @@ static void jtag_shiftDR(uint8_t *tx, uint8_t *rx, uint16_t len) {
 #define JTAG_FLAG_BEGIN 1   // get from RUN-TEST/IDLE into SHIFT-DR before transfer
 #define JTAG_FLAG_END   2   // return into RUN-TEST/IDLE after transfer
 
-static void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, uint8_t flags) {
+static void jtag_gowin_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, uint8_t flags) {
   // This currently assumes that len is a multiple of 8
   if(len & 7) jtag_highlight_debugf("Warning, shiftDR_part len not a multiple of 8");
   
@@ -77,11 +77,11 @@ static void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, uint8_t fl
     mcu_hw_jtag_data(tx, rx, len);  
 }
 
-uint32_t jtag_command_read32(uint8_t cmd) {
+static uint32_t jtag_gowin_command_read32(uint8_t cmd) {
   uint32_t retval = 0;
   
-  jtag_command(cmd);
-  jtag_shiftDR(NULL, (uint8_t*)&retval, 32);
+  jtag_gowin_command(cmd);
+  jtag_gowin_shiftDR(NULL, (uint8_t*)&retval, 32);
 
   return retval;
 }
@@ -126,7 +126,7 @@ void jtag_close(void) {
 }
 
 static uint32_t jtag_gowin_readStatusReg(void) {
-  uint32_t status = jtag_command_read32(JTAG_COMMAND_GOWIN_STATUS);
+  uint32_t status = jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_STATUS);
 
 #if 0
   jtag_debugf("Status: %08lx", status);
@@ -158,20 +158,20 @@ static void jtag_gowin_gw2a_force_state(void) {
   uint32_t state =  jtag_gowin_readStatusReg();
   if ((state & JTAG_GOWIN_STATUS_CRC_ERROR) == 0)
     return;
-  jtag_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
-  jtag_command(0);
-  jtag_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
+  jtag_gowin_command(0);
+  jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
   state = jtag_gowin_readStatusReg();
-  jtag_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
-  jtag_command(0);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
+  jtag_gowin_command(0);
   state = jtag_gowin_readStatusReg();
-  jtag_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
-  jtag_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
-  jtag_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
-  jtag_command(JTAG_COMMAND_GOWIN_NOOP);
-  jtag_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
-  jtag_command(JTAG_COMMAND_GOWIN_NOOP);
-  jtag_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
+  jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+  jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+  jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
 }
 
 static bool jtag_gowin_pollFlag(uint32_t mask, uint32_t value) {
@@ -190,13 +190,13 @@ static bool jtag_gowin_pollFlag(uint32_t mask, uint32_t value) {
 }
 
 static bool jtag_gowin_enableCfg(void) {
-  jtag_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
   return jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE, JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE);
 }
 
 static bool jtag_gowin_disableCfg(void) {
-  jtag_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
-  jtag_command(JTAG_COMMAND_GOWIN_NOOP);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
   return jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE, 0);
 }
 
@@ -210,15 +210,15 @@ bool jtag_gowin_eraseSRAM(void) {
     return false;
   }
     
-  jtag_command(JTAG_COMMAND_GOWIN_ERASE_SRAM);
-  jtag_command(JTAG_COMMAND_GOWIN_NOOP);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_ERASE_SRAM);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
   if(!jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_MEMORY_ERASE, JTAG_GOWIN_STATUS_MEMORY_ERASE)) {
     jtag_debugf("Failed to trigger SRAM erase");
     return false;
   }
 
-  jtag_command(JTAG_COMMAND_GOWIN_XFER_DONE);
-  jtag_command(JTAG_COMMAND_GOWIN_NOOP);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_XFER_DONE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
   if(!jtag_gowin_disableCfg()) {
     jtag_debugf("Failed to disable config");
     return false;
@@ -228,20 +228,20 @@ bool jtag_gowin_eraseSRAM(void) {
 }
 
 bool jtag_gowin_writeSRAM_prepare(void) {
-  jtag_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE); // config enable
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE); // config enable
 
   /* UG704 3.4.3 */
-  jtag_command(JTAG_COMMAND_GOWIN_INIT_ADDR); // address initialize
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_INIT_ADDR); // address initialize
 
   /* 2.2.6.4 */
-  jtag_command(JTAG_COMMAND_GOWIN_XFER_WRITE); // transfer configuration data
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_XFER_WRITE); // transfer configuration data
 
   return true;
 }
 
 bool jtag_gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool first, bool last) {
 
-  jtag_shiftDR_part(data, NULL, len, (first?JTAG_FLAG_BEGIN:0) | (last?JTAG_FLAG_END:0));
+  jtag_gowin_shiftDR_part(data, NULL, len, (first?JTAG_FLAG_BEGIN:0) | (last?JTAG_FLAG_END:0));
   
   return true;
 }
@@ -250,13 +250,13 @@ bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
   // The following is being implemented by openFPGAloader. But it doesn't seem to be
   // necessary and it's also not mentioned in the Gowin JTAG programming guide TN653
   if(checksum != 0xffffffff) {
-    jtag_command(0x0a);
-    jtag_shiftDR((uint8_t *)&checksum, NULL, 32);
-    jtag_command(0x08);
+    jtag_gowin_command(0x0a);
+    jtag_gowin_shiftDR((uint8_t *)&checksum, NULL, 32);
+    jtag_gowin_command(0x08);
   }
   
-  jtag_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE); // config disable
-  jtag_command(JTAG_COMMAND_GOWIN_NOOP); // noop
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE); // config disable
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP); // noop
   
   uint32_t status_reg = jtag_gowin_readStatusReg();  
   if(!(status_reg & JTAG_GOWIN_STATUS_DONE_FINAL)) {

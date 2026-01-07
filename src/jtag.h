@@ -61,10 +61,6 @@
 bool jtag_open(void);
 void jtag_close(void);
 
-// these are actually for 8 bit commands and thus somewhat gowin specific
-void jtag_command(uint8_t cmd);
-uint32_t jtag_command_read32(uint8_t cmd);
-
 // these are obviously gowin specific
 bool jtag_gowin_eraseSRAM(void);
 bool jtag_gowin_writeSRAM_prepare(void);
