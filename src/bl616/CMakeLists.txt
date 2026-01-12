@@ -8,10 +8,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CONFIG_FREERTOS 1)
 set(CONFIG_CHERRYUSB 1)
 set(CONFIG_CHERRYUSB_HOST 1)
+set(CONFIG_CHERRYUSB_HOST_MSC 1)
 set(CONFIG_CHERRYUSB_DEVICE 1)
 set(CONFIG_CHERRYUSB_DEVICE_HID 1)
-set(CONFIG_PSRAM 0)
+set(CONFIG_BSP_SDH_SD 1)
+set(CONFIG_BSP_SDH_SDCARD 1)
+set(CONFIG_BSP_SDH_OSAL_POLLING_MODE 0)
+#set(CONFIG_BSP_SDH_LOG_LEVEL 5)
 set(CONFIG_FATFS 1)
+set(CONFIG_FATFS_USBH 1)
+set(CONFIG_FATFS_SDH_SDCARD 1)
 set(CONFIG_BFLOG 0)
 set(CONFIG_SHELL 1)
 set(CONFIG_CHERRYUSB_OSAL "freertos")
@@ -83,6 +89,8 @@ target_sources(app PRIVATE
     ../at_wifi.c
     ../puff.c
     hid_keyboard_template.c
+    ../jtag.c
+    sdc_direct.c
 )
 
 file(GLOB COMPONENT_SRCS ../u8g2/csrc/*.c  ../u8g2/sys/bitmap/common/*.c)

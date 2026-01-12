@@ -12,6 +12,9 @@
 #include <timers.h>
 
 #define IDCODE_GW2AR18  0x81b
+#define IDCODE_GW5AT60  0x1481b
+#define IDCODE_GW5AST138  0x1081b
+#define IDCODE_GW5A_25 0x1281b
 
 static void jtag_gowin_command(uint8_t cmd) {
   // stay in RUN-TEST/IDLE like openFPGAloader
@@ -113,7 +116,9 @@ bool jtag_open(void) {
   // return into Test-Logic-Reset state
   mcu_hw_jtag_tms(1, 0b11111, 5);
   
-  return(idcode == IDCODE_GW2AR18);
+  return(idcode == IDCODE_GW2AR18  || 
+         idcode == IDCODE_GW5AT60  || 
+         idcode == IDCODE_GW5AST138);
 }
 
 void jtag_close(void) {
