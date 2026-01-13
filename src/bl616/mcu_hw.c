@@ -1782,13 +1782,11 @@ void mcu_hw_fpga_reconfig(bool run) {
   // suppress MSPI loading
   gpio = bflb_device_get_by_name("gpio");
 
-  if(!run) {
   // trigger FPGA reconfiguration
   bflb_gpio_reset(gpio, PIN_nCFG);
   vTaskDelay(pdMS_TO_TICKS(1));
   bflb_gpio_set(gpio, PIN_nCFG);
   vTaskDelay(pdMS_TO_TICKS(100));
-  }
 }
 
 void mcu_hw_fpga_resume_spi(void) {
@@ -1805,6 +1803,46 @@ void mcu_hw_fpga_resume_spi(void) {
 }
 
 #endif
+
+// USB host MSC support
+static usb_osal_thread_t usbh_msc_handle = NULL;
+
+static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
+{
+  int ret;
+  struct usbh_msc *msc_class = (struct usbh_msc *)CONFIG_USB_OSAL_THREAD_GET_ARGV;
+
+  while ((msc_class = (struct usbh_msc *)usbh_find_class_instance("/dev/sda")) == NULL) {
+      goto delete;
+  }
+
+  ret = usbh_msc_scsi_init(msc_class);
+  if (ret < 0) {
+      sdc_debugf("scsi_init error,ret:%d\r\n", ret);
+      goto delete;
+  }
+
+  fatfs_usbh_driver_register(msc_class);
+
+    // clang-format off
+delete: 
+    usb_osal_thread_delete(NULL);
+    // clang-format on
+    usbh_msc_handle = NULL;
+}
+
+void usbh_msc_run(struct usbh_msc *msc_class)
+{
+  usbh_msc_handle = usb_osal_thread_create("usbh_msc", 2048, 1, usbh_msc_thread, msc_class);
+}
+
+void usbh_msc_stop(struct usbh_msc *msc_class)
+{
+    if (usbh_msc_handle) {
+      usb_osal_thread_delete(usbh_msc_handle);
+      usbh_msc_handle = NULL;
+  }
+}
 
 #ifdef CONFIG_BFLOG
 __attribute__((weak)) uint64_t bflog_clock(void)

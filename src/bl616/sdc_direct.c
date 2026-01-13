@@ -336,8 +336,7 @@ void sdc_boot(void) {
 
     uint64_t start = bflb_mtimer_get_time_ms();
     FRESULT res;
-    const char *drv = "sd:";
-    sdc_debugf("Mounting sd card...", drv);
+    sdc_debugf("Mounting sd card ...\r\n");
 
     while ((res = f_mount(&fs, "/sd", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 500)
     bflb_mtimer_delay_ms(100);
@@ -345,18 +344,17 @@ void sdc_boot(void) {
     if (res == FR_OK) {
         sdc_debugf("SD card mounted in %d ms", bflb_mtimer_get_time_ms() - start);
     } else  {
-        sdc_debugf("SD not found...");
-        sdc_debugf("try to mount USB drive");
-        drv = "usb:";
+        sdc_debugf("SD card not found...\r\n");
+        sdc_debugf("try to mount USB drive...");
         start = bflb_mtimer_get_time_ms();
-        while ((res = f_mount(&fs, "usb:", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 2000)
+        while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 2000)
           bflb_mtimer_delay_ms(100);
         if (res != FR_OK) {
-            sdc_debugf("Failed to mount USB drive");
+            sdc_debugf("Failed to mount USB drive\r\n");
             sdc_direct_release();
             mcu_hw_fpga_reconfig(true);
             return;
-        } else {
+          } else {
             sdc_debugf("USB drive mounted in %d ms", bflb_mtimer_get_time_ms() - start);
    }
   }
@@ -367,11 +365,12 @@ void sdc_boot(void) {
   // try to load core.bin and if that doesn't work core.fs
   bool upload_ok = sdc_direct_upload_core_bin("/sd/core.bin");
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/sd/core.fs");
+  if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/usb/core.bin");
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/usb/core.fs");
 
   // unmount the fs
-  f_mount(NULL, "", 0);
-  
+  f_mount(NULL, "/sd", 1);
+  f_mount(NULL, "/usb", 1);
   // release the sd card
   sdc_direct_release();
   
