@@ -25,10 +25,6 @@
 #include "../mcu_hw.h"
 #include "../jtag.h"
 
-#ifndef TANG_CONSOLE60K
-#error "SDC direct access only works for the Console 60k/138k board"
-#endif
-
 #define PIN_TF_SDIO_SEL GPIO_PIN_16  // 0 = FPGA , 1 = BL616
 
 static struct bflb_device_s *gpio;
@@ -57,16 +53,19 @@ bool sdc_direct_write(__attribute__((unused)) uint32_t lba, __attribute__((unuse
   return sdc_direct_active;
 }
 
+extern struct sd_card_s sd_card;
+
 // Read single 512-byte block
 bool sdc_direct_read(uint32_t lba, uint8_t *buffer) {
   // return false when direct access is not being used to tell the
   // sdc.c that it needs to handle the access through the FPGA
   if(!sdc_direct_active) return false;
 
-  // spi
-//  if(sdc_direct_send_cmd(17, lba, buffer, 512))
-//    sdc_debugf("read failed");
-  
+  if (sdh_sd_read_blocks(&sd_card, buffer, lba, 1) < 0) {
+    sdc_debugf("sdc_direct_read failed");
+    return false;
+  }
+
   return true;
 }
 
@@ -179,7 +178,7 @@ bool sdc_direct_upload_core_fs(const char *name) {
     return false;
   }
   
-  jtag_debugf("GW2AR-18 detected");
+  jtag_debugf("FPGA detected");
 
   // measure total download time
   TickType_t ticks = xTaskGetTickCount();
