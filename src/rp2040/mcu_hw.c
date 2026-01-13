@@ -262,7 +262,7 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
 }
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) {
-  usb_debugf("[%u] HID Interface%u %p/%d", dev_addr, instance, report, len);
+  //  usb_debugf("[%u] HID Interface%u %p/%d", dev_addr, instance, report, len);
 
   // find matching hid report
   for(int idx=0;idx<MAX_HID_DEVICES;idx++)
@@ -284,14 +284,18 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
 extern TaskHandle_t com_task_handle;
 static SemaphoreHandle_t sem;
 
-static void irq_handler(void) {  
-  // Disable interrupt. It will be re-enabled by the com task
-  gpio_set_irq_enabled(SPI_IRQ_PIN, GPIO_IRQ_LEVEL_LOW, false);
+static void irq_handler(void) {
+  if(gpio_get_irq_event_mask(SPI_IRQ_PIN) & GPIO_IRQ_LEVEL_LOW) {
+    gpio_acknowledge_irq(SPI_IRQ_PIN, GPIO_IRQ_LEVEL_LOW);
 
-  if(com_task_handle) {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    vTaskNotifyGiveFromISR( com_task_handle, &xHigherPriorityTaskWoken );
-    portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+    // Disable interrupt. It will be re-enabled by the com task
+    gpio_set_irq_enabled(SPI_IRQ_PIN, GPIO_IRQ_LEVEL_LOW, false);
+ 
+    if(com_task_handle) {
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+      vTaskNotifyGiveFromISR( com_task_handle, &xHigherPriorityTaskWoken );
+      portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+    }
   }
 }
 
@@ -317,10 +321,13 @@ void mcu_hw_spi_init(void) {
   gpio_set_dir(SPI_CSN_PIN, GPIO_OUT);
   gpio_put(SPI_CSN_PIN, 1);
 
-  // The interruput input isn't strictly part of the SPi
+  // The interruput input isn't strictly part of the SPI
   // The interrupt is active low on GP22
   debugf("  IRQn = %d", SPI_IRQ_PIN);
+
   // set handler but not enable yet as the main task may not be ready
+  gpio_init(SPI_IRQ_PIN);
+  gpio_set_dir(SPI_IRQ_PIN, GPIO_IN);
   gpio_add_raw_irq_handler(SPI_IRQ_PIN, irq_handler);  
 }
 
