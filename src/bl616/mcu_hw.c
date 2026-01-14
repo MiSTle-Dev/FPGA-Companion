@@ -70,7 +70,7 @@
 #define ENABLE_JTAG
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
-#define PIN_nJTAGSEL  GPIO_PIN_11
+#define PIN_nJTAGSEL  GPIO_PIN_20 // dummy unused spare pin
 #elif M0S_DOCK
 #warning "Building for M0S DOCK BL616"
 #elif TANG_MEGA138KPRO
@@ -82,6 +82,16 @@
 #endif
 
 static struct bflb_device_s *gpio;
+
+// special FPGA configuration pins
+// JTAGSELn = 0 for JTAG and 1 for SPI mode dedicated JTAG interface pin multiplex
+// BL616 UART TX O, reuse as JTAGSELn all boards except TANG_NANO20K
+// BL616 UART RX I, reuse as SPI_IRQn input 
+// TN20K JTAGSELn normally unused as JTAG always active
+// all boards shall not use the BL616 debug console connected to FPGA pins as no spare connections left 
+// Console 60K shall use SBC1 and SBC2 pins located at USB-C connector for serial console and debugging.
+// Nano20K has unidirectional console monitor capability
+// Mega60K NEO might also support BL616 SD card controller interface natively
 
 #if defined(TANG_NANO20K)
 #define PIN_JTAG_TMS GPIO_PIN_16
@@ -141,16 +151,6 @@ static inline void delay(uint32_t ms)
     vTaskDelay(pdMS_TO_TICKS(ms*26/40));
 #endif
 }
-
-// special FPGA configuration pins
-
-// JTAGSELn = 0 for JTAG and 1 for SPI mode
-// BL616 UART TX O, reuse as JTAGSELn all boards except TANG_NANO20K as RECONFIGn
-// BL616 UART RX I, reuse as SPI_IRQn input 
-// TN20K JTAGSELn normally unused as JTAG always active
-// all boards shall not use the BL616 debug console connected to FPGA pins as no spare connections left 
-// Console 60K shall use SBC1 and SBC2 pins located at USB-C connector for serial console and debugging. 
-// Mega60K NEO might also support BL616 SD card controller interface natively, to be checked
 
 extern uint32_t __HeapBase;
 extern uint32_t __HeapLimit;
@@ -847,17 +847,16 @@ static void console_init() {
   bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_TX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
 #elif TANG_NANO20K
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_14, GPIO_UART_FUNC_UART0_RX); /* 8 TDO */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_TX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
+//bflb_gpio_uart_init(gpio, GPIO_PIN_13, GPIO_UART_FUNC_UART0_RX);
   bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_RX);
   /* GPIO_PIN_11 TX */
   /* GPIO_PIN_13 RX */
 #elif TANG_CONSOLE60K
 //bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
 //bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX); /* M13 TWI.SCL */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_TX); /* Debug SBU2 */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_RX); /* Debug SBU1 */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_TX); /* Debug USB-C SBU2 */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_RX); /* Debug USB-C SBU1 */
   /* GPIO 27 default UART RX, FPGA U15 TX */
   /* GPIO 28 default UART TX, FPGA V15 RX */
   /* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
