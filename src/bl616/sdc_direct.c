@@ -325,21 +325,18 @@ void sdc_boot(void) {
   // the FPGA is not ready, but it may still drive the SD card.
   // So reconfigure the FPGA without allowing it to boot from flash
   gpio = bflb_device_get_by_name("gpio");
-
-  //mcu_hw_fpga_reconfig(false);  // TODO: reenable this
+  FRESULT res = FR_NOT_READY;
+  uint64_t start;
   
-  // try to boot the FPGA from SD card
-  sdc_debugf("Attempting direct SD card boot ...");
-  
+#if defined(TANG_CONSOLE60K)
+    // try to boot the FPGA from SD card
+    sdc_debugf("Attempting direct SD card boot ...");
     sdc_direct_init();
-
-    uint64_t start = bflb_mtimer_get_time_ms();
-    FRESULT res;
+    start = bflb_mtimer_get_time_ms();
     sdc_debugf("Mounting sd card ...\r\n");
-
     while ((res = f_mount(&fs, "/sd", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 500)
     bflb_mtimer_delay_ms(100);
-  
+#endif
     if (res == FR_OK) {
         sdc_debugf("SD card mounted in %d ms", bflb_mtimer_get_time_ms() - start);
     } else  {
@@ -358,20 +355,26 @@ void sdc_boot(void) {
    }
   }
   
-  sdc_debugf("Card mounted directly");
-  // we can now try to load a core from SD card
+  sdc_debugf("SD Card / USB memory drive mounted directly");
 
   // try to load core.bin and if that doesn't work core.fs
-  bool upload_ok = sdc_direct_upload_core_bin("/sd/core.bin");
+  bool upload_ok = false;
+
+#if defined(TANG_CONSOLE60K)
+  upload_ok = sdc_direct_upload_core_bin("/sd/core.bin");
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/sd/core.fs");
-  if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/usb/core.bin");
+#endif
+  bflb_mtimer_delay_ms(1500);
+  if(!upload_ok) upload_ok = sdc_direct_upload_core_bin("/usb/core.bin");
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/usb/core.fs");
 
   // unmount the fs
+#if defined(TANG_CONSOLE60K)
   f_mount(NULL, "/sd", 1);
-  f_mount(NULL, "/usb", 1);
   // release the sd card
   sdc_direct_release();
+#endif
+  f_mount(NULL, "/usb", 1);
   
   // on upload failure reconfig the FPGA and allow it to (re-)boot from flash
   if(!upload_ok) {
