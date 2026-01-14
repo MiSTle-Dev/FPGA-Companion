@@ -66,5 +66,6 @@ bool jtag_gowin_eraseSRAM(void);
 bool jtag_gowin_writeSRAM_prepare(void);
 bool jtag_gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool first, bool last);
 bool jtag_gowin_writeSRAM_postproc(uint32_t checksum);
+void jtag_gowin_fpgaReset(void);
 
 #endif // JTAG_H

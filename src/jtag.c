@@ -12,6 +12,9 @@
 #include <timers.h>
 
 #define IDCODE_GW2AR18  0x81b
+#define IDCODE_GW5AT60  0x1481b
+#define IDCODE_GW5AST138  0x1081b
+#define IDCODE_GW5A25 0x1281b
 
 static void jtag_gowin_command(uint8_t cmd) {
   // stay in RUN-TEST/IDLE like openFPGAloader
@@ -113,7 +116,10 @@ bool jtag_open(void) {
   // return into Test-Logic-Reset state
   mcu_hw_jtag_tms(1, 0b11111, 5);
   
-  return(idcode == IDCODE_GW2AR18);
+  return(idcode == IDCODE_GW2AR18  || 
+         idcode == IDCODE_GW5AT60  || 
+         idcode == IDCODE_GW5A25  ||
+         idcode == IDCODE_GW5AST138);
 }
 
 void jtag_close(void) {
@@ -266,4 +272,14 @@ bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
 
   jtag_debugf("SRAM successfully written, status = 0x%04lx", status_reg);
   return true;
+}
+
+void jtag_gowin_fpgaReset(void) {
+    jtag_debugf("FPGA RECONFIG");
+
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_RECONFIG);
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+    // send TMS 1/1/0 to go into Run-Test-Idle state
+    mcu_hw_jtag_tms(1, 0b011, 3);
+    jtag_toggleClk(1000000);
 }
