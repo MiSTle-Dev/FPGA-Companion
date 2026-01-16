@@ -1834,10 +1834,9 @@ static void mcu_hw_jtag_init(void) {
 
 void mcu_hw_fpga_reconfig(bool run) {
   // trigger FPGA reconfiguration
-
   gpio = bflb_device_get_by_name("gpio");
 
-  jtag_close();
+  bflb_gpio_reset(gpio, PIN_nJTAGSEL);
 
   if(!jtag_open()) {
     jtag_debugf("FPGA not detected");
@@ -1869,7 +1868,17 @@ void mcu_hw_fpga_resume_spi(void) {
 
   bflb_gpio_set(gpio, PIN_nJTAGSEL);
 
- // mcu_hw_spi_init();
+  struct bflb_device_s *sdh;
+
+  sdh = bflb_device_get_by_name("sdh");
+  bflb_sdh_sta_int_en(sdh, 0xffffffff, false);
+  /* sdh reset */
+  GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
+
+  /* configure PIN_TF_SDIO_SEL to FPGA */
+  bflb_gpio_init(gpio, GPIO_PIN_16, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, GPIO_PIN_16);
+
   jtag_is_active = false;
   bflb_irq_enable(gpio->irq_num);
 }
