@@ -45,10 +45,6 @@ void jtag_toggleClk(uint32_t);
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
 #define BOOT_FROM_SDC sdc_boot    // afterwards this will be called
 
-// give file system driver in sdc.c access to the local sd card
-#define SDC_DIRECT_READ   sdc_direct_read
-#define SDC_DIRECT_WRITE  sdc_direct_write
-
 #elif MISTLE_BOARD == 4
 // currently only the Dev20k
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);

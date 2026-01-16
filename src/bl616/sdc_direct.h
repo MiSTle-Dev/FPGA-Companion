@@ -4,10 +4,6 @@
 bool sdc_direct_init(void);
 void sdc_direct_release(void);
 
-// these are called by sdc.c 
-bool sdc_direct_write(uint32_t lba, const uint8_t *buffer);
-bool sdc_direct_read(uint32_t lba, uint8_t *buffer);
-
 // called by main if accessing the FPGA times out
 void sdc_boot(void);
 
