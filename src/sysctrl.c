@@ -284,10 +284,10 @@ static void sys_handle_event(bool ignore_coldboot) {
       // Check for USB-JTAG activity and don't reset (and thus break
       // the JTAG activity)
       if(mcu_hw_jtag_is_active())
-	jtag_highlight_debugf("Suppressing MCU reset due to JTAG activity");
+	      jtag_highlight_debugf("Suppressing MCU reset due to JTAG activity");
       else	
 #endif
-	mcu_hw_reset();
+	       mcu_hw_reset();
     }
   }
 }

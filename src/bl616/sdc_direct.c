@@ -28,7 +28,6 @@
 #define PIN_TF_SDIO_SEL GPIO_PIN_16  // 0 = FPGA , 1 = BL616
 
 static struct bflb_device_s *gpio;
-
 static bool sdc_direct_active = false;
 
 bool sdc_direct_init(void) {  
@@ -43,28 +42,6 @@ bool sdc_direct_init(void) {
   board_sdh_gpio_init();
 
   fatfs_sdh_driver_register();
-
- return true;
-}
-
-bool sdc_direct_write(__attribute__((unused)) uint32_t lba, __attribute__((unused)) const uint8_t *buffer) {
-  // return true when direct access is being used to tell the
-  // sdc.c that the request has been handled directly
-  return sdc_direct_active;
-}
-
-extern struct sd_card_s sd_card;
-
-// Read single 512-byte block
-bool sdc_direct_read(uint32_t lba, uint8_t *buffer) {
-  // return false when direct access is not being used to tell the
-  // sdc.c that it needs to handle the access through the FPGA
-  if(!sdc_direct_active) return false;
-
-  if (sdh_sd_read_blocks(&sd_card, buffer, lba, 1) < 0) {
-    sdc_debugf("sdc_direct_read failed");
-    return false;
-  }
 
   return true;
 }
@@ -103,7 +80,7 @@ bool sdc_direct_upload_core_bin(const char *name) {
     return false;
   }
   
-  jtag_debugf("FPGA detected");
+  jtag_debugf("JTAG FPGA detected");
     
   // measure total download time
   TickType_t ticks = xTaskGetTickCount();
@@ -178,7 +155,7 @@ bool sdc_direct_upload_core_fs(const char *name) {
     return false;
   }
   
-  jtag_debugf("FPGA detected");
+  jtag_debugf("JTAG FPGA detected");
 
   // measure total download time
   TickType_t ticks = xTaskGetTickCount();
@@ -335,20 +312,19 @@ void sdc_boot(void) {
     start = bflb_mtimer_get_time_ms();
     sdc_debugf("Mounting sd card ...\r\n");
     while ((res = f_mount(&fs, "/sd", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 500)
-    bflb_mtimer_delay_ms(100);
+      bflb_mtimer_delay_ms(100);
 #endif
     if (res == FR_OK) {
         sdc_debugf("SD card mounted in %d ms", bflb_mtimer_get_time_ms() - start);
     } else  {
         sdc_debugf("SD card not found...\r\n");
+        sdc_direct_release();
         sdc_debugf("try to mount USB drive...");
         start = bflb_mtimer_get_time_ms();
         while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 2000)
           bflb_mtimer_delay_ms(100);
         if (res != FR_OK) {
             sdc_debugf("Failed to mount USB drive\r\n");
-            sdc_direct_release();
-            mcu_hw_fpga_reconfig(true);
             return;
           } else {
             sdc_debugf("USB drive mounted in %d ms", bflb_mtimer_get_time_ms() - start);
@@ -378,7 +354,9 @@ void sdc_boot(void) {
   
   // on upload failure reconfig the FPGA and allow it to (re-)boot from flash
   if(!upload_ok) {
-    sdc_debugf("Upload failed, triggering FPGA reconfig from flash");
-    mcu_hw_fpga_reconfig(true);
+    sdc_debugf("Upload failed");
+    //mcu_hw_fpga_reconfig(true);
+  } else {
+    sdc_debugf("Upload successful, FPGA now running new core");
   }
 }

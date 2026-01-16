@@ -16,6 +16,8 @@
 #define IDCODE_GW5AST138  0x1081b
 #define IDCODE_GW5A25 0x1281b
 
+static volatile bool is_gw2a = false;
+
 static void jtag_gowin_command(uint8_t cmd) {
   // stay in RUN-TEST/IDLE like openFPGAloader
   mcu_hw_jtag_tms(1, 0b000000, 6);
@@ -112,6 +114,8 @@ bool jtag_open(void) {
 
   // read FPGA idcode via JTAG. Should be 0x81b for the GW2AR-18
   uint32_t idcode = jtag_identify();
+
+  if (idcode == IDCODE_GW2AR18) is_gw2a = true;
 
   // return into Test-Logic-Reset state
   mcu_hw_jtag_tms(1, 0b11111, 5);
@@ -210,7 +214,17 @@ static bool jtag_gowin_disableCfg(void) {
 bool jtag_gowin_eraseSRAM(void) {
   jtag_gowin_readStatusReg();
 
-  jtag_gowin_gw2a_force_state();
+  if (is_gw2a)
+    jtag_gowin_gw2a_force_state();
+  else {
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
+    jtag_gowin_command(0x3F);
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+    jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
+    jtag_toggleClk(125 * 8);
+  }
+
   if(!jtag_gowin_enableCfg()) {
     jtag_debugf("Failed to enable config");
     return false;
@@ -279,7 +293,10 @@ void jtag_gowin_fpgaReset(void) {
 
     jtag_gowin_command(JTAG_COMMAND_GOWIN_RECONFIG);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-    // send TMS 1/1/0 to go into Run-Test-Idle state
+    // Run-Test-Idle state
     mcu_hw_jtag_tms(1, 0b011, 3);
-    jtag_toggleClk(1000000);
+    jtag_toggleClk(10000);
+    // Test-Logic-Reset state.
+    mcu_hw_jtag_tms(1, 0b11111, 5);
+    jtag_debugf("RECONFIG completed");
 }

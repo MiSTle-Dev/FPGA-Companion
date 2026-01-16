@@ -1025,6 +1025,9 @@ void mcu_hw_init(void) {
   /* configure JTAGSEL_n */
   bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_set(gpio, PIN_nJTAGSEL);
+  /* configure PIN_TF_SDIO_SEL to FPGA */
+  bflb_gpio_init(gpio, GPIO_PIN_16, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, GPIO_PIN_16);
 #endif
   mcu_hw_spi_init();
 
@@ -1650,18 +1653,14 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   spi_dev = bflb_device_get_by_name("spi0");
 
   if((dir & 0x0f) == 0x00 && (data == 0x00)) {
-    bflb_gpio_set(gpio, PIN_nJTAGSEL); // SPI mode
     mcu_hw_fpga_resume_spi();  // release JTAG and resume SPI operation
-//  mcu_hw_reset();
   } else  
   // check if the pin direction pattern matches JTAG mode
   if((dir & 0x0f) == 0x0b) {
     debugf("\nspi deinit");
-    bflb_spi_deinit(spi_dev);
-    bflb_gpio_irq_detach(SPI_PIN_IRQ);
-    bflb_mtimer_delay_ms(10);
-
-    bflb_gpio_deinit(gpio, SPI_PIN_IRQ);
+ //   bflb_spi_deinit(spi_dev);
+ //   GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_SPI);
+    bflb_irq_disable(gpio->irq_num);
 
     bflb_gpio_deinit(gpio, PIN_JTAG_TCK);
     bflb_gpio_deinit(gpio, PIN_JTAG_TDI);
@@ -1855,15 +1854,24 @@ void mcu_hw_fpga_reconfig(bool run) {
 
 void mcu_hw_fpga_resume_spi(void) {
   gpio = bflb_device_get_by_name("gpio");
+  debugf("disable JTAG and resume SPI");
 
   bflb_gpio_deinit(gpio, PIN_JTAG_TCK);
   bflb_gpio_deinit(gpio, PIN_JTAG_TDI);
   bflb_gpio_deinit(gpio, PIN_JTAG_TMS);
   bflb_gpio_deinit(gpio, PIN_JTAG_TDO);
 
-  bflb_gpio_set(gpio, PIN_nJTAGSEL); // select SPI mode
+  bflb_gpio_init(gpio, SPI_PIN_MISO, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_init(gpio, SPI_PIN_MOSI, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_init(gpio, SPI_PIN_SCK, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_init(gpio, SPI_PIN_CSN, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_set(gpio, SPI_PIN_CSN);
 
-  mcu_hw_spi_init();
+  bflb_gpio_set(gpio, PIN_nJTAGSEL);
+
+ // mcu_hw_spi_init();
+  jtag_is_active = false;
+  bflb_irq_enable(gpio->irq_num);
 }
 
 static void jtag_toggleClk_(uint8_t tms, uint8_t tdi, uint32_t clk_len)
