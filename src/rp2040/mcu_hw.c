@@ -1332,8 +1332,8 @@ void mcu_hw_init(void) {
     xTaskCreate(wifi_task, (char *)"wifi_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);  
 #endif
 
-  debugf("Total heap: %ld", getTotalHeap());
-  debugf("Free heap: %ld", getFreeHeap());
+  debugf("SDK heap total: %ld, free: %ld", getTotalHeap() ,getFreeHeap());
+  debugf("FreeRTOS heap total: %u, free: %u", configTOTAL_HEAP_SIZE, xPortGetFreeHeapSize());
 
 #ifdef ENABLE_JTAG
   mcu_hw_jtag_init();

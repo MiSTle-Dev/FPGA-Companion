@@ -43,7 +43,7 @@ int inifile_read(char *name) {
     return -1;
   }
 
-  char *filename = malloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
+  char *filename = pvPortMalloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
   strcpy(filename, CARD_MOUNTPOINT);
   strcat(filename, "/");
   strcat(filename, name);
@@ -149,11 +149,11 @@ int inifile_read(char *name) {
     f_close(&fil);
   } else {
     ini_debugf("Error opening file %s", filename);
-    free(filename);
+    vPortFree(filename);
     sdc_unlock();
     return -1;
   }
-  free(filename);
+  vPortFree(filename);
   sdc_unlock();
   return 0;
 }
@@ -164,7 +164,7 @@ void inifile_write(char *name) {
     return;
   }
     
-  char *filename = malloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
+  char *filename = pvPortMalloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
   strcpy(filename, CARD_MOUNTPOINT);
   strcat(filename, "/");
   strcat(filename, name);
@@ -181,11 +181,12 @@ void inifile_write(char *name) {
     // write variable values
     f_puts("\n; variables\n", &file);
 
-    menu_variable_t **vars = menu_get_variables();
-    for(int i=0;vars[i];i++) {
+    menu_variable_t *vars = menu_get_variables();
+    while(vars) {
       char str[10];
-      sprintf(str, "var %c=%d\n", vars[i]->id, vars[i]->value);
+      sprintf(str, "var %c=%d\n", vars->id, vars->value);
       f_puts(str, &file);
+      vars = vars->next;
     }
 
     // write options
@@ -219,6 +220,6 @@ void inifile_write(char *name) {
   } else
     ini_debugf("Error opening file");
   
-  free(filename);
+  vPortFree(filename);
   sdc_unlock();
 }

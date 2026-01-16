@@ -53,7 +53,7 @@
 #define MENU_ENTRY_INDEX_VARIABLE 3
 
 /* new menu state */
-typedef struct {
+typedef struct menu_state {
   int type;
   int selected; 
   int scroll;
@@ -63,7 +63,9 @@ typedef struct {
   };
   
   // file selector related
-  sdc_dir_t *dir;
+  sdc_dir_entry_t *dir;
+
+  struct menu_state *prev;
 } menu_state_t;
 
 typedef struct {
@@ -81,71 +83,75 @@ static menu_state_t *menu_state = NULL;
 static fsel_state_t fsel_state;
 
 /* =========== handling of variables ============= */
-static menu_variable_t **variables = NULL;
+static menu_variable_t *variables = NULL;
 
-menu_variable_t **menu_get_variables(void) {
+menu_variable_t *menu_get_variables(void) {
   return variables;
 }
 
 static int menu_variable_get(char id) {
-  for(int i=0;variables[i];i++)
-    if(variables[i]->id == id)
-      return variables[i]->value;
+  menu_variable_t *v = variables;
 
+  while(v) {
+    if(v->id == id) return v->value;
+    v = v->next;
+  }
   return 0;  
 }
 
 static void menu_variable_set(char id, int value) {
-  for(int i=0;variables[i];i++) {
-    if(variables[i]->id == id) {
-      if(variables[i]->value != value) {
-	variables[i]->value = value;
+  menu_variable_t *v = variables;
+  
+  while(v) {
+    if(v->id == id) {
+      if(v->value != value) {
+	v->value = value;
 	// also set this in the core
 	sys_set_val(id, value);
       }
     }
+    v = v->next;
   }
 }
 
 static void menu_setup_variable(char id, int value) {
   // menu_debugf("setup variable '%c' = %d", id, value);
 
-  // simply return if variable already exists
-  int i;
-  for(i=0;variables[i];i++)
-    if(variables[i]->id == id)
-      return;
-
   // allocate new entry
-  menu_variable_t *variable = malloc(sizeof(menu_variable_t));
+  menu_variable_t *variable = pvPortMalloc(sizeof(menu_variable_t));
   variable->id = id;
   variable->value = value;
+  variable->next = NULL;
 
-  // menu_debugf("new variable index %d", i);
-  variables = reallocarray(variables, i+2, sizeof(menu_variable_t*));
-  variables[i] = variable;
-  variables[i+1] = NULL;
+  if(!variables)
+    variables = variable;
+  else {
+    menu_variable_t *v = variables;
+    while(v->next) v = v->next;
+    v->next = variable;
+  }
 }
 
 static void menu_setup_menu_variables(config_menu_t *menu) {
   config_menu_entry_t *me = menu->entries;
-  for(int cnt=0;me[cnt].type != CONFIG_MENU_ENTRY_UNKNOWN;cnt++) {
-    if(me[cnt].type == CONFIG_MENU_ENTRY_MENU)
-      menu_setup_menu_variables(me[cnt].menu);
+  while(me) {
+    if(me->type == CONFIG_MENU_ENTRY_MENU)
+      menu_setup_menu_variables(me->menu);
     
-    if(me[cnt].type == CONFIG_MENU_ENTRY_LIST) {
+    if(me->type == CONFIG_MENU_ENTRY_LIST) {
       // setup variable ...
-      menu_setup_variable(me[cnt].list->id, me[cnt].list->def);
+      menu_setup_variable(me->list->id, me->list->def);
       // ... and set in core
-      sys_set_val(me[cnt].list->id, me[cnt].list->def);
+      sys_set_val(me->list->id, me->list->def);
     }
     
-    if(me[cnt].type == CONFIG_MENU_ENTRY_TOGGLE) {
+    if(me->type == CONFIG_MENU_ENTRY_TOGGLE) {
       // setup variable ...
-      menu_setup_variable(me[cnt].toggle->id, me[cnt].toggle->def);
+      menu_setup_variable(me->toggle->id, me->toggle->def);
       // ... and set in core
-      sys_set_val(me[cnt].toggle->id, me[cnt].toggle->def);
+      sys_set_val(me->toggle->id, me->toggle->def);
     }
+    me = me->next;
   }
 }
 
@@ -157,17 +163,21 @@ static void menu_setup_variables(void) {
   // actually variables should always show up in the init action,
   // otherwise they'd be uninitialited (actually set to zero ...)
   
-  // add null pointer as end marker
-  variables = malloc(sizeof(menu_variable_t *));
-  variables[0] = NULL;
-  
   // search for variables in all actions
-  for(int a=0;cfg->actions[a];a++)
+  config_action_t *action = cfg->actions;
+  while(action) {
     // search for set commands
-    for(int c=0;cfg->actions[a]->commands[c].code != CONFIG_ACTION_COMMAND_IDLE;c++)
-      if(cfg->actions[a]->commands[c].code == CONFIG_ACTION_COMMAND_SET)
-	menu_setup_variable(cfg->actions[a]->commands[c].set.id, 0);
+    config_action_command_t *command = action->commands;
+    while(command) {
+      if(command->code == CONFIG_ACTION_COMMAND_SET)
+	menu_setup_variable(command->set.id, 0);
 
+      command = command->next;
+    }
+    
+    action = action->next;
+  }
+  
   // search through menu tree for lists
   menu_setup_menu_variables(cfg->menu);  
 }
@@ -201,6 +211,23 @@ void u8g2_DrawStrT(u8g2_t *u8g2, u8g2_uint_t x, u8g2_uint_t y, const char *s) {
 #define FS_ICON_WIDTH 10
 static int fs_scroll_cur = -1;
 
+static int dir_len(sdc_dir_entry_t *d) {
+  int len = 0;
+  while(d) {
+    d = d->next;
+    len++;
+  }
+  return len;
+}
+
+static sdc_dir_entry_t *dir_entry(sdc_dir_entry_t *d, int n) {
+  while(n && d) {
+    d = d->next;
+    n--;
+  }
+  return d;
+}
+
 static void menu_fs_scroll_entry(void) {
   // no scrolling
   if(fs_scroll_cur < 0) return;
@@ -212,7 +239,8 @@ static void menu_fs_scroll_entry(void) {
   int y =  MENU_LINE_Y + MENU_ENTRY_H * (row-menu_state->scroll+1);
   int width = u8g2_GetDisplayWidth(&u8g2);
 
-  int swid = u8g2_GetStrWidth(&u8g2, menu_state->dir->files[row].name) + 1;
+  // jump to the row'th entry in the dir listing
+  int swid = u8g2_GetStrWidth(&u8g2, dir_entry(menu_state->dir, row)->name) + 1;
 
   // fill the area where the scrolling entry would show
   u8g2_SetClipWindow(&u8g2, FS_ICON_WIDTH, y-MENU_ENTRY_BASE, width, y+MENU_ENTRY_H-MENU_ENTRY_BASE);  
@@ -224,7 +252,7 @@ static void menu_fs_scroll_entry(void) {
   if(scroll < 0) scroll = 0;
   if(scroll > swid-width+FS_ICON_WIDTH) scroll = swid-width+FS_ICON_WIDTH;
   
-  u8g2_DrawStr(&u8g2, FS_ICON_WIDTH-scroll, y, menu_state->dir->files[row].name);
+  u8g2_DrawStr(&u8g2, FS_ICON_WIDTH-scroll, y, dir_entry(menu_state->dir, row)->name);
   
   // restore previous draw mode
   u8g2_SetDrawColor(&u8g2, 1);
@@ -279,35 +307,27 @@ static void menu_fs_draw_entry(int row, sdc_dir_entry_t *entry) {
 }
 
 static void menu_push(void) {
-  // count existing state entries as the last one would
-  // have the menu pointer being the root menu
-  // pointer
-  int i=0;
-  if(menu_state) {
-    while(menu_state[i].menu != cfg->menu) i++;
-    i++;
-  }
+  menu_debugf("menu_push()");
 
-  menu_debugf("stack depth %d", i);
-  
-  menu_state = reallocarray(menu_state, i+1, sizeof(menu_state_t));
-  // move all existing entries up one
-  if(i) {
-    for(int j=i-1;j>=0;j--) {
-      debugf("move state %d to %d", j, j+1);
-      menu_state[j+1] = menu_state[j];
-    }
-  }
+  // allocate a new menu entry
+  menu_state_t *state = pvPortMalloc(sizeof(menu_state_t));
+
+  // insert the new entry at begin of chain
+  state->prev = menu_state;
+  menu_state = state;
 }
 
 static int menu_count_entries(void) {
   int entries = 0;
 
-  if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
-    while(menu_state->menu->entries[entries].type != CONFIG_MENU_ENTRY_UNKNOWN)
+  if(menu_state->type == CONFIG_MENU_ENTRY_MENU) {
+    config_menu_entry_t *me = menu_state->menu->entries;
+    while(me) {
       entries++;
-  else if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR)
-    entries = menu_state->dir->len;
+      me = me->next;
+    }
+  } else if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR)
+    entries = dir_len(menu_state->dir);
     
   return entries+1;  // title is also an entry
 }
@@ -326,7 +346,6 @@ static int menu_entry_is_usable(void) {
 
 static void menu_entry_go(int step) {
   int entries = menu_count_entries();
-  
   do {
     menu_state->selected += step;
     
@@ -402,17 +421,24 @@ static char *menuentry_get_label(config_menu_entry_t *entry) {
 }
 
 static int menu_get_list_length(config_menu_entry_t *entry) {
-  int len = 0;  
-  for(;entry->list->listentries[len];len++);
-  return len-1;
+  int len = 0;
+  config_listentry_t *le = entry->list->listentries;
+  while(le) {
+    len++;
+    le = le->next;
+  }
+  return len;
 }
   
 static char *menu_get_listentry(config_menu_entry_t *entry, int value) {
   if(!entry || entry->type != CONFIG_MENU_ENTRY_LIST) return NULL;
 
-  for(int i=0;entry->list->listentries[i];i++)
-    if(entry->list->listentries[i]->value == value)
-      return entry->list->listentries[i]->label;
+  config_listentry_t *le = entry->list->listentries;
+  while(le) {
+    if(le->value == value)
+      return le->label;
+    le = le->next;
+  }
 
   return NULL;
 }
@@ -489,7 +515,8 @@ static int menu_wrap_text(int y_in, const char *msg) {
     while(*p && *p != ' ') p++;
     
     // allocate substring
-    b = realloc(b, p-msg+1);
+    if(b) vPortFree(b);
+    b = pvPortMalloc(p-msg+1);
     strncpy(b, msg, p-msg);
     b[p-msg]='\0';
     
@@ -500,7 +527,8 @@ static int menu_wrap_text(int y_in, const char *msg) {
       while(*p != ' ') p--;
       b[p-msg]='\0';
 
-      if(y_in) u8g2_DrawStr(&u8g2, (u8g2_GetDisplayWidth(&u8g2)-u8g2_GetStrWidth(&u8g2, b))/2, y, b);
+      if(y_in)
+	u8g2_DrawStr(&u8g2, (u8g2_GetDisplayWidth(&u8g2)-u8g2_GetStrWidth(&u8g2, b))/2, y, b);
       y+=11;
       
       msg = ++p;
@@ -511,7 +539,7 @@ static int menu_wrap_text(int y_in, const char *msg) {
   if(y_in) u8g2_DrawStr(&u8g2, (u8g2_GetDisplayWidth(&u8g2)-u8g2_GetStrWidth(&u8g2, b))/2, y, b);
   y+=11;
 
-  free(b);
+  vPortFree(b);
 
   return y;
 }
@@ -552,10 +580,10 @@ void menu_draw(void) {
     // draw the title
     menu_draw_title(menu_state->menu->label, !menu_is_root(), menu_state->selected == 0);
 
-    // draw up to four entries
     config_menu_entry_t *entry = menu_state->menu->entries;
-    for(int i=0;i<4 && entry[i].type != CONFIG_MENU_ENTRY_UNKNOWN;i++)
-      menu_draw_entry(entry+i+menu_state->scroll, i, menu_state->selected == menu_state->scroll+i+1);    
+    for(int i=0;i<menu_state->scroll;i++) entry=entry->next;  // skip first "scroll" entries
+    for(int i=0;i<4 && entry;i++,entry=entry->next)           // then draw up to four entries
+      menu_draw_entry(entry, i, menu_state->selected == menu_state->scroll+i+1);    
   } else {
     // =============== draw a fileselector =================    
     menu_debugf("drawing '%s'", menu_state->fsel->label);
@@ -565,9 +593,9 @@ void menu_draw(void) {
     fs_scroll_cur = -1;
 
     // draw up to four entries
-    for(int i=0;i<4 && i<menu_state->dir->len-menu_state->scroll;i++) {            
-      menu_debugf("file %s", menu_state->dir->files[i+menu_state->scroll].name);
-      menu_fs_draw_entry(i, &menu_state->dir->files[i+menu_state->scroll]);
+    for(int i=0;i<4 && i<dir_len(menu_state->dir)-menu_state->scroll;i++) {            
+      menu_debugf("file %s", dir_entry(menu_state->dir, i+menu_state->scroll)->name);
+      menu_fs_draw_entry(i, dir_entry(menu_state->dir, i+menu_state->scroll));
     }
   }
     
@@ -612,17 +640,17 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
   if(name) {
     debugf("trying to jump to %s", name);
     // try to find name in file list
-    for(int i=0;i<menu_state->dir->len;i++) {
-      if(strcmp(menu_state->dir->files[i].name, name) == 0) {
+    for(int i=0;i<dir_len(menu_state->dir);i++) {
+      if(strcmp(dir_entry(menu_state->dir, i)->name, name) == 0) {
 	debugf("found preset entry %d", i);
 	
 	// file found, adjust entry and offset
 	menu_state->selected = i+1;
 	
-	if(menu_state->dir->len > 4 && menu_state->selected > 3) {
+	if(dir_len(menu_state->dir) > 4 && menu_state->selected > 3) {
 	  debugf("more than 4 files an selected is > 3");
-	  if(menu_state->selected < menu_state->dir->len-1) menu_state->scroll = menu_state->selected - 3;
-	  else                                              menu_state->scroll = menu_state->dir->len-4;
+	  if(menu_state->selected < dir_len(menu_state->dir)-1) menu_state->scroll = menu_state->selected - 3;
+	  else                                                  menu_state->scroll = dir_len(menu_state->dir)-4;
 	}
       }
     }
@@ -631,35 +659,30 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
 
 // all other entries in step down
 static void menu_pop(void) {
+  menu_debugf("menu_pop()");
+  
+  // free first entry in chain and make next one the new first
+
   // this should never happen ...
   if(!menu_state) return;
 
   // neither should this as we never really close the
   // root menu
   if(menu_state->menu == cfg->menu) {
-    free(menu_state);
+    vPortFree(menu_state);
     menu_state = NULL;
     return;
   }
-    
-  // count number of entries
-  int i=1; while(menu_state[i-1].menu != cfg->menu) i++;
-  menu_debugf("pop stack depth %d", i);
 
-  if(i>10) exit(0);
-  
-  // move all existing entries down one
-  for(int j=0;j<i-1;j++) {
-    debugf("move state %d to %d", j+1, j);
-    menu_state[j] = menu_state[j+1];
-  }  
-
-  menu_state = reallocarray(menu_state, i-1, sizeof(menu_state_t));
+  // de-chain first entry
+  menu_state_t *m = menu_state;
+  menu_state = menu_state->prev;
+  vPortFree(m);
 }
 
 static void menu_fileselector_select(sdc_dir_entry_t *entry) {
   int drive = fsel_state.index;
-  debugf("drive %d, file selected '%s'", drive, entry->name);
+  menu_debugf("drive %d, file selected '%s'", drive, entry->name);
     
   // stop any scroll timer that might be running
   menu_timer_enable(false);
@@ -690,14 +713,14 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
 	menu_debugf("up to %s", prev);
 	
 	// try to find previous dir entry in current dir	  
-	for(int i=0;i<menu_state->dir->len;i++) {
-	  if(menu_state->dir->files[i].is_dir && strcmp(menu_state->dir->files[i].name, prev) == 0) {
+	for(int i=0;i<dir_len(menu_state->dir);i++) {
+	  if(dir_entry(menu_state->dir, i)->is_dir && strcmp(dir_entry(menu_state->dir, i)->name, prev) == 0) {
 	    // file found, adjust entry and offset
 	    menu_state->selected = i+1;
 
-	    if(menu_state->dir->len > 4 && menu_state->selected > 3) {
-	      if(menu_state->selected < menu_state->dir->len - 1) menu_state->scroll = menu_state->selected - 3;
-	      else                                                menu_state->scroll = menu_state->selected - 5;
+	    if(dir_len(menu_state->dir) > 4 && menu_state->selected > 3) {
+	      if(menu_state->selected < dir_len(menu_state->dir) - 1) menu_state->scroll = menu_state->selected - 3;
+	      else                                                    menu_state->scroll = menu_state->selected - 5;
 	    }
 	  }
 	}
@@ -711,7 +734,8 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
     menu_pop();
 
     // check if we just finished using an IMAGE selector
-    config_menu_entry_t *menu_entry = menu_state->menu->entries + menu_state->selected - 1;
+    config_menu_entry_t *menu_entry = menu_state->menu->entries;
+    for(int i=0;i<menu_state->selected - 1;i++) menu_entry = menu_entry->next;
     if(menu_entry->type == CONFIG_MENU_ENTRY_IMAGE) {
       // check if entry has an action connected
       if(menu_entry->image->action)
@@ -733,9 +757,9 @@ static void menu_back(void) {
     if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR) {
       // search for ".." in current dir
       sdc_dir_entry_t *entry = NULL;
-      for(int i=0;i<menu_state->dir->len;i++)
-	if(!strcmp(menu_state->dir->files[i].name, ".."))
-	  entry = &(menu_state->dir->files[i]);
+      for(int i=0;i<dir_len(menu_state->dir);i++)
+	if(!strcmp(dir_entry(menu_state->dir, i)->name, ".."))
+	  entry = dir_entry(menu_state->dir, i);
       
       // if there was one, go up. Else quit the file selector
       if(entry) menu_fileselector_select(entry);
@@ -755,11 +779,12 @@ static void menu_select(void) {
 
   // in fileselector
   if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR) {
-    menu_fileselector_select(&menu_state->dir->files[menu_state->selected-1]);
+    menu_fileselector_select(dir_entry(menu_state->dir, menu_state->selected-1));
     return;
   }
-  
-  config_menu_entry_t *entry = menu_state->menu->entries + menu_state->selected - 1;
+
+  config_menu_entry_t *entry = menu_state->menu->entries;
+  for(int i=0;i<menu_state->selected - 1;i++) entry=entry->next;
   menu_debugf("Selected: %s '%s'", config_menuentry_get_type_str(entry), menuentry_get_label(entry));
 
   switch(entry->type) {
@@ -775,8 +800,8 @@ static void menu_select(void) {
   case CONFIG_MENU_ENTRY_LIST: {
     // user has choosen a selection list
     int value = menu_variable_get(entry->list->id) + 1;
-    int max_value = menu_get_list_length(entry);
-    if(value > max_value) value = 0;    
+    int list_length = menu_get_list_length(entry);
+    if(value >= list_length) value = 0;    
     menu_variable_set(entry->list->id, value);
 
     // check if there's an action connected to changing this

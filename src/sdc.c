@@ -119,7 +119,7 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
 #define SDC_RESULT DRESULT
 #endif
 
-static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, UINT count) {
+static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, __attribute__((unused)) UINT count) {
   // sdc_debugf("sdc_read(%p,%lu,%u)", buff, (unsigned long)sector, count);  
 
   // mcu_hw may define a SDC_DIRECT_READ when the MCU can get direct access
@@ -275,6 +275,13 @@ static int fs_init() {
 static char *cwd[MAX_DRIVES+MAX_IMAGES];
 static char *image_name[MAX_DRIVES+MAX_IMAGES];
 
+// a FreeRTOS'd version of strdup
+static inline char *StrDup(const char *s) {
+  char *res = pvPortMalloc(strlen(s)+1);
+  strcpy(res, s);
+  return res;
+}
+
 void sdc_set_default(int drive, const char *name) {
   sdc_debugf("set default %d: %s", drive, name);
   
@@ -285,10 +292,10 @@ void sdc_set_default(int drive, const char *name) {
     // name should consist of path and image name
     char *p = strrchr(name+strlen(CARD_MOUNTPOINT), '/');
     if(p && *p) {
-      if(cwd[drive]) free(cwd[drive]);
+      if(cwd[drive]) vPortFree(cwd[drive]);
       cwd[drive] = strndup(name, p-name);
-      if(image_name[drive]) free(image_name[drive]);
-      image_name[drive] = strdup(p+1);
+      if(image_name[drive]) vPortFree(image_name[drive]);
+      image_name[drive] = StrDup(p+1);
     }
   }
 }
@@ -501,7 +508,7 @@ int sdc_image_open(int drive, char *name) {
     
   // forget about any previous name
   if(image_name[drive]) {
-    free(image_name[drive]);
+    vPortFree(image_name[drive]);
     image_name[drive] = NULL;
   }
   
@@ -521,7 +528,7 @@ int sdc_image_open(int drive, char *name) {
     // close any previous image, especially free the link table
     if(fil[drive].cltbl) {
       sdc_debugf("DRV %d: freeing link table", drive);
-      free(lktbl[drive]);
+      vPortFree(lktbl[drive]);
       lktbl[drive] = NULL;
       fil[drive].cltbl = NULL;
     }
@@ -540,7 +547,7 @@ int sdc_image_open(int drive, char *name) {
 		 (unsigned long)fil[drive].obj.objsize / 512 / fs.csize);      
       
       // try with a 16 entry link table
-      lktbl[drive] = malloc(16 * sizeof(DWORD));    
+      lktbl[drive] = pvPortMalloc(16 * sizeof(DWORD));    
       fil[drive].cltbl = lktbl[drive];
       lktbl[drive][0] = 16;
       
@@ -551,13 +558,14 @@ int sdc_image_open(int drive, char *name) {
 		   "required size: %lu", drive, (unsigned long)lktbl[drive][0]);
 	
 	// re-alloc sufficient memory
-	lktbl[drive] = realloc(lktbl[drive], sizeof(DWORD) * lktbl[drive][0]);
+	vPortFree(lktbl[drive]);
+	lktbl[drive] = pvPortMalloc(sizeof(DWORD) * lktbl[drive][0]);
 	
 	// and retry link table creation
 	if(f_lseek(&fil[drive], CREATE_LINKMAP)) {
 	  sdc_debugf("DRV %d: Link table creation finally failed, "
 		     "required size: %lu", drive, (unsigned long)lktbl[drive][0]);
-	  free(lktbl[drive]);
+	  vPortFree(lktbl[drive]);
 	  lktbl[drive] = NULL;
 	  fil[drive].cltbl = NULL;
 	  
@@ -580,7 +588,7 @@ int sdc_image_open(int drive, char *name) {
     sdc_unlock();
 
     // remember current image name
-    image_name[drive] = strdup(name);
+    image_name[drive] = StrDup(name);
 
     // image has successfully been opened, so report image size to core
     sdc_image_inserted(drive, fil[drive].obj.objsize);
@@ -627,19 +635,16 @@ int sdc_image_open(int drive, char *name) {
     }
     
     // remember current image name
-    image_name[drive] = strdup(name);    
+    image_name[drive] = StrDup(name);    
   }
     
   return 0;
 }
 
-sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
-  static sdc_dir_t sdc_dir = { 0, NULL };
-
-  int dir_compare(const void *p1, const void *p2) {
-    sdc_dir_entry_t *d1 = (sdc_dir_entry_t *)p1;
-    sdc_dir_entry_t *d2 = (sdc_dir_entry_t *)p2;
-
+sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
+  static sdc_dir_entry_t *sdc_dir = NULL;
+  
+  int dir_compare(sdc_dir_entry_t *d1, sdc_dir_entry_t *d2) {
     // comparing directory with regular file? 
     if(d1->is_dir != d2->is_dir)
       return d2->is_dir - d1->is_dir;
@@ -651,15 +656,30 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
     return strcasecmp(d1->name, d2->name);    
   }
 
-  void append(sdc_dir_t *dir, FILINFO *fno) {
-    if(!(dir->len%8))
-      // allocate room for 8 more entries
-      dir->files = reallocarray(dir->files, dir->len + 8, sizeof(sdc_dir_entry_t));
-      
-    dir->files[dir->len].name = strdup(fno->fname);
-    dir->files[dir->len].len = fno->fsize;
-    dir->files[dir->len].is_dir = (fno->fattrib & AM_DIR)?1:0;
-    dir->len++;
+  sdc_dir_entry_t *create(FILINFO *fno) {
+    // create new entry
+    sdc_dir_entry_t *entry = pvPortMalloc(sizeof(sdc_dir_entry_t));    
+    entry->name = StrDup(fno->fname);
+    entry->len = fno->fsize;
+    entry->is_dir = (fno->fattrib & AM_DIR)?1:0;
+    entry->next = NULL;
+
+    return entry;
+  }
+  
+  void append(sdc_dir_entry_t *list, FILINFO *fno) {
+    // create new entry
+    sdc_dir_entry_t *entry = create(fno);
+
+    // scan to end of list as long as the new entry does not
+    // belong before the one after the current one (implementing some
+    // simple insertion sort)
+    while(list->next && (dir_compare(list->next, entry)<0))
+      list = list->next;
+
+    // and append
+    entry->next = list->next;  // append the previous "next" to new entry
+    list->next = entry;        // make new entry the new "next"
   }
   
   // check if a file name matches any of the extensions given
@@ -708,9 +728,9 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
   if(name) {
     if(strcmp(name, "..")) {
       // alloc a longer string to fit new cwd
-      char *n = malloc(strlen(cwd[drive])+strlen(name)+2);  // both strings + '/' and '\0'
+      char *n = pvPortMalloc(strlen(cwd[drive])+strlen(name)+2);  // both strings + '/' and '\0'
       strcpy(n, cwd[drive]); strcat(n, "/"); strcat(n, name);
-      free(cwd[drive]);
+      vPortFree(cwd[drive]);
       cwd[drive] = n;
     } else {
       // no real need to free here, the unused parts will be free'd
@@ -719,29 +739,31 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
     }
   }
 
-  // free existing file names
-  if(sdc_dir.files) {
-    for(int i=0;i<sdc_dir.len;i++)
-      free(sdc_dir.files[i].name);
-
-    free(sdc_dir.files);
-    sdc_dir.len = 0;
-    sdc_dir.files = NULL;
+  // free existing file chain
+  sdc_dir_entry_t *entry = sdc_dir;
+  while(entry) {
+    sdc_dir_entry_t *next = entry->next;
+    vPortFree(entry->name);
+    vPortFree(entry);
+    entry = next;
   }
-
+  sdc_dir = NULL;
+  
   // add "<UP>" entry for anything but root
   if(strcmp(cwd[drive], CARD_MOUNTPOINT) != 0) {
     strcpy(fno.fname, "..");
     fno.fattrib = AM_DIR;
-    append(&sdc_dir, &fno);
+    fno.fsize = 0;
+    sdc_dir = create(&fno);
   } else {
     // the root also gets a special entry for "eject" or "No Disk"
     // It's identified by the leading /, so the name can be changed
     strcpy(fno.fname, "/");
     fno.fattrib = AM_DIR;
-    append(&sdc_dir, &fno);    
+    fno.fsize = 0;
+    sdc_dir = create(&fno);    
   }
-
+  
   sdc_debugf("max name len = %d", FF_LFN_BUF);
 
   sdc_lock();
@@ -757,19 +779,17 @@ sdc_dir_t *sdc_readdir(int drive, char *name, const char *ext) {
 		   fno.fname, (unsigned long long)fno.fsize);
 
 	// only accept directories or .ST/.HD files
-	if((fno.fattrib & AM_DIR) || ext_match(fno.fname, ext)) 
-	  append(&sdc_dir, &fno);
+	if((fno.fattrib & AM_DIR) || ext_match(fno.fname, ext))
+	  append(sdc_dir, &fno);
       }
     } while(fno.fname[0] != 0);
 
     f_closedir(&dir);
-
-    qsort(sdc_dir.files, sdc_dir.len, sizeof(sdc_dir_entry_t), dir_compare);
   }
     
   sdc_unlock();
 
-  return &sdc_dir;
+  return sdc_dir;
 }
 
 int sdc_init(void) {
@@ -780,7 +800,7 @@ int sdc_init(void) {
   if(fs_init() == 0) {
     // setup paths
     for(int d=0;d<MAX_DRIVES+MAX_IMAGES;d++) {
-      cwd[d] = strdup(CARD_MOUNTPOINT);
+      cwd[d] = StrDup(CARD_MOUNTPOINT);
       image_name[d] = NULL;
     }
     sdc_debugf("SD card is ready");
@@ -807,8 +827,8 @@ void sdc_mount_defaults(void) {
       
       if(sdc_image_open(drive, local_name) != 0) {
 	// open failed, also reset the path
-	if(cwd[drive]) free(cwd[drive]);
-	cwd[drive] = strdup(CARD_MOUNTPOINT);
+	if(cwd[drive]) vPortFree(cwd[drive]);
+	cwd[drive] = StrDup(CARD_MOUNTPOINT);
       }
     }
   }

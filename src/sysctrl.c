@@ -86,7 +86,7 @@ unsigned char sys_get_buttons(void) {
 }
 
 void sys_set_val(char id, uint8_t value) {
-  sys_debugf("SYS set value %c = %d", id, value);
+  sys_debugf("set value %c = %d", id, value);
   
   sys_begin(SPI_SYS_SETVAL);   // send value command
   mcu_hw_spi_tx_u08(id);              // value id
@@ -347,29 +347,29 @@ void sys_run_action(config_action_t *action) {
   sys_debugf("Running action '%s'", action->name);
 
   // execute all commands
-  for(int i=0;action->commands[i].code != CONFIG_ACTION_COMMAND_IDLE;i++) {
-    switch(action->commands[i].code) {
+  config_action_command_t *command = action->commands;
+  while(command) {
+    switch(command->code) {
     case CONFIG_ACTION_COMMAND_SET:
-      sys_debugf("SET('%c',%d)", action->commands[i].set.id,
-		 action->commands[i].set.value);
-      sys_set_val(action->commands[i].set.id, action->commands[i].set.value);
+      sys_debugf("SET('%c',%d)", command->set.id, command->set.value);
+      sys_set_val(command->set.id, command->set.value);
       break;
       
     case CONFIG_ACTION_COMMAND_DELAY:
-      sys_debugf("DELAY(%d)", action->commands[i].delay.ms);
-      vTaskDelay(pdMS_TO_TICKS(action->commands[i].delay.ms));
+      sys_debugf("DELAY(%d)", command->delay.ms);
+      vTaskDelay(pdMS_TO_TICKS(command->delay.ms));
       break;
       
     case CONFIG_ACTION_COMMAND_LOAD:
-      sys_debugf("LOAD %s", action->commands[i].filename);
+      sys_debugf("LOAD %s", command->filename);
 
       // try to read ini file
-      inifile_read(action->commands[i].filename);
+      inifile_read(command->filename);
       break;
       
     case CONFIG_ACTION_COMMAND_SAVE:
-      sys_debugf("SAVE %s", action->commands[i].filename);
-      inifile_write(action->commands[i].filename);
+      sys_debugf("SAVE %s", command->filename);
+      inifile_write(command->filename);
       break;
       
     case CONFIG_ACTION_COMMAND_HIDE:
@@ -379,9 +379,10 @@ void sys_run_action(config_action_t *action) {
       
     case CONFIG_ACTION_COMMAND_LINK:
       sys_debugf("LINK");
-      sys_run_action(action->commands[i].action);
+      sys_run_action(command->action);
       break;
     }
+    command = command->next;
   }
 }
 
@@ -422,7 +423,7 @@ char *sys_get_config(void) {
     if(len < 100) return NULL;
     
     // allocate enough space
-    ret = malloc(len+1);
+    ret = pvPortMalloc(len+1);
     
     // and read the data into the buffer
     sys_begin(SPI_SYS_READ_CFG);
@@ -469,7 +470,7 @@ char *sys_get_config(void) {
 
     // second run to actually read and uncompress
     sys_debugf("Malloc %ld bytes config memory", dstlen+1);
-    unsigned char *dst = malloc(dstlen+1);  // plus one byte for string termination
+    unsigned char *dst = pvPortMalloc(dstlen+1);  // plus one byte for string termination
 
     sys_begin(SPI_SYS_READ_CFG);
     mcu_hw_spi_tx_u08(0);

@@ -30,7 +30,7 @@
 #define CONFIG_ACTION_COMMAND_HIDE  5
 #define CONFIG_ACTION_COMMAND_LINK  6
 
-typedef struct {
+typedef struct config_action_command_S {
   unsigned char code;
   union {
     struct {
@@ -43,11 +43,13 @@ typedef struct {
     char *filename;
     struct config_action_S *action;
   };
+  struct config_action_command_S *next;
 } config_action_command_t;
 
 typedef struct config_action_S {
   char *name;
   config_action_command_t *commands;
+  struct config_action_S *next;
 } config_action_t;
 
 typedef struct {
@@ -58,16 +60,17 @@ typedef struct {
   config_action_t *action;
 } config_fsel_t;
 
-typedef struct {
+typedef struct config_listentry_S {
   char *label;
   unsigned char value;
+  struct config_listentry_S *next;
 } config_listentry_t;
 
 typedef struct {
   unsigned char id;
   char *label;
   unsigned char def;
-  config_listentry_t **listentries;
+  config_listentry_t *listentries;
   config_action_t *action;
 } config_list_t;
 
@@ -101,7 +104,7 @@ typedef struct {
 #define CONFIG_MENU_ENTRY_IMAGE         5
 #define CONFIG_MENU_ENTRY_TOGGLE        6
 
-typedef struct {
+typedef struct config_menu_entry_S {
   unsigned char type;
   union {
     struct config_menu_S *menu;
@@ -111,6 +114,7 @@ typedef struct {
     config_image_t *image;
     config_toggle_t *toggle;
   };  
+  struct config_menu_entry_S *next;
 } config_menu_entry_t;
 
 typedef struct config_menu_S {
@@ -121,7 +125,7 @@ typedef struct config_menu_S {
 typedef struct {
   char *name;
   int version;
-  config_action_t **actions;
+  config_action_t *actions;
   config_menu_t *menu;
 } config_t;
 
