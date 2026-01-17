@@ -328,10 +328,11 @@ void sdc_boot(void) {
     } else {
         sdc_debugf("USB drive mounted in %d ms", bflb_mtimer_get_time_ms() - start);
     }
-  // try to load core.bin and if that doesn't work core.fs
+
   bool upload_ok = false;
 
-#if defined(TANG_CONSOLE60K)
+  // try to load core.bin and if that doesn't work core.fs
+  #if defined(TANG_CONSOLE60K)
   upload_ok = sdc_direct_upload_core_bin("/sd/core.bin");
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/sd/core.fs");
 #endif
@@ -341,7 +342,6 @@ void sdc_boot(void) {
   // unmount the fs
 #if defined(TANG_CONSOLE60K)
   f_mount(NULL, "/sd", 1);
-  // release the sd card
   sdc_direct_release();
 #endif
   f_mount(NULL, "/usb", 1);
