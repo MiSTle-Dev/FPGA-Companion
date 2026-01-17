@@ -1,6 +1,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef ESP_PLATFORM
+#include <freertos/FreeRTOS.h>
+#else
+#include <FreeRTOS.h>
+#endif
+
 #include "xml.h"
 #include "debug.h"
 
@@ -22,11 +28,15 @@ static int xml_iswhite(unsigned char c) {
 static char *xml_str_expand(char *s, char c) {
   int len = 0;
   
-  if(!s) s = malloc(2);
+  if(!s) s = pvPortMalloc(2);
   else {
     len = strlen(s);
+
     // reallocate with space for term char and new char
-    s = realloc(s, len+2);
+    char *n = pvPortMalloc(len+2); 
+    strcpy(n, s);
+    vPortFree(s);
+    s = n;
   }
     
   s[len] = c;
@@ -65,7 +75,7 @@ int xml_parse(char c) {
       if(!skip) {
 	if(xml_element_start_cb(name) != 0) skip = 1;
       } else skip++;
-      if(name) free(name);
+      if(name) vPortFree(name);
       name = NULL;
       if(!skip) xml_element_end_cb();
       else      skip--;
@@ -86,7 +96,7 @@ int xml_parse(char c) {
     else if(c == '/') {
       if(!skip) xml_element_end_cb();
       else      skip--;
-      if(name) free(name);
+      if(name) vPortFree(name);
       name = NULL;
       state = 0;
     } else if(!xml_iswhite(c)) {      
@@ -126,9 +136,9 @@ int xml_parse(char c) {
     if((state == 8 && c == '\"') ||
        (state == 9 && c == '\'')) {
       if(!skip) xml_attribute_cb(name, value);
-      if(name) free(name);
+      if(name) vPortFree(name);
       name = NULL;
-      if(value) free(value);
+      if(value) vPortFree(value);
       value = NULL;
       state = 4;     // -> search for next attribute
     } else {

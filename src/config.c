@@ -9,6 +9,12 @@
 #include "debug.h"
 #include "xml.h"
 
+#ifdef ESP_PLATFORM
+#include <freertos/FreeRTOS.h>
+#else
+#include <FreeRTOS.h>
+#endif
+
 #define CONFIG_XML_ELEMENT_ERROR         -1
 #define CONFIG_XML_ELEMENT_ROOT           0
 #define CONFIG_XML_ELEMENT_CONFIG         1
@@ -39,16 +45,20 @@ void config_init(void) {
   // init configuration structure
   config_element = CONFIG_XML_ELEMENT_ROOT;
   config_depth = 0;
-  cfg = malloc(sizeof(config_t));
+  cfg = pvPortMalloc(sizeof(config_t));
   cfg->name = NULL;  
   cfg->version = -1;  
   cfg->menu = NULL;  
-
-  // initialize empty actions list
-  cfg->actions = malloc(sizeof(config_action_t *));
-  cfg->actions[0] = NULL;
+  cfg->actions = NULL;
 }
-  
+
+// a FreeRTOS'd version of strdup
+static inline char *StrDup(const char *s) {
+  char *res = pvPortMalloc(strlen(s)+1);
+  strcpy(res, s);
+  return res;
+}
+
 /* ============================================================================= */
 /* ================================== root ===================================== */
 /* ============================================================================= */
@@ -93,7 +103,7 @@ static int config_xml_config_element(char *name) {
 
 static void config_xml_config_attribute(char *name, char *value) {    
   if(strcasecmp(name, "name") == 0 && !cfg->name)
-    cfg->name = strdup(value);
+    cfg->name = StrDup(value);
   else if(strcasecmp(name, "version") == 0)
     cfg->version = atoi(value);
   else
@@ -106,27 +116,36 @@ static void config_xml_config_attribute(char *name, char *value) {
 /* ========================================================================= */
 
 static void config_xml_new_action(config_t *cfg) {
-  int a=0; for(;cfg->actions[a];a++);
-  cfg->actions = reallocarray(cfg->actions, a+2, sizeof(config_action_t*));
-
-  cfg->actions[a] = malloc(sizeof(config_action_t));
-  cfg->actions[a]->name = NULL;
-  cfg->actions[a]->commands = malloc(sizeof(config_action_command_t));
-  cfg->actions[a]->commands[0].code = CONFIG_ACTION_COMMAND_IDLE;
-
-  cfg->actions[a+1] = NULL;
+  config_action_t *action = pvPortMalloc(sizeof(config_action_t));
+  action->name = NULL;
+  action->commands = NULL;
+  action->next = NULL;
+  
+  // attach new action to chain
+  if(!cfg->actions) cfg->actions = action;
+  else {
+    config_action_t *a = cfg->actions;
+    while(a->next) a = a->next;
+    a->next = action;
+  }
 }
 
 static config_action_t *config_xml_get_last_action(config_t *cfg) {
-  int a=0; for(;cfg->actions[a];a++);
-  return cfg->actions[a-1];
+  config_action_t *action = cfg->actions;
+  if(!action) return NULL;
+  while(action->next) action = action->next;  
+  return action;
 }
 
 config_action_t *config_get_action(const char *str) {
-  for(int i=0;cfg->actions[i];i++)
-    if(strcmp(str, cfg->actions[i]->name) == 0)
-      return cfg->actions[i];
+  config_action_t *action = cfg->actions;
 
+  while(action) {
+    if(strcmp(str, action->name) == 0)
+      return action;
+    
+    action = action->next;
+  }
   return NULL;  
 }
 
@@ -134,7 +153,7 @@ static void config_xml_action_attribute(char *name, char *value) {
   // get current action
   config_action_t *action = config_xml_get_last_action(cfg);
   if(action && strcasecmp(name, "name") == 0 && !action->name)
-    action->name = strdup(value);
+    action->name = StrDup(value);
   
   else
     debugf("WARNING: Unused action attribute '%s'", name);    
@@ -142,32 +161,42 @@ static void config_xml_action_attribute(char *name, char *value) {
 
 
 static void config_xml_new_action_command(config_action_t *action, int code) {
-  int c=0; for(;action->commands[c].code!=CONFIG_ACTION_COMMAND_IDLE;c++);
+  // allocate memory for a new command
+  config_action_command_t *command = pvPortMalloc(sizeof(config_action_command_t));
+  memset(command, 0, sizeof(config_action_command_t));
+  command->code = code;
+  command->next = NULL;
 
-  action->commands = reallocarray(action->commands, c+2, sizeof(config_action_command_t));
-  memset(&action->commands[c], 0, sizeof(config_action_command_t));
-  action->commands[c].code = code;
-  action->commands[c+1].code = CONFIG_ACTION_COMMAND_IDLE;
+  // append new command to chain of commands
+  if(!action->commands) action->commands = command;
+  else {
+    config_action_command_t *c = action->commands;
+    while(c->next) c = c->next;
+    c->next = command;
+  }
 }
 
 static config_action_command_t *config_xml_get_last_action_command(config_action_t *action) {
   if(!action) return NULL;
-  
-  int c; for(c=0;action->commands[c].code != CONFIG_ACTION_COMMAND_IDLE;c++);
-  return &action->commands[c-1];
+  if(!action->commands) return NULL;
+
+  config_action_command_t *command = action->commands;
+  while(command->next) command = command->next;
+
+  return command;
 }
 
 static void config_xml_command_attribute(int config_element, char *name, char *value) {
   config_action_command_t *command =  config_xml_get_last_action_command(config_xml_get_last_action(cfg));
   if(command) {
     if(config_element == CONFIG_XML_ELEMENT_COMMAND_LOAD && strcasecmp(name, "file") == 0 && !command->filename) {
-      command->filename = strdup(value);
+      command->filename = StrDup(value);
     } else if(config_element == CONFIG_XML_ELEMENT_COMMAND_SET && strcasecmp(name, "id") == 0)
       command->set.id = value[0];
     else if(config_element == CONFIG_XML_ELEMENT_COMMAND_SET && strcasecmp(name, "value") == 0)
       command->set.value = atoi(value);
     else if(config_element == CONFIG_XML_ELEMENT_COMMAND_SAVE && strcasecmp(name, "file") == 0 && !command->filename)
-      command->filename = strdup(value);
+      command->filename = StrDup(value);
     else if(config_element == CONFIG_XML_ELEMENT_COMMAND_DELAY && strcasecmp(name, "ms") == 0)
       command->delay.ms = atoi(value);
     else if(config_element == CONFIG_XML_ELEMENT_COMMAND_LINK && strcasecmp(name, "action") == 0 && !command->action)
@@ -229,24 +258,27 @@ static int config_xml_action_element(char *name) {
 
 static void config_dump_action(config_action_t *act) {
   debugf("Action, name=\"%s\"", act->name);
-  for(int i=0;act->commands[i].code != CONFIG_ACTION_COMMAND_IDLE;i++) {  
-    switch(act->commands[i].code) {
+  config_action_command_t *command = act->commands;
+
+  while(command) {
+    switch(command->code) {
     case CONFIG_ACTION_COMMAND_LOAD:
-      debugf("  Load %s", act->commands[i].filename);
+      debugf("  Load %s", command->filename);
       break;
     case CONFIG_ACTION_COMMAND_SAVE:
-      debugf("  Save %s", act->commands[i].filename);
+      debugf("  Save %s", command->filename);
       break;
     case CONFIG_ACTION_COMMAND_SET:
-      debugf("  Set %c=%u", act->commands[i].set.id, act->commands[i].set.value);
+      debugf("  Set %c=%u", command->set.id, command->set.value);
       break;
     case CONFIG_ACTION_COMMAND_DELAY:
-      debugf("  Delay %ums", act->commands[i].delay.ms);
+      debugf("  Delay %ums", command->delay.ms);
       break;
     case CONFIG_ACTION_COMMAND_HIDE:
       debugf("  Hide OSD");
       break;
     }
+    command = command->next;
   }
 }
 
@@ -255,21 +287,27 @@ static void config_dump_action(config_action_t *act) {
 /* ========================================================================= */
  
 static config_menu_entry_t *config_xml_new_menu_entry(config_menu_t *menu) {
-  config_menu_entry_t *me = menu->entries;
-  int cnt; for(cnt=0;me[cnt].type != CONFIG_MENU_ENTRY_UNKNOWN;cnt++);
-
   // Allocate space for one more entry. There need to be two more enries than
   // used by now. One for the new entry and one for the end marker.
-  menu->entries = reallocarray(menu->entries, cnt+2, sizeof(config_menu_entry_t));
-  menu->entries[cnt+1].type = CONFIG_MENU_ENTRY_UNKNOWN;
-  return &menu->entries[cnt];
+  config_menu_entry_t *entry = pvPortMalloc(sizeof(config_menu_entry_t));
+  entry->type = CONFIG_MENU_ENTRY_UNKNOWN;
+  entry->next = NULL;
+
+  // append new menu entry to chain of menu entries
+  if(!menu->entries) menu->entries = entry;
+  else {
+    config_menu_entry_t *e = menu->entries;
+    while(e->next) e = e->next;
+    e->next = entry;
+  }
+
+  return entry;
 }
 
 static config_menu_t *config_xml_new_menu(config_menu_t *parent) {
-  config_menu_t *menu = malloc(sizeof(config_menu_t));
+  config_menu_t *menu = pvPortMalloc(sizeof(config_menu_t));
   menu->label = NULL;
-  menu->entries = malloc(sizeof(config_menu_entry_t));
-  menu->entries[0].type = CONFIG_MENU_ENTRY_UNKNOWN;
+  menu->entries = NULL;
   
   if(parent) {
     config_menu_entry_t *me = config_xml_new_menu_entry(parent);
@@ -284,10 +322,10 @@ static config_menu_t *config_xml_get_menu(config_menu_t *menu, int depth) {
   // walk over menu tree to return last menu entry
   config_menu_t *last = menu;
   config_menu_entry_t *me = menu->entries;
-  while(me->type != CONFIG_MENU_ENTRY_UNKNOWN) {
+  while(me) {
     if(me->type == CONFIG_MENU_ENTRY_MENU && depth)
       last = config_xml_get_menu(me->menu, depth-1);
-    me++;
+    me = me->next;
   }    
   return last;
 }
@@ -295,8 +333,8 @@ static config_menu_t *config_xml_get_menu(config_menu_t *menu, int depth) {
 static config_menu_entry_t *config_xml_get_last_menu_entry(config_menu_t *menu, int depth) {
   menu = config_xml_get_menu(menu, depth);
   config_menu_entry_t *me = menu->entries;
-  while(me->type != CONFIG_MENU_ENTRY_UNKNOWN) me++;
-  return me-1;
+  while(me->next) me = me->next;
+  return me;
 }
 
 const char *config_menuentry_get_type_str(config_menu_entry_t *entry) {
@@ -344,9 +382,9 @@ static int config_xml_menu_element(char *name) {
 }
     
 static void config_xml_menu_attribute(char *name, char *value) {
-  config_menu_t *menu = config_xml_get_menu(cfg->menu, config_depth-2);
+  config_menu_t *menu = config_xml_get_menu(cfg->menu, config_depth-2);  
   if(menu && strcasecmp(name, "label") == 0 && !menu->label)
-    menu->label = strdup(value);    
+    menu->label = StrDup(value);
   
   else
     debugf("WARNING: Unused menu attribute '%s'", name);    
@@ -361,27 +399,29 @@ static void config_dump_list(config_list_t *ls);
 static void config_dump_menu(config_menu_t *mnu) {
   debugf("Menu, label=\"%s\"", mnu->label);
 
-  for(int i=0;mnu->entries[i].type != CONFIG_MENU_ENTRY_UNKNOWN;i++) {
-    switch(mnu->entries[i].type) {
+  config_menu_entry_t *me = mnu->entries;
+  while(me) {
+    switch(me->type) {
     case CONFIG_MENU_ENTRY_MENU:
-      config_dump_menu(mnu->entries[i].menu);
+      config_dump_menu(me->menu);
       break;
     case CONFIG_MENU_ENTRY_FILESELECTOR:
-      config_dump_fileselector(mnu->entries[i].fsel);
+      config_dump_fileselector(me->fsel);
       break;
     case CONFIG_MENU_ENTRY_LIST:
-      config_dump_list(mnu->entries[i].list);
+      config_dump_list(me->list);
       break;
     case CONFIG_MENU_ENTRY_BUTTON:
-      config_dump_button(mnu->entries[i].button);
+      config_dump_button(me->button);
       break;
     case CONFIG_MENU_ENTRY_IMAGE:
-      config_dump_image(mnu->entries[i].image);
+      config_dump_image(me->image);
       break;
     case CONFIG_MENU_ENTRY_TOGGLE:
-      config_dump_toggle(mnu->entries[i].toggle);
+      config_dump_toggle(me->toggle);
       break;
-    }    
+    }
+    me = me->next;
   }
 }
 
@@ -390,7 +430,7 @@ static void config_dump_menu(config_menu_t *mnu) {
 /* ============================================================================= */
  
 static void config_xml_new_fileselector(config_menu_t *menu) {
-  config_fsel_t *fsel = malloc(sizeof(config_fsel_t));
+  config_fsel_t *fsel = pvPortMalloc(sizeof(config_fsel_t));
   fsel->index = -1;
   fsel->label = NULL;
   fsel->ext = NULL;
@@ -403,12 +443,17 @@ static void config_xml_new_fileselector(config_menu_t *menu) {
 }
 
 static char **config_parse_strlist(const char *str, char sep) {
-  char *s, **ptr = NULL;
-  int i=0;
+  // determine number of strings inside
+  int i=1;
+  for(const char *s=str;(s=strchr(s,sep));i++,s++);
+  
+  // allocate array of pointers incl terminating 0 pointer
+  char **ptr = pvPortMalloc((i+1)*sizeof(char*));
 
+  i=0;
+  char *s;
   while((s = strchr(str, sep))) {
-    ptr = reallocarray(ptr, sizeof(char*), i+1);
-    ptr[i] = malloc(s-str+1);
+    ptr[i] = pvPortMalloc(s-str+1);
     strncpy(ptr[i], str, s-str+1);
     ptr[i][s-str] = '\0';
     str = s+1;
@@ -416,8 +461,7 @@ static char **config_parse_strlist(const char *str, char sep) {
   }
 
   // copy last string and append a null pointer to mark the end of the list
-  ptr = reallocarray(ptr, sizeof(char*), i+2);
-  ptr[i] = strdup(str);
+  ptr[i] = StrDup(str);
   ptr[i+1] = NULL;
 
   return ptr;
@@ -427,13 +471,13 @@ static void config_xml_fsel_attribute(char *name, char *value) {
   config_menu_entry_t *me = config_xml_get_last_menu_entry(cfg->menu, config_depth-2);
   if(me && me->type == CONFIG_MENU_ENTRY_FILESELECTOR) {    
     if(me->fsel && strcasecmp(name, "label") == 0 && !me->fsel->label)
-      me->fsel->label = strdup(value);	  
+      me->fsel->label = StrDup(value);	  
     else if(me->fsel && strcasecmp(name, "ext") == 0 && !me->fsel->ext)
       me->fsel->ext = config_parse_strlist(value, ';');
     else if(me->fsel && strcasecmp(name, "index") == 0)
       me->fsel->index = atoi(value);
     else if(me->fsel && strcasecmp(name, "default") == 0)
-      me->fsel->def = strdup(value);
+      me->fsel->def = StrDup(value);
     else if(strcasecmp(name, "action") == 0)
       me->fsel->action = config_get_action(value);
     
@@ -454,13 +498,12 @@ static void config_dump_fileselector(config_fsel_t *fs) {
 /* ============================================================================= */
  
 static void config_xml_new_list(config_menu_t *menu) {
-  config_list_t *list = malloc(sizeof(config_list_t));
+  config_list_t *list = pvPortMalloc(sizeof(config_list_t));
   list->id = -1;
   list->def = -1;
   list->label = NULL;
   list->action = NULL;
-  list->listentries = malloc(sizeof(config_listentry_t *));
-  list->listentries[0] = NULL;
+  list->listentries = NULL;
 
   config_menu_entry_t *me = config_xml_new_menu_entry(menu);
   me->type = CONFIG_MENU_ENTRY_LIST;
@@ -468,15 +511,18 @@ static void config_xml_new_list(config_menu_t *menu) {
 }
 
 static void config_xml_new_listentry(config_list_t *list) {
-  config_listentry_t *listentry = malloc(sizeof(config_listentry_t));
+  config_listentry_t *listentry = pvPortMalloc(sizeof(config_listentry_t));
   listentry->value = 0;
   listentry->label = NULL;
+  listentry->next = NULL;
 
-  int cnt;
-  for(cnt=0;list->listentries[cnt];cnt++);
-  list->listentries = reallocarray(list->listentries, cnt+2, sizeof(config_listentry_t));
-  list->listentries[cnt] = listentry;
-  list->listentries[cnt+1] = NULL;
+  // append new menu entry to chain of menu entries
+  if(!list->listentries) list->listentries = listentry;
+  else {
+    config_listentry_t *e = list->listentries;
+    while(e->next) e = e->next;
+    e->next = listentry;
+  }
 }
 
 static int config_xml_list_element(char *name) {
@@ -497,7 +543,7 @@ static void config_xml_list_attribute(char *name, char *value) {
   config_menu_entry_t *me = config_xml_get_last_menu_entry(cfg->menu, config_depth-3);
   if(me && me->type == CONFIG_MENU_ENTRY_LIST) {    
     if(me->list && strcasecmp(name, "label") == 0 && !me->list->label)
-      me->list->label = strdup(value);      
+      me->list->label = StrDup(value);      
     else if(me->list && strcasecmp(name, "id") == 0)
       me->list->id = value[0];
     else if(me->list && strcasecmp(name, "default") == 0)
@@ -515,14 +561,13 @@ static void config_xml_listentry_attribute(char *name, char *value) {
   config_menu_entry_t *me = config_xml_get_last_menu_entry(cfg->menu, config_depth-4);
   if(me && me->list && me->type == CONFIG_MENU_ENTRY_LIST) {    
     // get last listentry
-    int cnt;
-    for(cnt=0;me->list->listentries[cnt];cnt++);
-    cnt--;
-    
-    if(strcasecmp(name, "label") == 0 && !me->list->listentries[cnt]->label)
-      me->list->listentries[cnt]->label = strdup(value);      
+    config_listentry_t *le = me->list->listentries;
+    while(le->next) le = le->next;
+
+    if(strcasecmp(name, "label") == 0 && !le->label)
+      le->label = StrDup(value);      
     else if(strcasecmp(name, "value") == 0)
-      me->list->listentries[cnt]->value = atoi(value);      
+      le->value = atoi(value);      
     
     else
       debugf("WARNING: Unused listentry attribute '%s'", name);
@@ -531,9 +576,11 @@ static void config_xml_listentry_attribute(char *name, char *value) {
 
 static void config_dump_list(config_list_t *ls) {
   debugf("List, id='%c', label=\"%s\", default=\"%d\"", ls->id, ls->label, ls->def);
-  for(int i=0;ls->listentries[i];i++)
-    debugf("  Listentry, label=\"%s\", value=\"%d\"",
-	   ls->listentries[i]->label, ls->listentries[i]->value);
+  config_listentry_t *le = ls->listentries;
+  while(le) {
+    debugf("  Listentry, label=\"%s\", value=\"%d\"", le->label, le->value);
+    le = le->next;
+  }
   if(ls->action) config_dump_action(ls->action);
 }
   
@@ -542,7 +589,7 @@ static void config_dump_list(config_list_t *ls) {
 /* ============================================================================= */
 
 static void config_xml_new_button(config_menu_t *menu) {
-  config_button_t *button = malloc(sizeof(config_button_t));
+  config_button_t *button = pvPortMalloc(sizeof(config_button_t));
   button->label = NULL;
   button->action = NULL;
 
@@ -556,7 +603,7 @@ static void config_xml_button_attribute(char *name, char *value) {
   config_menu_entry_t *me = config_xml_get_last_menu_entry(cfg->menu, config_depth-3);
   if(me && me->type == CONFIG_MENU_ENTRY_BUTTON) {    
     if(me->button && strcasecmp(name, "label") == 0 && !me->button->label)
-      me->button->label = strdup(value);      
+      me->button->label = StrDup(value);      
     else if(me->button && strcasecmp(name, "action") == 0)
       me->button->action = config_get_action(value);
     
@@ -575,7 +622,7 @@ static void config_dump_button(config_button_t *btn) {
 /* ============================================================================= */
 
 static void config_xml_new_image(config_menu_t *menu) {
-  config_image_t *image = malloc(sizeof(config_image_t));
+  config_image_t *image = pvPortMalloc(sizeof(config_image_t));
   image->index = -1;
   image->label = NULL;
   image->none_str = NULL;
@@ -594,19 +641,19 @@ static void config_xml_image_attribute(char *name, char *value) {
   config_menu_entry_t *me = config_xml_get_last_menu_entry(cfg->menu, config_depth-3);
   if(me && me->type == CONFIG_MENU_ENTRY_IMAGE) {    
     if(me->image && strcasecmp(name, "label") == 0 && !me->image->label)
-      me->image->label = strdup(value);      
+      me->image->label = StrDup(value);      
     else if(me->image && strcasecmp(name, "ext") == 0 && !me->image->ext)
       me->image->ext = config_parse_strlist(value, ';');
     else if(me->image && strcasecmp(name, "index") == 0)
       me->image->index = atoi(value);
     else if(me->image && strcasecmp(name, "default") == 0)
-      me->image->def = strdup(value);
+      me->image->def = StrDup(value);
     else if(me->image && strcasecmp(name, "none_str") == 0 && !me->image->none_str)
-      me->image->none_str = strdup(value);      
+      me->image->none_str = StrDup(value);      
     else if(me->image && strcasecmp(name, "none_icn") == 0 && !me->image->none_icn) {
       if(strlen(value) >= 16) {
 	// convert 16 bytes hex string into 8 byte bitmap
-	me->image->none_icn = malloc(8);
+	me->image->none_icn = pvPortMalloc(8);
 	for(int i=0;i<16;i++) {
 	  int nibble =
 	    (value[i] >= '0' && value[i] <= '9')?(value[i]-'0'):
@@ -638,7 +685,7 @@ static void config_dump_image(config_image_t *img) {
 /* ============================================================================= */
 
 static void config_xml_new_toggle(config_menu_t *menu) {
-  config_toggle_t *toggle = malloc(sizeof(config_toggle_t));
+  config_toggle_t *toggle = pvPortMalloc(sizeof(config_toggle_t));
   toggle->label = NULL;
   toggle->action = NULL;
   toggle->id = 0;
@@ -654,7 +701,7 @@ static void config_xml_toggle_attribute(char *name, char *value) {
   config_menu_entry_t *me = config_xml_get_last_menu_entry(cfg->menu, config_depth-3);
   if(me && me->type == CONFIG_MENU_ENTRY_TOGGLE) {    
     if(me->toggle && strcasecmp(name, "label") == 0 && !me->toggle->label)
-      me->toggle->label = strdup(value);      
+      me->toggle->label = StrDup(value);      
     else if(me->toggle && strcasecmp(name, "id") == 0)
       me->toggle->id = value[0];
     else if(me->toggle && strcasecmp(name, "default") == 0)

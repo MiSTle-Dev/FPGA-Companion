@@ -17,13 +17,14 @@
 #define MENU_EVENT_BACK         10
 #define MENU_EVENT_KEY_RELEASE  11
 
-typedef struct {
+typedef struct menu_variable {
   char id;
   int value;
+  struct menu_variable *next;
 } menu_variable_t;
 
 void menu_init(void);
-menu_variable_t **menu_get_variables(void);
+menu_variable_t *menu_get_variables(void);
 void menu_set_value(unsigned char id, unsigned char value);
 void menu_do(int);
 void menu_notify(unsigned long msg);
