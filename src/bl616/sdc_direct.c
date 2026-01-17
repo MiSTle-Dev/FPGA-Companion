@@ -316,38 +316,32 @@ void sdc_boot(void) {
 #endif
     if (res == FR_OK) {
         sdc_debugf("SD card mounted in %d ms", bflb_mtimer_get_time_ms() - start);
-    } else  {
+    } else {
         sdc_debugf("SD card not found...\r\n");
-        sdc_direct_release();
-        sdc_debugf("try to mount USB drive...");
-        start = bflb_mtimer_get_time_ms();
-        while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 2000)
-          bflb_mtimer_delay_ms(100);
-        if (res != FR_OK) {
-            sdc_debugf("Failed to mount USB drive\r\n");
-            return;
-          } else {
-            sdc_debugf("USB drive mounted in %d ms", bflb_mtimer_get_time_ms() - start);
-   }
-  }
-  
-  sdc_debugf("SD Card / USB memory drive mounted directly");
+    }
+    sdc_debugf("Mounting USB drive...");
+    start = bflb_mtimer_get_time_ms();
+    while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 2000)
+      bflb_mtimer_delay_ms(100);
+    if (res != FR_OK) {
+        sdc_debugf("Failed to mount USB drive\r\n");
+    } else {
+        sdc_debugf("USB drive mounted in %d ms", bflb_mtimer_get_time_ms() - start);
+    }
 
-  // try to load core.bin and if that doesn't work core.fs
   bool upload_ok = false;
 
-#if defined(TANG_CONSOLE60K)
+  // try to load core.bin and if that doesn't work core.fs
+  #if defined(TANG_CONSOLE60K)
   upload_ok = sdc_direct_upload_core_bin("/sd/core.bin");
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/sd/core.fs");
 #endif
-  bflb_mtimer_delay_ms(1500);
   if(!upload_ok) upload_ok = sdc_direct_upload_core_bin("/usb/core.bin");
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/usb/core.fs");
 
   // unmount the fs
 #if defined(TANG_CONSOLE60K)
   f_mount(NULL, "/sd", 1);
-  // release the sd card
   sdc_direct_release();
 #endif
   f_mount(NULL, "/usb", 1);

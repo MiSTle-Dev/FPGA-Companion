@@ -1927,7 +1927,6 @@ static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
 delete: 
     usb_osal_thread_delete(NULL);
     // clang-format on
-    usbh_msc_handle = NULL;
 }
 
 void usbh_msc_run(struct usbh_msc *msc_class)
@@ -1937,10 +1936,6 @@ void usbh_msc_run(struct usbh_msc *msc_class)
 
 void usbh_msc_stop(struct usbh_msc *msc_class)
 {
-    if (usbh_msc_handle) {
-      usb_osal_thread_delete(usbh_msc_handle);
-      usbh_msc_handle = NULL;
-  }
 }
 
 #ifdef CONFIG_BFLOG
