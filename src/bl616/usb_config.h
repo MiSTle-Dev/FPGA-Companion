@@ -8,7 +8,13 @@
 
 /* ================ USB common Configuration ================ */
 
+#ifdef __RTTHREAD__
+#include <rtthread.h>
+
+#define CONFIG_USB_PRINTF(...) rt_kprintf(__VA_ARGS__)
+#else
 #define CONFIG_USB_PRINTF(...) printf(__VA_ARGS__)
+#endif
 
 #ifndef CONFIG_USB_DBG_LEVEL
 #define CONFIG_USB_DBG_LEVEL USB_DBG_INFO
@@ -74,7 +80,7 @@
 #endif
 
 #ifndef CONFIG_USBDEV_MSC_MAX_BUFSIZE
-#define CONFIG_USBDEV_MSC_MAX_BUFSIZE 512
+#define CONFIG_USBDEV_MSC_MAX_BUFSIZE 1024
 #endif
 
 #ifndef CONFIG_USBDEV_MSC_MANUFACTURER_STRING
@@ -93,10 +99,10 @@
 // #define CONFIG_USBDEV_MSC_POLLING
 
 /* move msc read & write from isr to thread */
-// #define CONFIG_USBDEV_MSC_THREAD
+#define CONFIG_USBDEV_MSC_THREAD
 
 #ifndef CONFIG_USBDEV_MSC_PRIO
-#define CONFIG_USBDEV_MSC_PRIO 4
+#define CONFIG_USBDEV_MSC_PRIO 15
 #endif
 
 #ifndef CONFIG_USBDEV_MSC_STACKSIZE
@@ -168,7 +174,7 @@
 #define CONFIG_USBHOST_DEV_NAMELEN 16
 
 #ifndef CONFIG_USBHOST_PSC_PRIO
-#define CONFIG_USBHOST_PSC_PRIO 0
+#define CONFIG_USBHOST_PSC_PRIO 15
 #endif
 
 #ifndef CONFIG_USBHOST_PSC_STACKSIZE
@@ -213,17 +219,22 @@
 #define CONFIG_USBHOST_MAX_BUS 1
 #endif
 
+#ifndef CONFIG_USBHOST_PIPE_NUM
+#define CONFIG_USBHOST_PIPE_NUM 10
+#endif
+
 /* ---------------- EHCI Configuration ---------------- */
 
 #define CONFIG_USB_EHCI_HCCR_OFFSET     (0x0)
 #define CONFIG_USB_EHCI_FRAME_LIST_SIZE 1024
 #define CONFIG_USB_EHCI_QH_NUM          10
 #define CONFIG_USB_EHCI_QTD_NUM         (CONFIG_USB_EHCI_QH_NUM * 3)
-#define CONFIG_USB_EHCI_ITD_NUM         4
+#define CONFIG_USB_EHCI_ITD_NUM         20
 #define CONFIG_USB_EHCI_HCOR_RESERVED_DISABLE
 // #define CONFIG_USB_EHCI_CONFIGFLAG
 // #define CONFIG_USB_EHCI_ISO
 // #define CONFIG_USB_EHCI_WITH_OHCI
+// #define CONFIG_USB_EHCI_DESC_DCACHE_ENABLE
 
 /* ---------------- OHCI Configuration ---------------- */
 #define CONFIG_USB_OHCI_HCOR_OFFSET (0x0)

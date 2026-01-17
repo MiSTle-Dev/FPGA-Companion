@@ -115,7 +115,10 @@ bool jtag_open(void) {
   // read FPGA idcode via JTAG. Should be 0x81b for the GW2AR-18
   uint32_t idcode = jtag_identify();
 
-  if (idcode == IDCODE_GW2AR18) is_gw2a = true;
+  if (idcode == IDCODE_GW2AR18) {
+    is_gw2a = true;
+    jtag_debugf("GW2AR detected");
+  }
 
   // return into Test-Logic-Reset state
   mcu_hw_jtag_tms(1, 0b11111, 5);

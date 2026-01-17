@@ -112,6 +112,7 @@ volatile uint32_t *reg_gpio_tck = (volatile uint32_t *)0x200008c8;     // gpio1
 volatile uint32_t *reg_gpio_tdo = (volatile uint32_t *)0x200008cc;     // gpio2
 volatile uint32_t *reg_gpio_tdi = (volatile uint32_t *)0x200008d0;     // gpio3
 #endif
+volatile uint32_t *reg_gpio0_31 = (volatile uint32_t *)0x20000ae4;  // gpio_cfg136，Register Controlled GPIO Output Value
 
 #define DERIVE_GPIO_OPS_OUT(PIN_XXX)        \
     static inline void PIN_XXX##_H(void)    \
@@ -144,7 +145,7 @@ DERIVE_GPIO_OPS_IN(PIN_JTAG_TDO);
 
 static inline void delay(uint32_t ms)
 {
-#if defined(TANG_CONSOLE60K)|| defined(M0S_DOCK)
+#if defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)
     vTaskDelay(pdMS_TO_TICKS(ms));
 #else
     // compensate for 26MHz clock instead of 40MHz
@@ -1013,7 +1014,10 @@ void mcu_hw_init(void) {
   /* configure JTAGSEL_n */
   bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_set(gpio, PIN_nJTAGSEL);
-#elif TANG_MEGA138KPRO
+  /* configure dummy */
+  bflb_gpio_init(gpio, PIN_TF_SDIO_SEL, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
+  #elif TANG_MEGA138KPRO
   /* LED6 enable */
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
@@ -1026,8 +1030,8 @@ void mcu_hw_init(void) {
   bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_set(gpio, PIN_nJTAGSEL);
   /* configure PIN_TF_SDIO_SEL to FPGA */
-  bflb_gpio_init(gpio, GPIO_PIN_16, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_reset(gpio, GPIO_PIN_16);
+  bflb_gpio_init(gpio, PIN_TF_SDIO_SEL, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
 #endif
   mcu_hw_spi_init();
 
@@ -1046,7 +1050,6 @@ void mcu_hw_init(void) {
   mcu_hw_jtag_init();
 #endif
   usb_host();
-
 }
 
 extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
@@ -1067,12 +1070,13 @@ void mcu_hw_reset(void) {
 
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
+#ifndef TANG_NANO20K
   bflb_gpio_deinit(gpio, GPIO_PIN_0);
   bflb_gpio_deinit(gpio, GPIO_PIN_1);
   bflb_gpio_deinit(gpio, GPIO_PIN_2);
   bflb_gpio_deinit(gpio, GPIO_PIN_3);
-  bflb_gpio_init(gpio, GPIO_PIN_2, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_reset(gpio, GPIO_PIN_2);
+#endif
+
   debugf("usb host deinit");
   usbh_deinitialize(0);
   bflb_mtimer_delay_ms(250);
@@ -1860,6 +1864,7 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_gpio_deinit(gpio, PIN_JTAG_TMS);
   bflb_gpio_deinit(gpio, PIN_JTAG_TDO);
 
+#ifdef TANG_CONSOLE60K  
   bflb_gpio_init(gpio, SPI_PIN_MISO, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_init(gpio, SPI_PIN_MOSI, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_init(gpio, SPI_PIN_SCK, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
@@ -1869,16 +1874,11 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_gpio_set(gpio, PIN_nJTAGSEL);
 
   struct bflb_device_s *sdh;
-
   sdh = bflb_device_get_by_name("sdh");
+
   bflb_sdh_sta_int_en(sdh, 0xffffffff, false);
-  /* sdh reset */
   GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
-
-  /* configure PIN_TF_SDIO_SEL to FPGA */
-  bflb_gpio_init(gpio, GPIO_PIN_16, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_reset(gpio, GPIO_PIN_16);
-
+#endif
   jtag_is_active = false;
   bflb_irq_enable(gpio->irq_num);
 }
@@ -1931,7 +1931,7 @@ delete:
 
 void usbh_msc_run(struct usbh_msc *msc_class)
 {
-  usbh_msc_handle = usb_osal_thread_create("usbh_msc", 2048, 1, usbh_msc_thread, msc_class);
+  usbh_msc_handle = usb_osal_thread_create("usbh_msc", 2048, CONFIG_USBHOST_PSC_PRIO - 1, usbh_msc_thread, msc_class);
 }
 
 void usbh_msc_stop(struct usbh_msc *msc_class)
@@ -1952,23 +1952,6 @@ __attribute__((weak)) uint32_t bflog_time(void)
 __attribute__((weak)) char *bflog_thread(void)
 {
     return "";
-}
-#endif
-
-#ifdef CONFIG_LUA
-__attribute__((weak)) clock_t luaport_clock(void)
-{
-    return (clock_t)bflb_mtimer_get_time_us();
-}
-
-__attribute__((weak)) time_t luaport_time(time_t *seconds)
-{
-    time_t t = (time_t)BFLB_RTC_TIME2SEC(bflb_rtc_get_time(rtc));
-    if (seconds != NULL) {
-        *seconds = t;
-    }
-
-    return t;
 }
 #endif
 
