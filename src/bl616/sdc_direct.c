@@ -313,12 +313,14 @@ void sdc_boot(void) {
     sdc_debugf("Mounting sd card ...\r\n");
     while ((res = f_mount(&fs, "/sd", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 500)
       bflb_mtimer_delay_ms(100);
-#endif
     if (res == FR_OK) {
         sdc_debugf("SD card mounted in %d ms", bflb_mtimer_get_time_ms() - start);
     } else {
         sdc_debugf("SD card not found...\r\n");
+        sdc_direct_release();
     }
+#endif
+//  bflb_mtimer_delay_ms(2000);  // need to wait till HID registered
     sdc_debugf("Mounting USB drive...");
     start = bflb_mtimer_get_time_ms();
     while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 2000)
@@ -332,18 +334,14 @@ void sdc_boot(void) {
   bool upload_ok = false;
 
   // try to load core.bin and if that doesn't work core.fs
-  #if defined(TANG_CONSOLE60K)
+#if defined(TANG_CONSOLE60K)
   upload_ok = sdc_direct_upload_core_bin("/sd/core.bin");
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/sd/core.fs");
-#endif
-  if(!upload_ok) upload_ok = sdc_direct_upload_core_bin("/usb/core.bin");
-  if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/usb/core.fs");
-
-  // unmount the fs
-#if defined(TANG_CONSOLE60K)
   f_mount(NULL, "/sd", 1);
   sdc_direct_release();
 #endif
+  if(!upload_ok) upload_ok = sdc_direct_upload_core_bin("/usb/core.bin");
+  if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("/usb/core.fs");
   f_mount(NULL, "/usb", 1);
   
   // on upload failure reconfig the FPGA and allow it to (re-)boot from flash
