@@ -1050,7 +1050,6 @@ void mcu_hw_init(void) {
   mcu_hw_jtag_init();
 #endif
   usb_host();
-
 }
 
 extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
@@ -1875,16 +1874,11 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_gpio_set(gpio, PIN_nJTAGSEL);
 
   struct bflb_device_s *sdh;
-
   sdh = bflb_device_get_by_name("sdh");
+
   bflb_sdh_sta_int_en(sdh, 0xffffffff, false);
-  /* sdh reset */
   GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
-
-  /* configure PIN_TF_SDIO_SEL to FPGA */
-//  bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
 #endif
-
   jtag_is_active = false;
   bflb_irq_enable(gpio->irq_num);
 }
