@@ -114,43 +114,29 @@ volatile uint32_t *reg_gpio_tdi = (volatile uint32_t *)0x200008d0;     // gpio3
 #endif
 volatile uint32_t *reg_gpio0_31 = (volatile uint32_t *)0x20000ae4;  // gpio_cfg136，Register Controlled GPIO Output Value
 
-#define DERIVE_GPIO_OPS_OUT(PIN_XXX)        \
-    static inline void PIN_XXX##_H(void)    \
-    {                                            \
-        bflb_gpio_set(gpio, PIN_XXX);   \
-    }                                            \
-                                                 \
-    static inline void PIN_XXX##_L(void)    \
-    {                                            \
-        bflb_gpio_reset(gpio, PIN_XXX); \
-    }                                            \
-    static inline void PIN_XXX##_W(bool s)  \
-    {                                            \
-        if (s)                                   \
-            PIN_XXX##_H();                  \
-        else                                     \
-            PIN_XXX##_L();                  \
-    }
+#define xGPIO_INT_MASK    (1<<22)
+#define xGPIO_FUNC_SWGPIO (0xB<<8)
+#define xGPIO_OUTPUT_EN   (1<<6)
+#define xGPIO_SCHMITT_EN  (1<<1)
+#define xGPIO_DRV_3       (3<<2)
 
-#define DERIVE_GPIO_OPS_IN(PIN_XXX)               \
-    static inline bool PIN_XXX##_V(void)          \
-    {                                                  \
-        return bflb_gpio_read(gpio, PIN_XXX); \
-    }
+uint32_t jtag_tms_cfg, jtag_tck_cfg, jtag_tdi_cfg;
 
-DERIVE_GPIO_OPS_OUT(PIN_JTAG_TMS);
-DERIVE_GPIO_OPS_OUT(PIN_JTAG_TCK);
-DERIVE_GPIO_OPS_OUT(PIN_JTAG_TDI);
-DERIVE_GPIO_OPS_IN(PIN_JTAG_TDO);
+// set GPIO0 (TMS), GPIO1 (TCK) and GPIO3 (TDI) as direct output mode
+void jtag_enter_gpio_out_mode(void) {
+	jtag_tms_cfg = *reg_gpio_tms;
+	jtag_tck_cfg = *reg_gpio_tck;
+	jtag_tdi_cfg = *reg_gpio_tdi;
+	*reg_gpio_tms = xGPIO_INT_MASK | xGPIO_FUNC_SWGPIO | xGPIO_OUTPUT_EN | xGPIO_SCHMITT_EN | xGPIO_DRV_3;
+	*reg_gpio_tck = xGPIO_INT_MASK | xGPIO_FUNC_SWGPIO | xGPIO_OUTPUT_EN | xGPIO_SCHMITT_EN | xGPIO_DRV_3;
+	*reg_gpio_tdi = xGPIO_INT_MASK | xGPIO_FUNC_SWGPIO | xGPIO_OUTPUT_EN | xGPIO_SCHMITT_EN | xGPIO_DRV_3;
+}
 
-static inline void delay(uint32_t ms)
-{
-#if defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)
-    vTaskDelay(pdMS_TO_TICKS(ms));
-#else
-    // compensate for 26MHz clock instead of 40MHz
-    vTaskDelay(pdMS_TO_TICKS(ms*26/40));
-#endif
+// restore GPIO0 (TMS), GPIO1 (TCK) and GPIO3 (TDI) settings
+void jtag_exit_gpio_out_mode(void) {
+	*reg_gpio_tms = jtag_tms_cfg;
+	*reg_gpio_tck = jtag_tck_cfg;
+	*reg_gpio_tdi = jtag_tdi_cfg;
 }
 
 extern uint32_t __HeapBase;
@@ -1830,6 +1816,63 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
     // jtag_highlight_debugf("last byte %02x, rshift = %d", *rxd, dlen);
     *rxd <<= 8-dlen;
   }
+}
+
+void jtag_writeTDI_msb_first_gpio_out_mode(uint8_t *tx, unsigned int bytes, bool end) {
+	for (int i = 0; i < bytes; i++) {
+		uint8_t byte = tx[i];
+#ifdef TANG_NANO20K
+		// bit 7
+		*reg_gpio0_31 = (byte & 0x80) << 5;                // bit 12 (TDI) = data, bit 10 (TCK) = 0
+		*reg_gpio0_31 = ((byte & 0x80) << 5) | (1 << 10);  // bit 12 (TDI) = data, bit 10 (TCK) = 1
+		// bit 6
+		*reg_gpio0_31 = (byte & 0x40) << 6; 
+		*reg_gpio0_31 = ((byte & 0x40) << 6) | (1 << 10); 
+		// bit 5
+		*reg_gpio0_31 = (byte & 0x20) << 7; 
+		*reg_gpio0_31 = ((byte & 0x20) << 7) | (1 << 10); 
+		// bit 4
+		*reg_gpio0_31 = (byte & 0x10) << 8; 
+		*reg_gpio0_31 = ((byte & 0x10) << 8) | (1 << 10); 
+		// bit 3
+		*reg_gpio0_31 = (byte & 0x8) << 9; 
+		*reg_gpio0_31 = ((byte & 0x8) << 9) | (1 << 10); 
+		// bit 2
+		*reg_gpio0_31 = (byte & 0x4) << 10; 
+		*reg_gpio0_31 = ((byte & 0x4) << 10) | (1 << 10); 
+		// bit 1
+		*reg_gpio0_31 = (byte & 0x2) << 11; 
+		*reg_gpio0_31 = ((byte & 0x2) << 11) | (1 << 10); 
+		// bit 0
+		*reg_gpio0_31 = (byte & 0x1) << 12 | (i == bytes-1 && end ? (1 << 16) : 0); 	// bit 16: TMS
+		*reg_gpio0_31 = ((byte & 0x1) << 12) | (1 << 10) | (i == bytes-1 && end ? (1 << 16) : 0); 
+#else
+		// bit 7
+		*reg_gpio0_31 = (byte & 0x80) >> 4;           // bit 3 (TDI) = data, bit 1 (TCK) = 0
+		*reg_gpio0_31 = ((byte & 0x80) >> 4) | 2;     // bit 3 (TDI) = data, bit 1 (TCK) = 1
+		// bit 6
+		*reg_gpio0_31 = (byte & 0x40) >> 3;     
+		*reg_gpio0_31 = ((byte & 0x40) >> 3) | 2; 
+		// bit 5
+		*reg_gpio0_31 = (byte & 0x20) >> 2;     
+		*reg_gpio0_31 = ((byte & 0x20) >> 2) | 2; 
+		// bit 4
+		*reg_gpio0_31 = (byte & 0x10) >> 1;     
+		*reg_gpio0_31 = ((byte & 0x10) >> 1) | 2; 
+		// bit 3
+		*reg_gpio0_31 = (byte & 0x8);     
+		*reg_gpio0_31 = (byte & 0x8) | 2; 
+		// bit 2
+		*reg_gpio0_31 = (byte & 0x4) << 1;     
+		*reg_gpio0_31 = ((byte & 0x4) << 1) | 2; 
+		// bit 1
+		*reg_gpio0_31 = (byte & 0x2) << 2;     
+		*reg_gpio0_31 = ((byte & 0x2) << 2) | 2; 
+		// bit 0
+		*reg_gpio0_31 = ((byte & 0x1) << 3) | (i == bytes-1 && end);  	// TMS=1 if at the end
+		*reg_gpio0_31 = ((byte & 0x1) << 3) | 2 | (i == bytes-1 && end);	// TMS=1 if at the end
+#endif
+	}
 }
 
 static void mcu_hw_jtag_init(void) {

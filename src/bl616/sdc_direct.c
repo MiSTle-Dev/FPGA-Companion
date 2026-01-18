@@ -24,9 +24,24 @@
 #include "../debug.h"
 #include "../mcu_hw.h"
 #include "../jtag.h"
+#include <sys/stat.h>
 
 static struct bflb_device_s *gpio;
 static bool sdc_direct_active = false;
+
+#ifndef USB_NOCACHE_RAM_SECTION
+#define USB_NOCACHE_RAM_SECTION __attribute__((section(".noncacheable")))
+#endif
+
+#define BLOCK_SIZE (8*1024)
+USB_NOCACHE_RAM_SECTION BYTE __attribute__((aligned(64))) fbuf[BLOCK_SIZE];
+
+uint32_t get_file_size(const char *fname) {
+    FILINFO fno;
+    FRESULT r = f_stat(fname, &fno);
+    if (r != FR_OK) return 0;
+    return fno.fsize;
+}
 
 bool sdc_direct_init(void) {  
   gpio = bflb_device_get_by_name("gpio");
@@ -95,32 +110,45 @@ bool sdc_direct_upload_core_bin(const char *name) {
   jtag_gowin_writeSRAM_prepare();
     
   FRESULT fr;
-  uint8_t buffer[256];
-  UINT bytesRead;
-  uint32_t total = 0;
-  
-  // using the table instead of reversing each payload byte through the
-  // algorithm saves ~0.3 sec for the full download
-  uint8_t rev_table[256];
-  for(int i=0;i<256;i++) rev_table[i] = reverse_byte(i);    
-  
-  // gw2ar-18 core size is 907418 bytes. This is not a multiple of 64, so when
-  // loading in 64 byte chunks, the last chunk is smaller      
-  do {
-    if((fr = f_read(&fil, buffer, sizeof(buffer), &bytesRead)) == FR_OK) {
-      // the binary data has the wrong endianess
-      for(UINT i=0;i<bytesRead;i++) buffer[i] = rev_table[buffer[i]];	
-      jtag_gowin_writeSRAM_transfer(buffer, 8*bytesRead, !total, bytesRead != sizeof(buffer));
-      total += bytesRead;
-    }
-  } while(fr == FR_OK && bytesRead == sizeof(buffer));
-  
+  UINT bytes = 0, total = 0;
+  uint32_t len = 0;
+
+  len = get_file_size(name);
+
+  BYTE *fbuf_cached;
+  fbuf_cached = (BYTE*)malloc(BLOCK_SIZE);
+  if (!fbuf_cached) {
+    fatal_debugf("Cannot malloc buffer\r\n");
+    jtag_close();
+    f_close(&fil);
+    return false;	
+  }
+
+  // RUN-TEST/IDLE
+  mcu_hw_jtag_tms(1, 0b000000, 6);
+  // send TMS 1/0/0 to get from RUN-TEST/IDLE into SHIFT-DR state  
+  mcu_hw_jtag_tms(1, 0b001, 3);
+
+  taskENTER_CRITICAL();
+  jtag_enter_gpio_out_mode();
+
+  for (;;) {
+      fr = f_read(&fil, fbuf, BLOCK_SIZE, &bytes);
+      if (bytes == 0) break;
+      total += bytes;
+      jtag_writeTDI_msb_first_gpio_out_mode(fbuf, bytes, total >= len);
+      if (bytes < BLOCK_SIZE) break;
+  }
+  jtag_exit_gpio_out_mode();
+  taskEXIT_CRITICAL();
+
   if(fr != FR_OK) {
     fatal_debugf("Binary download failed after %lu bytes", total);
     jtag_close();
     f_close(&fil);
     return false;	
   }
+  jtag_exit_gpio_out_mode(); 
 
   // don't set checksum
   jtag_gowin_writeSRAM_postproc(0xffffffff);
@@ -321,8 +349,11 @@ void sdc_boot(void) {
     }
     sdc_direct_release();
 #endif
+
   if(!upload_ok) {
+//#ifndef TANG_CONSOLE60K
     bflb_mtimer_delay_ms(500);
+//#endif
     sdc_debugf("Mounting USB drive...");
     start = bflb_mtimer_get_time_ms();
     while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 1000)

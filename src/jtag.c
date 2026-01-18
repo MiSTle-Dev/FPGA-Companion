@@ -269,6 +269,11 @@ bool jtag_gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool first, bool
   return true;
 }
 
+uint32_t readUserCode(void)
+{
+	return jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_USERCODE);
+}
+
 bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
   // The following is being implemented by openFPGAloader. But it doesn't seem to be
   // necessary and it's also not mentioned in the Gowin JTAG programming guide TN653
@@ -280,14 +285,13 @@ bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
   
   jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE); // config disable
   jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP); // noop
-  
-  uint32_t status_reg = jtag_gowin_readStatusReg();  
+ 	uint32_t usercode = readUserCode();
+  uint32_t status_reg = jtag_gowin_readStatusReg();
   if(!(status_reg & JTAG_GOWIN_STATUS_DONE_FINAL)) {
-    fatal_debugf("Failed to write SRAM, status = 0x%04lx", status_reg);
+    fatal_debugf("Failed to write SRAM, Usercode=0x%08x, status=0x%08x\r\n", usercode, status_reg);
     return false;
   }
-
-  jtag_debugf("SRAM successfully written, status = 0x%04lx", status_reg);
+  jtag_debugf("SRAM successfully written, Usercode=0x%08x, status=0x%08x\r\n", usercode, status_reg);
   return true;
 }
 
@@ -303,3 +307,4 @@ void jtag_gowin_fpgaReset(void) {
     mcu_hw_jtag_tms(1, 0b11111, 5);
     jtag_debugf("RECONFIG completed");
 }
+
