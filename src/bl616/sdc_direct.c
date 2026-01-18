@@ -148,7 +148,6 @@ bool sdc_direct_upload_core_bin(const char *name) {
     f_close(&fil);
     return false;	
   }
-  jtag_exit_gpio_out_mode(); 
 
   // don't set checksum
   jtag_gowin_writeSRAM_postproc(0xffffffff);
