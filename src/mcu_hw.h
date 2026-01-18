@@ -46,6 +46,9 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 void mcu_hw_fpga_reconfig(bool state);
 bool mcu_hw_jtag_is_active(void);
 void jtag_toggleClk(uint32_t);
+void jtag_writeTDI_msb_first_gpio_out_mode(uint8_t *tx, unsigned int bytes, bool end);
+void jtag_enter_gpio_out_mode(void); 
+void jtag_exit_gpio_out_mode(void);
 
 // this board also has the ability to boot the FPGA from SD card
 #include "sdc_direct.h"
