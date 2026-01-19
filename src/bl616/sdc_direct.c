@@ -1,14 +1,10 @@
 /*
-  sdc_direct.c - access the sd card directly from the rp2040 / BL616
+  sdc_direct.c - access the sd card directly from the  BL616
 
-  This only works on the dev20k board and Console 60K and 138k where the
-  SD card is connected to the FPGA _and_ the rp2040 / BL616  
+  SD card access for Console 60K and 138k where the
+  card is connected to the FPGA _and_ the BL616  
 
-  This implements software driven 1-bit SD mode even
-  though SPI would be faster due to HW support. But it turned
-  out that the SD card cannot return from SPI mode into SD
-  mode which the FPGA uses once it has booted and takes
-  over the SD card access.
+  uses the BL616 SDH SD Host controller (SDH) to access the card or read from an USB Mass Storage (MSC).
 */
 
 #include "stdlib.h"
@@ -108,7 +104,9 @@ bool sdc_direct_upload_core_bin(const char *name) {
   
   jtag_debugf("=== Load SRAM ===");
   jtag_gowin_writeSRAM_prepare();
-    
+
+#ifndef TANG_NANO20K
+  // fast method for GW5 FPGA
   FRESULT fr;
   UINT bytes = 0, total = 0;
   uint32_t len = 0;
@@ -129,26 +127,57 @@ bool sdc_direct_upload_core_bin(const char *name) {
   // send TMS 1/0/0 to get from RUN-TEST/IDLE into SHIFT-DR state  
   mcu_hw_jtag_tms(1, 0b001, 3);
 
-  taskENTER_CRITICAL();
   jtag_enter_gpio_out_mode();
 
   for (;;) {
       fr = f_read(&fil, fbuf, BLOCK_SIZE, &bytes);
       if (bytes == 0) break;
       total += bytes;
+      taskENTER_CRITICAL();
       jtag_writeTDI_msb_first_gpio_out_mode(fbuf, bytes, total >= len);
+      taskEXIT_CRITICAL();
       if (bytes < BLOCK_SIZE) break;
   }
   jtag_exit_gpio_out_mode();
-  taskEXIT_CRITICAL();
 
+  if(fr != FR_OK) {
+    fatal_debugf("Binary download failed after %lu bytes", total);
+    free(fbuf_cached);
+    jtag_close();
+    f_close(&fil);
+    return false;	
+  }
+  free(fbuf_cached);
+#else
+  // slow method for Tang Nano 20k
+  FRESULT fr;
+  uint8_t buffer[256];
+  UINT bytesRead;
+  uint32_t total = 0;
+  
+  // using the table instead of reversing each payload byte through the
+  // algorithm saves ~0.3 sec for the full download
+  uint8_t rev_table[256];
+  for(int i=0;i<256;i++) rev_table[i] = reverse_byte(i);    
+  
+  // gw2ar-18 core size is 907418 bytes. This is not a multiple of 64, so when
+  // loading in 64 byte chunks, the last chunk is smaller
+  do {
+    if((fr = f_read(&fil, buffer, sizeof(buffer), &bytesRead)) == FR_OK) {
+      // the binary data has the wrong endianess
+      for(UINT i=0;i<bytesRead;i++) buffer[i] = rev_table[buffer[i]];	
+      jtag_gowin_writeSRAM_transfer(buffer, 8*bytesRead, !total, bytesRead != sizeof(buffer));
+      total += bytesRead;
+    }
+  } while(fr == FR_OK && bytesRead == sizeof(buffer));
+  
   if(fr != FR_OK) {
     fatal_debugf("Binary download failed after %lu bytes", total);
     jtag_close();
     f_close(&fil);
     return false;	
   }
-
+#endif
   // don't set checksum
   jtag_gowin_writeSRAM_postproc(0xffffffff);
   

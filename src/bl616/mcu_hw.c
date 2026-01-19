@@ -98,27 +98,27 @@ static struct bflb_device_s *gpio;
 #define PIN_JTAG_TCK GPIO_PIN_10
 #define PIN_JTAG_TDI GPIO_PIN_12
 #define PIN_JTAG_TDO GPIO_PIN_14
-volatile uint32_t *reg_gpio_tms = (volatile uint32_t *)0x20000904;     // gpio16
-volatile uint32_t *reg_gpio_tck = (volatile uint32_t *)0x200008ec;     // gpio10
-volatile uint32_t *reg_gpio_tdo = (volatile uint32_t *)0x200008fc;	   // gpio14
-volatile uint32_t *reg_gpio_tdi = (volatile uint32_t *)0x200008f4;     // gpio12
+volatile uint32_t *reg_gpio_tms = (volatile uint32_t *)0x20000904; // gpio_cfg16
+volatile uint32_t *reg_gpio_tck = (volatile uint32_t *)0x200008ec; // gpio_cfg10
+volatile uint32_t *reg_gpio_tdo = (volatile uint32_t *)0x200008fc; // gpio_cfg14
+volatile uint32_t *reg_gpio_tdi = (volatile uint32_t *)0x200008f4; // gpio_cfg12
 #else
 #define PIN_JTAG_TMS GPIO_PIN_0
 #define PIN_JTAG_TCK GPIO_PIN_1
 #define PIN_JTAG_TDI GPIO_PIN_3
 #define PIN_JTAG_TDO GPIO_PIN_2
-volatile uint32_t *reg_gpio_tms = (volatile uint32_t *)0x200008c4;     // gpio0
-volatile uint32_t *reg_gpio_tck = (volatile uint32_t *)0x200008c8;     // gpio1
-volatile uint32_t *reg_gpio_tdo = (volatile uint32_t *)0x200008cc;     // gpio2
-volatile uint32_t *reg_gpio_tdi = (volatile uint32_t *)0x200008d0;     // gpio3
+volatile uint32_t *reg_gpio_tms = (volatile uint32_t *)0x200008c4; // gpio_cfg0
+volatile uint32_t *reg_gpio_tck = (volatile uint32_t *)0x200008c8; // gpio_cfg1
+volatile uint32_t *reg_gpio_tdo = (volatile uint32_t *)0x200008cc; // gpio_cfg2
+volatile uint32_t *reg_gpio_tdi = (volatile uint32_t *)0x200008d0; // gpio_cfg3
 #endif
-volatile uint32_t *reg_gpio0_31 = (volatile uint32_t *)0x20000ae4;  // gpio_cfg136，Register Controlled GPIO Output Value
+volatile uint32_t *reg_gpio0_31 = (volatile uint32_t *)0x20000ae4; // gpio_cfg136，Register Controlled GPIO Output Value
 
-#define xGPIO_INT_MASK    (1<<22)
-#define xGPIO_FUNC_SWGPIO (0xB<<8)
-#define xGPIO_OUTPUT_EN   (1<<6)
-#define xGPIO_SCHMITT_EN  (1<<1)
-#define xGPIO_DRV_3       (3<<2)
+#define xGPIO_INT_MASK    (1<<22) // GLB_REG_GPIO_0_INT_MASK
+#define xGPIO_FUNC_SWGPIO (11<<8) // SWGPIO function definition
+#define xGPIO_OUTPUT_EN   (1<<6)  // GLB_REG_GPIO_0_OE
+#define xGPIO_SCHMITT_EN  (1<<1)  // GLB_REG_GPIO_0_SMT
+#define xGPIO_DRV_3       (3<<2)  // GLB_REG_GPIO_0_DRV_MASK GLB_REG_GPIO_0_DRV_SHIFT
 
 uint32_t jtag_tms_cfg, jtag_tck_cfg, jtag_tdi_cfg;
 
@@ -1056,12 +1056,11 @@ void mcu_hw_reset(void) {
 
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
-#ifndef TANG_NANO20K
+
   bflb_gpio_deinit(gpio, GPIO_PIN_0);
   bflb_gpio_deinit(gpio, GPIO_PIN_1);
   bflb_gpio_deinit(gpio, GPIO_PIN_2);
   bflb_gpio_deinit(gpio, GPIO_PIN_3);
-#endif
 
   debugf("usb host deinit");
   usbh_deinitialize(0);
@@ -1647,9 +1646,13 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   } else  
   // check if the pin direction pattern matches JTAG mode
   if((dir & 0x0f) == 0x0b) {
-    debugf("\nspi deinit");
- //   bflb_spi_deinit(spi_dev);
- //   GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_SPI);
+    debugf("\nSPI deinit and JTAG activation");
+#ifndef TANG_NANO20K
+    bflb_gpio_deinit(gpio, SPI_PIN_MISO);
+    bflb_gpio_deinit(gpio, SPI_PIN_MOSI);
+    bflb_gpio_deinit(gpio, SPI_PIN_SCK);
+    bflb_gpio_deinit(gpio, SPI_PIN_CSN);
+#endif
     bflb_irq_disable(gpio->irq_num);
 
     bflb_gpio_deinit(gpio, PIN_JTAG_TCK);
@@ -1907,7 +1910,7 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_gpio_deinit(gpio, PIN_JTAG_TMS);
   bflb_gpio_deinit(gpio, PIN_JTAG_TDO);
 
-#ifdef TANG_CONSOLE60K  
+#ifndef TANG_NANO20K
   bflb_gpio_init(gpio, SPI_PIN_MISO, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_init(gpio, SPI_PIN_MOSI, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_init(gpio, SPI_PIN_SCK, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
