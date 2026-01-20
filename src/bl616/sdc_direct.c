@@ -1,14 +1,10 @@
 /*
-  sdc_direct.c - access the sd card directly from the rp2040 / BL616
+  sdc_direct.c - access the sd card directly from the  BL616
 
-  This only works on the dev20k board and Console 60K and 138k where the
-  SD card is connected to the FPGA _and_ the rp2040 / BL616  
+  SD card access for Console 60K and 138k where the
+  card is connected to the FPGA _and_ the BL616  
 
-  This implements software driven 1-bit SD mode even
-  though SPI would be faster due to HW support. But it turned
-  out that the SD card cannot return from SPI mode into SD
-  mode which the FPGA uses once it has booted and takes
-  over the SD card access.
+  uses the BL616 SDH SD Host controller (SDH) to access the card or read from an USB Mass Storage (MSC).
 */
 
 #include "stdlib.h"
@@ -46,10 +42,11 @@ uint32_t get_file_size(const char *fname) {
 bool sdc_direct_init(void) {  
   gpio = bflb_device_get_by_name("gpio");
 
+#ifdef TANG_CONSOLE60K
   /* Console 60k/138k SD Card bus to BL616 TF_SDIO_SEL*/
   bflb_gpio_set(gpio, PIN_TF_SDIO_SEL);
-
-  bflb_mtimer_delay_ms(250);
+#endif
+bflb_mtimer_delay_ms(250);
 
   board_sdh_gpio_init();
 
@@ -63,9 +60,10 @@ void sdc_direct_release(void) {
 
   gpio = bflb_device_get_by_name("gpio");
   sdc_direct_active = false;
-  
+#ifdef TANG_CONSOLE60K
   /* Console 60k/138k SD Card bus back to FPGA TF_SDIO_SEL*/
   bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
+#endif
 }
 
 static FATFS fs;
@@ -105,10 +103,9 @@ bool sdc_direct_upload_core_bin(const char *name) {
     f_close(&fil);
     return false;
   }
-  
   jtag_debugf("=== Load SRAM ===");
   jtag_gowin_writeSRAM_prepare();
-    
+
   FRESULT fr;
   UINT bytes = 0, total = 0;
   uint32_t len = 0;
@@ -129,27 +126,32 @@ bool sdc_direct_upload_core_bin(const char *name) {
   // send TMS 1/0/0 to get from RUN-TEST/IDLE into SHIFT-DR state  
   mcu_hw_jtag_tms(1, 0b001, 3);
 
-  taskENTER_CRITICAL();
   jtag_enter_gpio_out_mode();
 
   for (;;) {
       fr = f_read(&fil, fbuf, BLOCK_SIZE, &bytes);
       if (bytes == 0) break;
       total += bytes;
+      taskENTER_CRITICAL();
       jtag_writeTDI_msb_first_gpio_out_mode(fbuf, bytes, total >= len);
+      taskEXIT_CRITICAL();
       if (bytes < BLOCK_SIZE) break;
   }
   jtag_exit_gpio_out_mode();
-  taskEXIT_CRITICAL();
 
   if(fr != FR_OK) {
     fatal_debugf("Binary download failed after %lu bytes", total);
+    free(fbuf_cached);
     jtag_close();
     f_close(&fil);
     return false;	
   }
 
-  // don't set checksum
+  // send TMS 1/0 to return into RUN-TEST/IDLE
+  mcu_hw_jtag_tms(1, 0b01, 2);
+
+  free(fbuf_cached);
+// don't set checksum
   jtag_gowin_writeSRAM_postproc(0xffffffff);
   
   sdc_debugf("Read %lu bytes", total);
@@ -330,7 +332,7 @@ void sdc_boot(void) {
   uint64_t start;
   bool upload_ok = false;
 
-#ifdef TANG_CONSOLE60K
+#if defined(TANG_CONSOLE60K) || defined(TANG_MEGA60K)
     // try to boot the FPGA from SD card
     sdc_debugf("Attempting direct SD card boot ...");
     sdc_direct_init();
@@ -350,9 +352,6 @@ void sdc_boot(void) {
 #endif
 
   if(!upload_ok) {
-//#ifndef TANG_CONSOLE60K
-    bflb_mtimer_delay_ms(500);
-//#endif
     sdc_debugf("Mounting USB drive...");
     start = bflb_mtimer_get_time_ms();
     while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 1000)
@@ -370,7 +369,7 @@ void sdc_boot(void) {
   // on upload failure reconfig the FPGA and allow it to (re-)boot from flash
   if(!upload_ok) {
     sdc_debugf("Upload failed");
-    //mcu_hw_fpga_reconfig(true);
+    mcu_hw_fpga_reconfig(true);
   } else {
     sdc_debugf("Upload successful, FPGA now running new core");
   }

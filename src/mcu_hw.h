@@ -33,13 +33,9 @@ bool mcu_hw_tcp_data(unsigned char byte);
 
 // some boards provide a connection to the FPGAs JTAG interface
 #ifdef TANG_CONSOLE60K
-// 0 = FPGA , 1 = BL616
 #define PIN_TF_SDIO_SEL GPIO_PIN_16
-#elif TANG_NANO20K
-// dummy Nano20k unused pin
-#define PIN_TF_SDIO_SEL GPIO_PIN_17
 #endif
-#if defined(TANG_CONSOLE60K) || defined(TANG_NANO20K)
+#if defined(TANG_CONSOLE60K) || defined(TANG_NANO20K) || defined(TANG_MEGA138KPRO)
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
 uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
 void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);

@@ -300,11 +300,7 @@ void jtag_gowin_fpgaReset(void) {
 
     jtag_gowin_command(JTAG_COMMAND_GOWIN_RECONFIG);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-    // Run-Test-Idle state
-    mcu_hw_jtag_tms(1, 0b011, 3);
-    jtag_toggleClk(10000);
-    // Test-Logic-Reset state.
-    mcu_hw_jtag_tms(1, 0b11111, 5);
-    jtag_debugf("RECONFIG completed");
+    // RUN-TEST/IDLE
+    mcu_hw_jtag_tms(1, 0b000000, 6);
 }
 
