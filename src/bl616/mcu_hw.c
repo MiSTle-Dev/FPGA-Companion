@@ -70,15 +70,28 @@
 #define ENABLE_JTAG
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
-#define PIN_nJTAGSEL  GPIO_PIN_20 // dummy unused spare pin
 #elif M0S_DOCK
 #warning "Building for M0S DOCK BL616"
 #elif TANG_MEGA138KPRO
 #warning "Building for TANG_MEGA138KPRO internal BL616"
+#include "../jtag.h"
+#include "./sdc_direct.h"
+#define ENABLE_JTAG
+//#define DEBUG_JTAG
+//#define DEBUG_TAP
+#define PIN_nJTAGSEL  GPIO_PIN_10
 #elif TANG_MEGA60K
 #warning "Building for TANG_MEGA60K internal BL616"
+#define ENABLE_JTAG
+//#define DEBUG_JTAG
+//#define DEBUG_TAP
+#define PIN_nJTAGSEL  GPIO_PIN_28
 #elif TANG_PRIMER25K
 #warning "Building for TANG_PRIMER25K internal BL616"
+#define ENABLE_JTAG
+//#define DEBUG_JTAG
+//#define DEBUG_TAP
+#define PIN_nJTAGSEL  GPIO_PIN_11
 #endif
 
 static struct bflb_device_s *gpio;
@@ -836,14 +849,14 @@ static void console_init() {
 #elif TANG_NANO20K
   bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
 //bflb_gpio_uart_init(gpio, GPIO_PIN_13, GPIO_UART_FUNC_UART0_RX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
   /* GPIO_PIN_11 TX */
   /* GPIO_PIN_13 RX */
 #elif TANG_CONSOLE60K
-//bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
-//bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX); /* M13 TWI.SCL */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_TX); /* Debug USB-C SBU2 */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_RX); /* Debug USB-C SBU1 */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_TX); /* M13 TWI.SCL */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); // dummy pin
+  //bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_TX); /* Debug USB-C SBU2 */
+  //bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_RX); /* Debug USB-C SBU1 */
   /* GPIO 27 default UART RX, FPGA U15 TX */
   /* GPIO 28 default UART TX, FPGA V15 RX */
   /* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
@@ -857,15 +870,19 @@ static void console_init() {
   /* GPIO 28 default PLL1_TWI SCL, FPGA K25, SCL */
 #elif TANG_MEGA60K
   /* RX no FPGA connection available, adhoc wiring needed */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX);
-/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, 31004 assembly,  */
+  //bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
+  //bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_TX); // TWI.SCL, FPGA M13 DDC CLK
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); // dummy pin
+  /* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, 31004 assembly,  */
 /* GPIO 27 default UART RX, FPGA U15 TX */
 /* GPIO 28 default UART TX, FPGA V15 RX */
 /* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK, only 31005 assembly */
 #elif TANG_PRIMER25K
-  bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_RX);
+  //bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
+  //bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_TX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
   /* GPIO 12 access at S3 button, remove C22 capacitor */
 #endif
 
@@ -998,19 +1015,20 @@ void mcu_hw_init(void) {
   bflb_gpio_set(gpio, GPIO_PIN_28);
 #elif TANG_NANO20K
   /* configure JTAGSEL_n */
-  bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_set(gpio, PIN_nJTAGSEL);
-  /* configure dummy */
-  bflb_gpio_init(gpio, PIN_TF_SDIO_SEL, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
-  #elif TANG_MEGA138KPRO
+#elif TANG_MEGA138KPRO
   /* LED6 enable */
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
-#elif TANG_PRIMER25K
+  /* configure JTAGSEL_n */
+  bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_set(gpio, PIN_nJTAGSEL);
+  #elif TANG_PRIMER25K
   /* LED5 enable */
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
+  /* configure JTAGSEL_n */
+  bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_set(gpio, PIN_nJTAGSEL);
 #elif TANG_CONSOLE60K
   /* configure JTAGSEL_n */
   bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
@@ -1018,6 +1036,10 @@ void mcu_hw_init(void) {
   /* configure PIN_TF_SDIO_SEL to FPGA */
   bflb_gpio_init(gpio, PIN_TF_SDIO_SEL, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
+#elif TANG_MEGA60K
+  /* configure JTAGSEL_n */
+  bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_set(gpio, PIN_nJTAGSEL);
 #endif
   mcu_hw_spi_init();
 
@@ -1664,9 +1686,9 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
     bflb_gpio_init(gpio, PIN_JTAG_TDO, GPIO_INPUT  | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
     bflb_gpio_init(gpio, PIN_JTAG_TDI, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
     bflb_gpio_init(gpio, PIN_JTAG_TMS, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
-
+#ifndef TANG_NANO20K
     bflb_gpio_reset(gpio, PIN_nJTAGSEL); // select JTAG mode
-
+#endif
     jtag_is_active = true;
     
 #ifdef DEBUG_JTAG
@@ -1884,9 +1906,6 @@ static void mcu_hw_jtag_init(void) {
 
 void mcu_hw_fpga_reconfig(bool run) {
   // trigger FPGA reconfiguration
-  gpio = bflb_device_get_by_name("gpio");
-
-  bflb_gpio_reset(gpio, PIN_nJTAGSEL);
 
   if(!jtag_open()) {
     jtag_debugf("FPGA not detected");
@@ -1918,7 +1937,9 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_gpio_set(gpio, SPI_PIN_CSN);
 
   bflb_gpio_set(gpio, PIN_nJTAGSEL);
+#endif
 
+#ifdef TANG_CONSOLE60K
   struct bflb_device_s *sdh;
   sdh = bflb_device_get_by_name("sdh");
 

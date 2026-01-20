@@ -23,6 +23,8 @@ BL616 GPIO pin mapping is fix in SDK and no option to change. UART RX GPIO is bo
 |JTAG TDI     |GPIO3|SPI MOSI|  |
 |BL616 UART RX|GPIO x|SPI _IRQ    |  |
 |BL616 UART TX|GPIO x|V_JTAGSELN| 0=JTAG, 1=SPI |
+|BL616 TWI SCL*|GPIO x|UART TX| debug console |
+
 
 [Windows 11 Build AiO](#tang-onboard-bl616)
 

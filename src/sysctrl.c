@@ -280,7 +280,7 @@ static void sys_handle_event(bool ignore_coldboot) {
     else {
       sys_debugf("FPGA cold boot detected, reseting MCU ...");
 
-#if defined(TANG_CONSOLE60K) || defined(TANG_NANO20K) || (MISTLE_BOARD == 4)
+#if defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 4)
       // Check for USB-JTAG activity and don't reset (and thus break
       // the JTAG activity)
       if(mcu_hw_jtag_is_active())

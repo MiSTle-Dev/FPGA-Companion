@@ -42,10 +42,11 @@ uint32_t get_file_size(const char *fname) {
 bool sdc_direct_init(void) {  
   gpio = bflb_device_get_by_name("gpio");
 
+#ifdef TANG_CONSOLE60K
   /* Console 60k/138k SD Card bus to BL616 TF_SDIO_SEL*/
   bflb_gpio_set(gpio, PIN_TF_SDIO_SEL);
-
-  bflb_mtimer_delay_ms(250);
+#endif
+bflb_mtimer_delay_ms(250);
 
   board_sdh_gpio_init();
 
@@ -59,9 +60,10 @@ void sdc_direct_release(void) {
 
   gpio = bflb_device_get_by_name("gpio");
   sdc_direct_active = false;
-  
+#ifdef TANG_CONSOLE60K
   /* Console 60k/138k SD Card bus back to FPGA TF_SDIO_SEL*/
   bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
+#endif
 }
 
 static FATFS fs;
@@ -101,12 +103,9 @@ bool sdc_direct_upload_core_bin(const char *name) {
     f_close(&fil);
     return false;
   }
-  
   jtag_debugf("=== Load SRAM ===");
   jtag_gowin_writeSRAM_prepare();
 
-#ifndef TANG_NANO20K
-  // fast method for GW5 FPGA
   FRESULT fr;
   UINT bytes = 0, total = 0;
   uint32_t len = 0;
@@ -147,38 +146,12 @@ bool sdc_direct_upload_core_bin(const char *name) {
     f_close(&fil);
     return false;	
   }
+
+  // send TMS 1/0 to return into RUN-TEST/IDLE
+  mcu_hw_jtag_tms(1, 0b01, 2);
+
   free(fbuf_cached);
-#else
-  // slow method for Tang Nano 20k
-  FRESULT fr;
-  uint8_t buffer[256];
-  UINT bytesRead;
-  uint32_t total = 0;
-  
-  // using the table instead of reversing each payload byte through the
-  // algorithm saves ~0.3 sec for the full download
-  uint8_t rev_table[256];
-  for(int i=0;i<256;i++) rev_table[i] = reverse_byte(i);    
-  
-  // gw2ar-18 core size is 907418 bytes. This is not a multiple of 64, so when
-  // loading in 64 byte chunks, the last chunk is smaller
-  do {
-    if((fr = f_read(&fil, buffer, sizeof(buffer), &bytesRead)) == FR_OK) {
-      // the binary data has the wrong endianess
-      for(UINT i=0;i<bytesRead;i++) buffer[i] = rev_table[buffer[i]];	
-      jtag_gowin_writeSRAM_transfer(buffer, 8*bytesRead, !total, bytesRead != sizeof(buffer));
-      total += bytesRead;
-    }
-  } while(fr == FR_OK && bytesRead == sizeof(buffer));
-  
-  if(fr != FR_OK) {
-    fatal_debugf("Binary download failed after %lu bytes", total);
-    jtag_close();
-    f_close(&fil);
-    return false;	
-  }
-#endif
-  // don't set checksum
+// don't set checksum
   jtag_gowin_writeSRAM_postproc(0xffffffff);
   
   sdc_debugf("Read %lu bytes", total);
@@ -359,7 +332,7 @@ void sdc_boot(void) {
   uint64_t start;
   bool upload_ok = false;
 
-#ifdef TANG_CONSOLE60K
+#if defined(TANG_CONSOLE60K) || defined(TANG_MEGA60K)
     // try to boot the FPGA from SD card
     sdc_debugf("Attempting direct SD card boot ...");
     sdc_direct_init();
@@ -379,9 +352,6 @@ void sdc_boot(void) {
 #endif
 
   if(!upload_ok) {
-//#ifndef TANG_CONSOLE60K
-    bflb_mtimer_delay_ms(500);
-//#endif
     sdc_debugf("Mounting USB drive...");
     start = bflb_mtimer_get_time_ms();
     while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 1000)
@@ -399,7 +369,7 @@ void sdc_boot(void) {
   // on upload failure reconfig the FPGA and allow it to (re-)boot from flash
   if(!upload_ok) {
     sdc_debugf("Upload failed");
-    //mcu_hw_fpga_reconfig(true);
+    mcu_hw_fpga_reconfig(true);
   } else {
     sdc_debugf("Upload successful, FPGA now running new core");
   }
