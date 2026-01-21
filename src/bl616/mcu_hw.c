@@ -12,6 +12,8 @@
 #include "usbh_hid.h"
 #include "usbh_msc.h"
 #include "usbd_core.h"
+#include "ff.h"
+#include "fatfs_diskio_register.h"
 
 #include "../spi.h"
 #include "../hid.h"
@@ -1950,22 +1952,16 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_irq_enable(gpio->irq_num);
 }
 
-static void jtag_toggleClk_(uint8_t tms, uint8_t tdi, uint32_t clk_len)
+void jtag_toggleClk(uint32_t clk_len)
 {
+  jtag_enter_gpio_out_mode();
+
   for (uint32_t i = 0; i < clk_len; i++) {
-        if (tms) bflb_gpio_set(gpio, PIN_JTAG_TMS); else bflb_gpio_reset(gpio, PIN_JTAG_TMS);
-        if (tdi) bflb_gpio_set(gpio, PIN_JTAG_TDI); else bflb_gpio_reset(gpio, PIN_JTAG_TDI);
-        bflb_gpio_reset(gpio, PIN_JTAG_TCK); 
+    *reg_gpio0_31 = *reg_gpio0_31 & (0xffffffff ^ (1 << 10)); // TCK=0
+    *reg_gpio0_31 = *reg_gpio0_31 | (1 << 10); // TCK=1
+  }
 
-        if (tms) bflb_gpio_set(gpio, PIN_JTAG_TMS); else bflb_gpio_reset(gpio, PIN_JTAG_TMS);
-        if (tdi) bflb_gpio_set(gpio, PIN_JTAG_TDI); else bflb_gpio_reset(gpio, PIN_JTAG_TDI);
-        bflb_gpio_set(gpio, PIN_JTAG_TCK); 
-    }
-}
-
-void jtag_toggleClk(uint32_t nb)
-{
-  jtag_toggleClk_(0, 0, nb);
+  jtag_exit_gpio_out_mode();
 }
 
 #endif
