@@ -108,12 +108,14 @@ uint32_t jtag_identify(void) {
   return idcode;
 }
 
+static uint32_t idcode=0;
+
 bool jtag_open(void) {
   // configure pins for JTAG operation
   mcu_hw_jtag_set_pins(0x0b, 0x08);
 
   // read FPGA idcode via JTAG. Should be 0x81b for the GW2AR-18
-  uint32_t idcode = jtag_identify();
+  idcode = jtag_identify();
 
   if (idcode == IDCODE_GW2AR18) {
     is_gw2a = true;
@@ -213,19 +215,33 @@ static bool jtag_gowin_disableCfg(void) {
   return jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE, 0);
 }
 
+void sendClkUs(uint32_t us)
+{
+  uint64_t clocks = 15000000;
+  clocks *= us;
+  clocks /= 1000000;
+  jtag_toggleClk(clocks);
+}
+
 // prepare SRAM upload. Designed after openFPGAloader
 bool jtag_gowin_eraseSRAM(void) {
-  jtag_gowin_readStatusReg();
+  jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_USERCODE);
+  uint32_t status = jtag_gowin_readStatusReg();
+
+  bool auto_boot_2nd_fail = (status & (1 << 4)) == (1 << 4);
+  bool is_timeout = (status & (1 << 3)) == (1 << 3);
+  bool bad_cmd = (status & JTAG_GOWIN_STATUS_BAD_COMMAND) == JTAG_GOWIN_STATUS_BAD_COMMAND;
 
   if (is_gw2a)
     jtag_gowin_gw2a_force_state();
-  else {
-    jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
-    jtag_gowin_command(0x3F);
-    jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
-    jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-    jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
-    jtag_toggleClk(125 * 8);
+  else if (is_timeout || auto_boot_2nd_fail || bad_cmd) {
+      jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
+      jtag_gowin_command(0x3F);
+      jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
+      jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+      jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
+      jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+      jtag_toggleClk(125 * 8);
   }
 
   if(!jtag_gowin_enableCfg()) {
@@ -235,6 +251,10 @@ bool jtag_gowin_eraseSRAM(void) {
     
   jtag_gowin_command(JTAG_COMMAND_GOWIN_ERASE_SRAM);
   jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+
+  if (idcode == IDCODE_GW5AST138)
+    sendClkUs(10000);
+
   if(!jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_MEMORY_ERASE, JTAG_GOWIN_STATUS_MEMORY_ERASE)) {
     jtag_debugf("Failed to trigger SRAM erase");
     return false;
