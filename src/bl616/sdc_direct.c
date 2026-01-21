@@ -104,14 +104,15 @@ bool sdc_direct_upload_core_bin(const char *name) {
     return false;
   }
 
-  jtag_debugf("=== 2nd Erase SRAM ==="); // AST138K needs a 2nd erase
-  if(!jtag_gowin_eraseSRAM()) {
-    jtag_debugf("Failed to erase SRAM");
-    jtag_close();
-    f_close(&fil);
-    return false;
+  if (idcode == IDCODE_GW5AST138) {
+    jtag_debugf("=== 2nd Erase SRAM ===");
+    if(!jtag_gowin_eraseSRAM()) {
+      jtag_debugf("Failed to erase SRAM");
+      jtag_close();
+      f_close(&fil);
+      return false;
+    }
   }
-
   jtag_debugf("=== Load SRAM ===");
   jtag_gowin_writeSRAM_prepare();
 
@@ -157,8 +158,9 @@ bool sdc_direct_upload_core_bin(const char *name) {
   }
 
   // send TMS 1/0 to return into RUN-TEST/IDLE
-  mcu_hw_jtag_tms(1, 0b01, 2);  // important for gw2a
-
+   if (idcode == IDCODE_GW2AR18) {
+    mcu_hw_jtag_tms(1, 0b01, 2);
+  }
   free(fbuf_cached);
 // don't set checksum
   jtag_gowin_writeSRAM_postproc(0xffffffff);

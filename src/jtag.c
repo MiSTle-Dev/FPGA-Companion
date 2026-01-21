@@ -10,13 +10,9 @@
 
 #include <FreeRTOS.h>
 #include <timers.h>
+static bool is_gw2a = false;
 
-#define IDCODE_GW2AR18  0x81b
-#define IDCODE_GW5AT60  0x1481b
-#define IDCODE_GW5AST138  0x1081b
-#define IDCODE_GW5A25 0x1281b
-
-static volatile bool is_gw2a = false;
+uint32_t idcode = 0;
 
 static void jtag_gowin_command(uint8_t cmd) {
   // stay in RUN-TEST/IDLE like openFPGAloader
@@ -107,8 +103,6 @@ uint32_t jtag_identify(void) {
   
   return idcode;
 }
-
-static uint32_t idcode=0;
 
 bool jtag_open(void) {
   // configure pins for JTAG operation

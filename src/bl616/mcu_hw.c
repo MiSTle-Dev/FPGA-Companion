@@ -1957,7 +1957,7 @@ void jtag_toggleClk(uint32_t clk_len)
   jtag_enter_gpio_out_mode();
 
   for (uint32_t i = 0; i < clk_len; i++) {
-    *reg_gpio0_31 = *reg_gpio0_31 & 0xffffffff ^ (1 << 10); // TCK=0
+    *reg_gpio0_31 = *reg_gpio0_31 & (0xffffffff ^ (1 << 10)); // TCK=0
     *reg_gpio0_31 = *reg_gpio0_31 | (1 << 10); // TCK=1
   }
 

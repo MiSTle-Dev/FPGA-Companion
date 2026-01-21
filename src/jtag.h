@@ -58,6 +58,13 @@
 #define JTAG_GOWIN_STATUS_POR			(1 << 16)
 #define JTAG_GOWIN_STATUS_FLASH_LOCK		(1 << 17)
 
+#define IDCODE_GW2AR18  0x81b
+#define IDCODE_GW5AT60  0x1481b
+#define IDCODE_GW5AST138  0x1081b
+#define IDCODE_GW5A25 0x1281b
+
+extern uint32_t idcode;
+
 bool jtag_open(void);
 void jtag_close(void);
 
