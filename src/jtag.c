@@ -228,16 +228,17 @@ bool jtag_gowin_eraseSRAM(void) {
 
   if (is_gw2a)
     jtag_gowin_gw2a_force_state();
-  else if (is_timeout || auto_boot_2nd_fail || bad_cmd) {
-      jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
-      jtag_gowin_command(0x3F);
-      jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
-      jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-      jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
-      jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-      jtag_toggleClk(125 * 8);
+  else {
+    if (is_timeout || auto_boot_2nd_fail || bad_cmd) {
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
+    jtag_gowin_command(0x3F);
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+    jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+    jtag_toggleClk(125 * 8);
+   }
   }
-
   if(!jtag_gowin_enableCfg()) {
     jtag_debugf("Failed to enable config");
     return false;
@@ -246,8 +247,9 @@ bool jtag_gowin_eraseSRAM(void) {
   jtag_gowin_command(JTAG_COMMAND_GOWIN_ERASE_SRAM);
   jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
 
-  if (idcode == IDCODE_GW5AST138)
+  if (idcode == IDCODE_GW5AST138) {
     sendClkUs(10000);
+   }
 
   if(!jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_MEMORY_ERASE, JTAG_GOWIN_STATUS_MEMORY_ERASE)) {
     jtag_debugf("Failed to trigger SRAM erase");
