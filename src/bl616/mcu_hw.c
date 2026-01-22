@@ -64,7 +64,7 @@
 #define ENABLE_JTAG
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
-#define PIN_nJTAGSEL  GPIO_PIN_28
+#define PIN_JTAGSEL  GPIO_PIN_28
 #elif TANG_NANO20K
 #warning "Building for TANG_NANO20K internal BL616"
 #include "../jtag.h"
@@ -81,19 +81,19 @@
 #define ENABLE_JTAG
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
-#define PIN_nJTAGSEL  GPIO_PIN_10
+#define PIN_JTAGSEL  GPIO_PIN_10
 #elif TANG_MEGA60K
 #warning "Building for TANG_MEGA60K internal BL616"
 #define ENABLE_JTAG
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
-#define PIN_nJTAGSEL  GPIO_PIN_28
+#define PIN_JTAGSEL  GPIO_PIN_28
 #elif TANG_PRIMER25K
 #warning "Building for TANG_PRIMER25K internal BL616"
 #define ENABLE_JTAG
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
-#define PIN_nJTAGSEL  GPIO_PIN_11
+#define PIN_JTAGSEL  GPIO_PIN_11
 #endif
 
 static struct bflb_device_s *gpio;
@@ -1022,26 +1022,26 @@ void mcu_hw_init(void) {
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
   /* configure JTAGSEL_n */
-  bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_set(gpio, PIN_nJTAGSEL);
+  bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, PIN_JTAGSEL);
   #elif TANG_PRIMER25K
   /* LED5 enable */
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
   /* configure JTAGSEL_n */
-  bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_set(gpio, PIN_nJTAGSEL);
+  bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, PIN_JTAGSEL);
 #elif TANG_CONSOLE60K
   /* configure JTAGSEL_n */
-  bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_set(gpio, PIN_nJTAGSEL);
+  bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, PIN_JTAGSEL);
   /* configure PIN_TF_SDIO_SEL to FPGA */
   bflb_gpio_init(gpio, PIN_TF_SDIO_SEL, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
 #elif TANG_MEGA60K
   /* configure JTAGSEL_n */
-  bflb_gpio_init(gpio, PIN_nJTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_set(gpio, PIN_nJTAGSEL);
+  bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_reset(gpio, PIN_JTAGSEL);
 #endif
   mcu_hw_spi_init();
 
@@ -1689,7 +1689,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
     bflb_gpio_init(gpio, PIN_JTAG_TDI, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
     bflb_gpio_init(gpio, PIN_JTAG_TMS, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
 #ifndef TANG_NANO20K
-    bflb_gpio_reset(gpio, PIN_nJTAGSEL); // select JTAG mode
+    bflb_gpio_set(gpio, PIN_JTAGSEL); // select JTAG mode
 #endif
     jtag_is_active = true;
     
@@ -1938,7 +1938,7 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_gpio_init(gpio, SPI_PIN_CSN, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_set(gpio, SPI_PIN_CSN);
 
-  bflb_gpio_set(gpio, PIN_nJTAGSEL);
+  bflb_gpio_reset(gpio, PIN_JTAGSEL);
 #endif
 
 #ifdef TANG_CONSOLE60K
