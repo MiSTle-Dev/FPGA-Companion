@@ -519,10 +519,12 @@ static void usbh_xbox_client_thread(void *argument) {
   }
 }
 
+struct usb_config *usbh;
+
 static void usbh_hid_thread(void *argument) {
   usb_debugf("Starting usb host task...");
 
-  struct usb_config *usb = (struct usb_config *)argument;
+  usbh = (struct usb_config *)argument;
 
   // request status (currently only dummy data, will return 0x5c, 0x42)
   // in the long term the core is supposed to return its HID demands
@@ -537,76 +539,76 @@ static void usbh_hid_thread(void *argument) {
   mcu_hw_spi_end();
 
   while (1) {
-    usbh_update(usb);
+    usbh_update(usbh);
 
     for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
-      if(usb->hid_info[i].state == STATE_DETECTED) {
+      if(usbh->hid_info[i].state == STATE_DETECTED) {
 	usb_debugf("NEW HID device %d", i);
-	usb->hid_info[i].state = STATE_RUNNING; 
+	usbh->hid_info[i].state = STATE_RUNNING; 
 
-	if( usb->hid_info[i].report.type == REPORT_TYPE_JOYSTICK ) {	
-	  usb->hid_info[i].hid_state.joystick.js_index = hid_allocate_joystick();
-	  usb_debugf("  -> joystick %d", usb->hid_info[i].hid_state.joystick.js_index);
+	if( usbh->hid_info[i].report.type == REPORT_TYPE_JOYSTICK ) {	
+	  usbh->hid_info[i].hid_state.joystick.js_index = hid_allocate_joystick();
+	  usb_debugf("  -> joystick %d", usbh->hid_info[i].hid_state.joystick.js_index);
 	}
 	  
 #if 0
 	// set report protocol 1 if subclass != BOOT_INTF
 	// CherryUSB doesn't report the InterfaceSubClass (HID_BOOT_INTF_SUBCLASS)
 	// we thus set boot protocol on keyboards
-	if( usb->hid_info[i].report.type == REPORT_TYPE_KEYBOARD ) {	
+	if( usbh->hid_info[i].report.type == REPORT_TYPE_KEYBOARD ) {	
 	  // /* 0x0 = boot protocol, 0x1 = report protocol */
 	  usb_debugf("setting boot protocol");
-	  ret = usbh_hid_set_protocol(usb->hid_info[i].class, HID_PROTOCOL_BOOT);
+	  ret = usbh_hid_set_protocol(usbh->hid_info[i].class, HID_PROTOCOL_BOOT);
 	  if (ret < 0) {
 	    usb_debugf("failed");
-	    usb->hid_info[i].state = STATE_FAILED;  // failed
+	    usbh->hid_info[i].state = STATE_FAILED;  // failed
 	    continue;
 	  }
 	}
 #endif
 
 	// setup urb
-	usbh_int_urb_fill(&usb->hid_info[i].class->intin_urb,
-			  usb->hid_info[i].class->hport,
-			  usb->hid_info[i].class->intin, usb->hid_info[i].buffer,
-			  usb->hid_info[i].report.report_size + (usb->hid_info[i].report.report_id_present ? 1:0),
-			  0, usbh_hid_callback, &usb->hid_info[i]);
+	usbh_int_urb_fill(&usbh->hid_info[i].class->intin_urb,
+			  usbh->hid_info[i].class->hport,
+			  usbh->hid_info[i].class->intin, usbh->hid_info[i].buffer,
+			  usbh->hid_info[i].report.report_size + (usbh->hid_info[i].report.report_id_present ? 1:0),
+			  0, usbh_hid_callback, &usbh->hid_info[i]);
 
 #ifdef RATE_CHECK
-	usb->hid_info[i].rate_start = xTaskGetTickCount();
-	usb->hid_info[i].rate_events = 0;
+	usbh->hid_info[i].rate_start = xTaskGetTickCount();
+	usbh->hid_info[i].rate_events = 0;
 #endif
 	
 	// start a new thread for the new device
 	xTaskCreate(usbh_hid_client_thread, (char *)"hid_task", 1024,
-		    &usb->hid_info[i], configMAX_PRIORITIES-3, &usb->hid_info[i].task_handle );
+		    &usbh->hid_info[i], configMAX_PRIORITIES-3, &usbh->hid_info[i].task_handle );
       }
     }
     
     for(int i=0;i<CONFIG_USBHOST_MAX_XBOX_CLASS;i++) {
-      if(usb->xbox_info[i].state == STATE_DETECTED) {
+      if(usbh->xbox_info[i].state == STATE_DETECTED) {
 	usb_debugf("NEW XBOX device %d", i);
-	usb->xbox_info[i].state = STATE_RUNNING; 
+	usbh->xbox_info[i].state = STATE_RUNNING; 
 
 	// search for free joystick slot
-	usb->xbox_info[i].js_index = hid_allocate_joystick();
-	usb_debugf("  -> joystick %d", usb->xbox_info[i].js_index);
+	usbh->xbox_info[i].js_index = hid_allocate_joystick();
+	usb_debugf("  -> joystick %d", usbh->xbox_info[i].js_index);
 	
 	// setup urb
-	usbh_int_urb_fill(&usb->xbox_info[i].class->intin_urb,
-			  usb->xbox_info[i].class->hport,
-			  usb->xbox_info[i].class->intin, usb->xbox_info[i].buffer,
+	usbh_int_urb_fill(&usbh->xbox_info[i].class->intin_urb,
+			  usbh->xbox_info[i].class->hport,
+			  usbh->xbox_info[i].class->intin, usbh->xbox_info[i].buffer,
 			  XBOX_REPORT_SIZE,
-			  0, usbh_xbox_callback, &usb->xbox_info[i]);
+			  0, usbh_xbox_callback, &usbh->xbox_info[i]);
 	
 #ifdef RATE_CHECK
-	usb->xbox_info[i].rate_start = xTaskGetTickCount();
-	usb->xbox_info[i].rate_events = 0;
+	usbh->xbox_info[i].rate_start = xTaskGetTickCount();
+	usbh->xbox_info[i].rate_events = 0;
 #endif
 
 	// start a new thread for the new device
 	xTaskCreate(usbh_xbox_client_thread, (char *)"xbox_task", 2048,
-		    &usb->xbox_info[i], configMAX_PRIORITIES-3, &usb->xbox_info[i].task_handle );
+		    &usbh->xbox_info[i], configMAX_PRIORITIES-3, &usbh->xbox_info[i].task_handle );
       }
     }
 
@@ -883,9 +885,9 @@ static void console_init() {
 #elif TANG_PRIMER25K
   //bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
   //bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_RX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
-  /* GPIO 12 access at S3 button, remove C22 capacitor */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_20, GPIO_UART_FUNC_UART0_TX); // LED
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); // dummy
+  /* GPIO_PIN_20 access at LED6, remove R23 resistor */
 #endif
 
   struct bflb_uart_config_s cfg;
@@ -1024,10 +1026,11 @@ void mcu_hw_init(void) {
   /* configure JTAGSEL_n */
   bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
-  #elif TANG_PRIMER25K
-  /* LED5 enable */
+#elif TANG_PRIMER25K
+  /* LED5 enable 
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
+  */
   /* configure JTAGSEL_n */
   bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
@@ -1062,6 +1065,32 @@ void mcu_hw_init(void) {
   usb_host();
 }
 
+void stop_hid(void) {
+  debugf("stop hid devices");
+  debugf("stop HID and XBOX tasks");
+  for (int i = 0; i < CONFIG_USBHOST_MAX_XBOX_CLASS; i++) {
+      char *dev_str = "/dev/xboxX";
+      dev_str[9] = '0' + i;
+      usbh->xbox_info[i].class = (struct usbh_hid *)usbh_find_class_instance(dev_str);
+
+    if (usbh->xbox_info[i].task_handle != NULL) {
+            vTaskDelete(usbh->xbox_info[i].task_handle);
+            usbh->xbox_info[i].task_handle = NULL;
+        }
+    }
+
+  for (int i = 0; i < CONFIG_USBHOST_MAX_HID_CLASS; i++) {
+    char *dev_str = "/dev/inputX";
+    dev_str[10] = '0' + i;
+    usbh->hid_info[i].class = (struct usbh_hid *)usbh_find_class_instance(dev_str);
+
+    if (usbh->hid_info[i].task_handle != NULL) {
+          vTaskDelete(usbh->hid_info[i].task_handle);
+          usbh->hid_info[i].task_handle = NULL;
+      }
+  }
+}
+
 extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
 
 void mcu_hw_reset(void) {
@@ -1077,6 +1106,8 @@ void mcu_hw_reset(void) {
   wdg = bflb_device_get_by_name("watchdog");
   bflb_wdg_init(wdg, &wdg_cfg);
   bflb_wdg_start(wdg); // to be sure...
+
+  stop_hid();
 
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
@@ -1671,6 +1702,9 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   // check if the pin direction pattern matches JTAG mode
   if((dir & 0x0f) == 0x0b) {
     debugf("\nSPI deinit and JTAG activation");
+
+  stop_hid();
+
 #ifndef TANG_NANO20K
     bflb_gpio_deinit(gpio, SPI_PIN_MISO);
     bflb_gpio_deinit(gpio, SPI_PIN_MOSI);

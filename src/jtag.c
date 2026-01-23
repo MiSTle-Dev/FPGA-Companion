@@ -217,39 +217,54 @@ void sendClkUs(uint32_t us)
   jtag_toggleClk(clocks);
 }
 
-// prepare SRAM upload. Designed after openFPGAloader
+// prepare SRAM upload
 bool jtag_gowin_eraseSRAM(void) {
+  uint32_t status;
   jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_USERCODE);
-  uint32_t status = jtag_gowin_readStatusReg();
 
-  bool auto_boot_2nd_fail = (status & (1 << 4)) == (1 << 4);
-  bool is_timeout = (status & (1 << 3)) == (1 << 3);
-  bool bad_cmd = (status & JTAG_GOWIN_STATUS_BAD_COMMAND) == JTAG_GOWIN_STATUS_BAD_COMMAND;
+  if (idcode == IDCODE_GW5AT60) {
+    //  UG702E. If the Ready bit is 0, send the Reinit instruction
+    status = jtag_gowin_readStatusReg();
 
-  if (is_gw2a)
-    jtag_gowin_gw2a_force_state();
-  else {
+    if ((status & JTAG_GOWIN_STATUS_READY) == 0) {
+      jtag_gowin_command(JTAG_COMMAND_GOWIN_REINIT);
+      }
+    sendClkUs(10000);
+  }
+
+  // Clearing Status Code Errors according to UG702E
+  if (!is_gw2a) {
+    status = jtag_gowin_readStatusReg();
+    bool auto_boot_2nd_fail = (status & JTAG_GOWIN_STATUS_AUTO_BOOT_2ND_FAIL) == JTAG_GOWIN_STATUS_AUTO_BOOT_2ND_FAIL;
+    bool is_timeout = (status & JTAG_GOWIN_STATUS_TIMEOUT) == JTAG_GOWIN_STATUS_TIMEOUT;
+    bool bad_cmd = (status & JTAG_GOWIN_STATUS_BAD_COMMAND) == JTAG_GOWIN_STATUS_BAD_COMMAND;
     if (is_timeout || auto_boot_2nd_fail || bad_cmd) {
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
-    jtag_gowin_command(0x3F);
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_RECONFIG);
+    jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
+    sendClkUs(100000);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-    jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_IDCODE);
-    jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-    jtag_toggleClk(125 * 8);
+    sendClkUs(100000);
+    }
+  }
+
+  if (is_gw2a) {
+    jtag_gowin_gw2a_force_state();
+
+    if(!jtag_gowin_enableCfg()) {
+      jtag_debugf("Failed to enable config");
+      return false;
+     }
+  } else {
+      jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
+      // no status polling !
    }
-  }
-  if(!jtag_gowin_enableCfg()) {
-    jtag_debugf("Failed to enable config");
-    return false;
-  }
-    
+
   jtag_gowin_command(JTAG_COMMAND_GOWIN_ERASE_SRAM);
   jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-
-  if (idcode == IDCODE_GW5AST138) {
-    sendClkUs(10000);
-   }
+  sendClkUs(10000); // UG702E wait for erase to complete
 
   if(!jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_MEMORY_ERASE, JTAG_GOWIN_STATUS_MEMORY_ERASE)) {
     jtag_debugf("Failed to trigger SRAM erase");
@@ -299,8 +314,8 @@ bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
     jtag_gowin_command(0x08);
   }
   
-  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE); // config disable
-  jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP); // noop
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
+  jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
  	uint32_t usercode = readUserCode();
   uint32_t status_reg = jtag_gowin_readStatusReg();
   if(!(status_reg & JTAG_GOWIN_STATUS_DONE_FINAL)) {
@@ -316,7 +331,6 @@ void jtag_gowin_fpgaReset(void) {
 
     jtag_gowin_command(JTAG_COMMAND_GOWIN_RECONFIG);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-    // RUN-TEST/IDLE
-    mcu_hw_jtag_tms(1, 0b000000, 6);
+    sendClkUs(100000);
 }
 
