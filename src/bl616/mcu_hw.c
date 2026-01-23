@@ -99,14 +99,10 @@
 static struct bflb_device_s *gpio;
 
 // special FPGA configuration pins
-// JTAGSELn = 0 for JTAG and 1 for SPI mode dedicated JTAG interface pin multiplex
-// BL616 UART TX O, reuse as JTAGSELn all boards except TANG_NANO20K
+// JTAGSEL = 1 for JTAG and 0 for SPI mode dedicated JTAG interface pin multiplex
+// BL616 UART TX O, reuse as JTAGSEL all boards except TANG_NANO20K
 // BL616 UART RX I, reuse as SPI_IRQn input 
 // TN20K JTAGSELn normally unused as JTAG always active
-// all boards shall not use the BL616 debug console connected to FPGA pins as no spare connections left 
-// Console 60K shall use SBC1 and SBC2 pins located at USB-C connector for serial console and debugging.
-// Nano20K has unidirectional console monitor capability
-// Mega60K NEO might also support BL616 SD card controller interface natively
 
 #if defined(TANG_NANO20K)
 #define PIN_JTAG_TMS GPIO_PIN_16
