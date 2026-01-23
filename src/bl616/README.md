@@ -12,8 +12,7 @@ for the BL616 MCU (M0S Dock).
 
 ## Tang integrated onboard BL616 MPU
 
-JTAG signals and UART RX are re-purposed as SPI interface. MPU is Master and FPGA is slave.  
-BL616 GPIO pin mapping is fix in SDK and no option to change. UART RX GPIO is board specific and used as an SPI interrupt input. The UART TX GPIO is a board-specific signal used to control the FPGA’s dedicated JTAG hw pins and determine whether the interface operates in native JTAG or SPI mode. Nano 20k always stays in JTAG active enabled mode.
+JTAG signals and UART RX are re-purposed as SPI interface. MPU is Master and FPGA is slave. UART RX GPIO is board specific and used as an SPI interrupt input. The UART TX GPIO is a board-specific signal used to control the FPGA’s dedicated JTAG hw pins and determine whether the interface operates in native JTAG or SPI mode. Nano 20k always stays in JTAG active enabled mode as both JTAG and SPI are as dedicated hw pins available.
 
 |Tang Board wiring BL616|BL616 GPIO|SPI re-use|Note|
 |------------- |----- |--------  |-----|
@@ -22,11 +21,12 @@ BL616 GPIO pin mapping is fix in SDK and no option to change. UART RX GPIO is bo
 |JTAG TDO      |GPIO2 |SPI MISO  | EN_CHIP BL616 |
 |JTAG TDI      |GPIO3 |SPI MOSI  |  |
 |BL616 UART RX |GPIO x|SPI _IRQ  |  |
-|BL616 UART TX |GPIO x|V_JTAGSELN| 0=JTAG, 1=SPI |
+|BL616 UART TX |GPIO x|V_JTAGSELN| 1=JTAG, 0=SPI |
 |BL616 TWI SCL*|GPIO x|UART TX   | debug console |
 
-The extra TWI SCL connection is only available for Mega60k, Console60k/138k, Mega138kPro.
-TN20k has a differnt pin mapping and uses GPIO16, GPIO10, GPIO14, GPIO12.
+The extra TWI SCL connection is only available for Mega60k, Console60k/138k, Mega138kPro.  
+Primer25K re-use after a needed HW modification a default LED IO to access debug console.  
+TN20k has a differnt pin mapping and uses GPIO16, GPIO10, GPIO14, GPIO12 for JTAG.
 
 [Windows 11 Build AiO](#tang-onboard-bl616)
 

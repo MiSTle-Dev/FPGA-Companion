@@ -32,7 +32,9 @@
 #define JTAG_COMMAND_GOWIN_PROGRAM_KEY_2       0x29  // gowin doesn't explain why there are two "PROGRAM KEY"
 #define JTAG_COMMAND_GOWIN_READ_KEY            0x25
 #define JTAG_COMMAND_GOWIN_CONFIG_DISABLE      0x3a
+#define JTAG_COMMAND_GOWIN_WRITE_DATA          0x3b
 #define JTAG_COMMAND_GOWIN_RECONFIG            0x3c
+#define JTAG_COMMAND_GOWIN_REINIT              0x3f
 #define JTAG_COMMAND_GOWIN_STATUS              0x41
 #define JTAG_COMMAND_GOWIN_GAO_1               0x42
 #define JTAG_COMMAND_GOWIN_GAO_2               0x43
@@ -45,6 +47,7 @@
 #define JTAG_GOWIN_STATUS_BAD_COMMAND		(1 << 1)
 #define JTAG_GOWIN_STATUS_ID_VERIFY_FAILED	(1 << 2)
 #define JTAG_GOWIN_STATUS_TIMEOUT		(1 << 3)
+#define JTAG_GOWIN_STATUS_AUTO_BOOT_2ND_FAIL (1 << 4)
 #define JTAG_GOWIN_STATUS_MEMORY_ERASE		(1 << 5)
 #define JTAG_GOWIN_STATUS_PREAMBLE		(1 << 6)
 #define JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE	(1 << 7)
