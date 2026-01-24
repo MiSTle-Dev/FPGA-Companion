@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// https://cdn.gowinsemi.com.cn/TN711E.pdf
 /* known GOWIN JTAG commands */
 #define JTAG_COMMAND_GOWIN_BYPASS0             0x00
 #define JTAG_COMMAND_GOWIN_SAMPLE              0x01
@@ -26,11 +27,16 @@
 #define JTAG_COMMAND_GOWIN_CONFIG_ENABLE       0x15
 #define JTAG_COMMAND_GOWIN_TRANSFER_SPI        0x16
 #define JTAG_COMMAND_GOWIN_XFER_WRITE          0x17
+#define JTAG_COMMAND_GOWIN_XFER_SVF            0x1b
 #define JTAG_COMMAND_GOWIN_PROGRAM_KEY_1       0x21
 #define JTAG_COMMAND_GOWIN_SECURITY            0x23
 #define JTAG_COMMAND_GOWIN_PROGRAM_EFUSE       0x24
+//#define JTAG_COMMAND_GOWIN_READ_KEY          0x25
 #define JTAG_COMMAND_GOWIN_PROGRAM_KEY_2       0x29  // gowin doesn't explain why there are two "PROGRAM KEY"
 #define JTAG_COMMAND_GOWIN_READ_KEY            0x25
+#define JTAG_COMMAND_GOWIN_PRGM_USER_DATA      0x2a
+#define JTAG_COMMAND_GOWIN_RD_USER_DATA        0x2b
+#define JTAG_COMMAND_GOWIN_RD_EFUSE_ALL_DATA   0x2d
 #define JTAG_COMMAND_GOWIN_CONFIG_DISABLE      0x3a
 #define JTAG_COMMAND_GOWIN_WRITE_DATA          0x3b
 #define JTAG_COMMAND_GOWIN_RECONFIG            0x3c
@@ -39,11 +45,14 @@
 #define JTAG_COMMAND_GOWIN_STATUS              0x41
 #define JTAG_COMMAND_GOWIN_GAO_1               0x42
 #define JTAG_COMMAND_GOWIN_GAO_2               0x43
+#define JTAG_COMMAND_GOWIN_WRITE_DATA_QSSPI    0x6b
 #define JTAG_COMMAND_GOWIN_EFLASH_PROGRAM      0x71
+#define JTAG_COMMAND_GOWIN_EFLASH_READ         0x73
 #define JTAG_COMMAND_GOWIN_EFLASH_ERASE        0x75
 #define JTAG_COMMAND_GOWIN_SWITCH_MCU_JTAG     0x7a
 #define JTAG_COMMAND_GOWIN_BYPASS              0xff
 
+// https://cdn.gowinsemi.com.cn/TN711E.pdf
 #define JTAG_GOWIN_STATUS_CRC_ERROR		(1 << 0)
 #define JTAG_GOWIN_STATUS_BAD_COMMAND		(1 << 1)
 #define JTAG_GOWIN_STATUS_ID_VERIFY_FAILED	(1 << 2)
@@ -62,6 +71,18 @@
 #define JTAG_GOWIN_STATUS_READY			(1 << 15)
 #define JTAG_GOWIN_STATUS_POR			(1 << 16)
 #define JTAG_GOWIN_STATUS_FLASH_LOCK		(1 << 17)
+#define JTAG_GOWIN_STATUS_SER_CRC_DONE (1 << 18)
+#define JTAG_GOWIN_STATUS_SER_CRC_ERR (1 << 19)
+#define JTAG_GOWIN_STATUS_SER_ECC_CORR (1 << 20)
+#define JTAG_GOWIN_STATUS_SER_ECC_UNCORR (1 << 21)
+#define JTAG_GOWIN_STATUS_SER_RUNNING (1 << 22)
+//#define JTAG_GOWIN_STATUS_CPU_BUS_WIDTH 23:24
+//#define JTAG_GOWIN_STATUS__SYNC_DET_TERY 25:26
+#define JTAG_GOWIN_STATUS_DECOMP_FAIL (1 << 27)
+#define JTAG_GOWIN_STATUS_MFG_DONE (1 << 28)
+#define JTAG_GOWIN_STATUS_INIT (1 << 29)
+#define JTAG_GOWIN_STATUS_WAKEUP (1 << 30)
+#define JTAG_GOWIN_STATUS_AUTO_ERASE (1 << 31)
 
 #define IDCODE_GW2AR18  0x81b
 #define IDCODE_GW5AT60  0x1481b
