@@ -31,9 +31,8 @@
 #define JTAG_COMMAND_GOWIN_PROGRAM_KEY_1       0x21
 #define JTAG_COMMAND_GOWIN_SECURITY            0x23
 #define JTAG_COMMAND_GOWIN_PROGRAM_EFUSE       0x24
-//#define JTAG_COMMAND_GOWIN_READ_KEY          0x25
-#define JTAG_COMMAND_GOWIN_PROGRAM_KEY_2       0x29  // gowin doesn't explain why there are two "PROGRAM KEY"
 #define JTAG_COMMAND_GOWIN_READ_KEY            0x25
+#define JTAG_COMMAND_GOWIN_PROGRAM_KEY_2       0x29  // gowin doesn't explain why there are two "PROGRAM KEY"
 #define JTAG_COMMAND_GOWIN_PRGM_USER_DATA      0x2a
 #define JTAG_COMMAND_GOWIN_RD_USER_DATA        0x2b
 #define JTAG_COMMAND_GOWIN_RD_EFUSE_ALL_DATA   0x2d
