@@ -940,6 +940,8 @@ static void menu_task(__attribute__((unused)) void *parms) {
   }
 }
 
+  TaskHandle_t menu_handle = NULL;
+
 void menu_init(void) {
   menu_debugf("Initializing");
 
@@ -979,7 +981,7 @@ void menu_init(void) {
   menu_queue = xQueueCreate(10, sizeof( long ) );
   
   // start a thread for the on screen display    
-  xTaskCreate(menu_task, (char *)"menu_task", 4096, NULL, configMAX_PRIORITIES-3, NULL);
+  xTaskCreate(menu_task, (char *)"menu_task", 4096, NULL, configMAX_PRIORITIES-3, &menu_handle);
 }
   
 void menu_notify(unsigned long msg) {
