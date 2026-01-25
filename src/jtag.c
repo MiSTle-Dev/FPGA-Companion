@@ -217,28 +217,67 @@ void sendClkUs(uint32_t us)
   jtag_toggleClk(clocks);
 }
 
+void printStatusReg(uint32_t status) {
+    if (status & JTAG_GOWIN_STATUS_CRC_ERROR)        printf("Bit 0: CRC ERROR detected\r\n");
+    if (status & JTAG_GOWIN_STATUS_BAD_COMMAND)      printf("Bit 1: Bad command received\r\n");
+    if (status & JTAG_GOWIN_STATUS_ID_VERIFY_FAILED) printf("Bit 2: ID verification failed\r\n");
+    if (status & JTAG_GOWIN_STATUS_TIMEOUT)          printf("Bit 3: Timeout occurred\r\n");
+    if (status & JTAG_GOWIN_STATUS_AUTO_BOOT_2ND_FAIL) printf("Bit 4: Auto boot 2nd failed\r\n");
+    if (status & JTAG_GOWIN_STATUS_MEMORY_ERASE)     printf("Bit 5: Memory erase in progress\r\n");
+    if (status & JTAG_GOWIN_STATUS_PREAMBLE)         printf("Bit 6: Preamble detected\r\n");
+    if (status & JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE) printf("Bit 7: System edit mode active\r\n");
+    if (status & JTAG_GOWIN_STATUS_PRG_SPIFLASH_DIRECT) printf("Bit 8: Programming SPI flash directly\r\n");
+    if (status & JTAG_GOWIN_STATUS_AUTO_BOOT_1ST_FAILED) printf("Bit 9: Auto boot 1st failed\r\n");
+    if (status & JTAG_GOWIN_STATUS_NON_JTAG_CNF_ACTIVE) printf("Bit 10: Non-JTAG configuration active\r\n");
+    if (status & JTAG_GOWIN_STATUS_BYPASS)           printf("Bit 11: Bypass mode enabled\r\n");
+    if (status & JTAG_GOWIN_STATUS_I2C_SRAM_F)       printf("Bit 12: I2C_SRAM_F\r\n");
+    if (status & JTAG_GOWIN_STATUS_DONE_FINAL)       printf("Bit 13: Done final\r\n");
+    if (status & JTAG_GOWIN_STATUS_SECURITY_FINAL)   printf("Bit 14: Security final\r\n");
+    if (status & JTAG_GOWIN_STATUS_ENCRYPTED_FORMAT) printf("Bit 15: ENCRYPTED_FORMAT\r\n");
+    if (status & JTAG_GOWIN_STATUS_KEY_IS_RIGHT)     printf("Bit 16: KEY_IS_RIGHT\r\n");
+    if (status & JTAG_GOWIN_STATUS_SSPI_MODE)        printf("Bit 17: SSPI_MODE\r\n");
+    if (status & JTAG_GOWIN_STATUS_SER_CRC_DONE)     printf("Bit 18: Serial CRC done\r\n");
+    if (status & JTAG_GOWIN_STATUS_SER_CRC_ERR)      printf("Bit 19: Serial CRC error\r\n");
+    if (status & JTAG_GOWIN_STATUS_SER_ECC_CORR)     printf("Bit 20: ECC corrected\r\n");
+    if (status & JTAG_GOWIN_STATUS_SER_ECC_UNCORR)   printf("Bit 21: ECC uncorrectable\r\n");
+    if (status & JTAG_GOWIN_STATUS_SER_RUNNING)      printf("Bit 22: Serial running\r\n");
+    if (status & JTAG_GOWIN_STATUS_CPU_BUS_WIDTH_0)  printf("Bit 23: CPU_BUS_WIDTH_0\r\n");
+    if (status & JTAG_GOWIN_STATUS_CPU_BUS_WIDTH_1)  printf("Bit 24: CPU_BUS_WIDTH_1\r\n");
+#ifndef TANG_MEGA138KPRO
+    if (status & JTAG_GOWIN_STATUS_SYNC_DET_TERY_0)  printf("Bit 25: SYNC_DET_TERY_0\r\n");
+    if (status & JTAG_GOWIN_STATUS_SYNC_DET_TERY_1)  printf("Bit 26: SYNC_DET_TERY_1\r\n");
+    if (status & JTAG_GOWIN_STATUS_DECOMP_FAIL)      printf("Bit 27: Decompression failed\r\n");
+    if (status & JTAG_GOWIN_STATUS_MFG_DONE)         printf("Bit 28: Manufacturing done\r\n");
+    if (status & JTAG_GOWIN_STATUS_INIT)             printf("Bit 29: Initialization complete\r\n");
+    if (status & JTAG_GOWIN_STATUS_WAKEUP)           printf("Bit 30: Wakeup signal\r\n");
+    if (status & JTAG_GOWIN_STATUS_AUTO_ERASE)       printf("Bit 31: Auto erase enabled\r\n");
+#endif
+}
+
 // prepare SRAM upload
 bool jtag_gowin_eraseSRAM(void) {
   uint32_t status;
   jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_USERCODE);
 
-  if (idcode == IDCODE_GW5AT60) {
-    //  UG702E. If the Ready bit is 0, send the Reinit instruction
-    status = jtag_gowin_readStatusReg();
-
-    if ((status & JTAG_GOWIN_STATUS_READY) == 0) {
+  // Clearing if failed loading
+  status = jtag_gowin_readStatusReg();
+  if (idcode != IDCODE_GW2AR18) {
+    if ((status & JTAG_GOWIN_STATUS_DONE_FINAL) == 0) {
       jtag_gowin_command(JTAG_COMMAND_GOWIN_REINIT);
       }
     sendClkUs(10000);
   }
 
-  // Clearing Status Code Errors according to UG702E
+  // Clearing Status Code Errors
   if (!is_gw2a) {
     status = jtag_gowin_readStatusReg();
     bool auto_boot_2nd_fail = (status & JTAG_GOWIN_STATUS_AUTO_BOOT_2ND_FAIL) == JTAG_GOWIN_STATUS_AUTO_BOOT_2ND_FAIL;
     bool is_timeout = (status & JTAG_GOWIN_STATUS_TIMEOUT) == JTAG_GOWIN_STATUS_TIMEOUT;
     bool bad_cmd = (status & JTAG_GOWIN_STATUS_BAD_COMMAND) == JTAG_GOWIN_STATUS_BAD_COMMAND;
-    if (is_timeout || auto_boot_2nd_fail || bad_cmd) {
+    bool id_verify_failed = (status & JTAG_GOWIN_STATUS_ID_VERIFY_FAILED) ==  JTAG_GOWIN_STATUS_ID_VERIFY_FAILED;
+    if (is_timeout || auto_boot_2nd_fail || bad_cmd || id_verify_failed) {
+    jtag_debugf("Clearing status errors");
+    printStatusReg(status);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_RECONFIG);
@@ -264,10 +303,15 @@ bool jtag_gowin_eraseSRAM(void) {
 
   jtag_gowin_command(JTAG_COMMAND_GOWIN_ERASE_SRAM);
   jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
-  sendClkUs(10000); // UG702E wait for erase to complete
+  sendClkUs(10000); // wait for erase to complete
+#ifdef TANG_MEGA138KPRO
+  sendClkUs(40000);
+#endif
 
   if(!jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_MEMORY_ERASE, JTAG_GOWIN_STATUS_MEMORY_ERASE)) {
     jtag_debugf("Failed to trigger SRAM erase");
+    status = jtag_gowin_readStatusReg();
+    printStatusReg(status);
     return false;
   }
 
@@ -275,6 +319,8 @@ bool jtag_gowin_eraseSRAM(void) {
   jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
   if(!jtag_gowin_disableCfg()) {
     jtag_debugf("Failed to disable config");
+    status = jtag_gowin_readStatusReg();
+    printStatusReg(status);
     return false;
   }
 
@@ -319,10 +365,11 @@ bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
  	uint32_t usercode = readUserCode();
   uint32_t status_reg = jtag_gowin_readStatusReg();
   if(!(status_reg & JTAG_GOWIN_STATUS_DONE_FINAL)) {
-    fatal_debugf("Failed to write SRAM, Usercode=0x%08x, status=0x%08x\r\n", usercode, status_reg);
+    fatal_debugf("Failed to write SRAM\r\n");
+    printStatusReg(status_reg);
     return false;
   }
-  jtag_debugf("SRAM successfully written, Usercode=0x%08x, status=0x%08x\r\n", usercode, status_reg);
+  jtag_debugf("SRAM successfully written, Usercode=0x%08x\r\n", usercode);
   return true;
 }
 

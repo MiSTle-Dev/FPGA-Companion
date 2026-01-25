@@ -1062,7 +1062,6 @@ void mcu_hw_init(void) {
 }
 
 void stop_hid(void) {
-  debugf("stop hid devices");
   debugf("stop HID and XBOX tasks");
   for (int i = 0; i < CONFIG_USBHOST_MAX_XBOX_CLASS; i++) {
       char *dev_str = "/dev/xboxX";
