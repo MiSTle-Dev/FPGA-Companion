@@ -1720,7 +1720,6 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
 #ifndef TANG_NANO20K
     bflb_gpio_set(gpio, PIN_JTAGSEL); // select JTAG mode
 #endif
-    jtag_is_active = true;
     
 #ifdef DEBUG_JTAG
     jtag_debugf("DIR pattern matches JTAG");
@@ -1735,20 +1734,24 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
     mcu_hw_jtag_tms(1, 0b0010, 4);
 
     // shift data into DR
-    uint32_t idcode;
-    mcu_hw_jtag_data(NULL, (uint8_t*)&idcode, 32);
+    uint32_t lidcode;
+    mcu_hw_jtag_data(NULL, (uint8_t*)&lidcode, 32);
     
     // finally return into Test-Logic-Reset state.
     mcu_hw_jtag_tms(1, 0b11111, 5);
   
-    jtag_debugf("IDCODE = %08lx", idcode);
+    jtag_debugf("IDCODE = %08lx", lidcode);
 
     // anything bit all 1's or all 0's indicates that JTAG seems to
     // be working
-    if((idcode == 0xffffffff) || (idcode == 0x00000000)) {
+    if((lidcode == 0xffffffff) || (lidcode == 0x00000000)) {
       jtag_highlight_debugf("JTAG doesn't seem to work. Forcing non-flash reconfig");
-      mcu_hw_fpga_reconfig(false);
+      if (lidcode == IDCODE_GW2AR18) {
+        mcu_hw_fpga_reconfig(false);
+      }
+      return;
     }
+    jtag_is_active = true;
   } else
     jtag_is_active = false;
 }

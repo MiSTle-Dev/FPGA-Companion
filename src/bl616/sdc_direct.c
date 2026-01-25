@@ -91,7 +91,7 @@ bool sdc_direct_upload_core_bin(const char *name) {
     return false;
   }
   
-  jtag_debugf("JTAG FPGA detected");
+  sdc_debugf("JTAG FPGA detected :%08lx", idcode);
     
   // measure total download time
   TickType_t ticks = xTaskGetTickCount();

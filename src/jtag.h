@@ -89,7 +89,7 @@
 #define IDCODE_GW5AST138  0x1081b
 #define IDCODE_GW5A25 0x1281b
 
-extern uint32_t idcode;
+extern volatile uint32_t idcode;
 
 bool jtag_open(void);
 void jtag_close(void);
