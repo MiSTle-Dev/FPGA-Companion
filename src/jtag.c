@@ -261,12 +261,21 @@ bool jtag_gowin_eraseSRAM(void) {
 
   // Clearing if failed loading
   status = jtag_gowin_readStatusReg();
-  if (idcode != IDCODE_GW2AR18) {
+
+  if (idcode == IDCODE_GW5AST138) {
     if ((status & JTAG_GOWIN_STATUS_DONE_FINAL) == 0) {
+      jtag_debugf("REINIT");
       jtag_gowin_command(JTAG_COMMAND_GOWIN_REINIT);
-      }
-    sendClkUs(10000);
+      sendClkUs(10000);
+    }
   }
+
+  // mandatory for GW5A-60
+  if (idcode == IDCODE_GW5AT60) {
+      jtag_debugf("REINIT");
+      jtag_gowin_command(JTAG_COMMAND_GOWIN_REINIT);
+      sendClkUs(10000);
+    }
 
   // Clearing Status Code Errors
   if (!is_gw2a) {
@@ -276,7 +285,7 @@ bool jtag_gowin_eraseSRAM(void) {
     bool bad_cmd = (status & JTAG_GOWIN_STATUS_BAD_COMMAND) == JTAG_GOWIN_STATUS_BAD_COMMAND;
     bool id_verify_failed = (status & JTAG_GOWIN_STATUS_ID_VERIFY_FAILED) ==  JTAG_GOWIN_STATUS_ID_VERIFY_FAILED;
     if (is_timeout || auto_boot_2nd_fail || bad_cmd || id_verify_failed) {
-    jtag_debugf("Clearing status errors");
+    jtag_debugf("Clearing status errors by RELOAD");
     printStatusReg(status);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
     jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_ENABLE);
