@@ -263,7 +263,6 @@ bool jtag_gowin_eraseSRAM(void) {
   // Clearing if failed loading
   status = jtag_gowin_readStatusReg();
 
-  /*
   if ((idcode == IDCODE_GW5AST138)||(idcode == IDCODE_GW5A25)) {
     if ((status & JTAG_GOWIN_STATUS_DONE_FINAL) == 0) {
       jtag_debugf("FPGA REINIT");
@@ -271,8 +270,6 @@ bool jtag_gowin_eraseSRAM(void) {
       sendClkUs(10000);
     }
   }
-  */
-
   // mandatory for GW5A-60
   if (idcode == IDCODE_GW5AT60) {
       jtag_debugf("FPGA REINIT");
