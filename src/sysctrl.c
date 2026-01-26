@@ -283,8 +283,14 @@ static void sys_handle_event(bool ignore_coldboot) {
 #if defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 4)
       // Check for USB-JTAG activity and don't reset (and thus break
       // the JTAG activity)
-      if(mcu_hw_jtag_is_active())
+      if(mcu_hw_jtag_is_active()) {
 	      jtag_highlight_debugf("Suppressing MCU reset due to JTAG activity");
+        // stop OSD task to avoid further SPI traffic 
+        if (menu_handle != NULL) {
+          vTaskDelete(menu_handle);
+          menu_handle = NULL;
+        }
+      }
       else	
 #endif
 	       mcu_hw_reset();
