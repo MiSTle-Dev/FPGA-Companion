@@ -206,6 +206,16 @@ bool sdc_direct_upload_core_fs(const char *name) {
     return false;
   }
   
+  if (idcode == IDCODE_GW5AST138) {
+    jtag_debugf("=== 2nd Erase SRAM ===");
+    if(!jtag_gowin_eraseSRAM()) {
+      jtag_debugf("Failed to erase SRAM");
+      jtag_close();
+      f_close(&fil);
+      return false;
+    }
+  }
+
   jtag_debugf("=== Load SRAM ===");
   jtag_gowin_writeSRAM_prepare();
   

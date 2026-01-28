@@ -14,6 +14,8 @@ static bool is_gw2a = false;
 
 volatile uint32_t idcode = 0;
 
+void printStatusReg(uint32_t status);
+
 static void jtag_gowin_command(uint8_t cmd) {
   // stay in RUN-TEST/IDLE like openFPGAloader
   mcu_hw_jtag_tms(1, 0b000000, 6);
@@ -152,9 +154,9 @@ static uint32_t jtag_gowin_readStatusReg(void) {
   if(status & JTAG_GOWIN_STATUS_GOWIN_VLD)           jtag_debugf(" GOWIN VLD");
   if(status & JTAG_GOWIN_STATUS_DONE_FINAL)          jtag_debugf(" DONE FINAL");
   if(status & JTAG_GOWIN_STATUS_SECURITY_FINAL)      jtag_debugf(" SECURITY FINAL");
-  if(status & JTAG_GOWIN_STATUS_READY)               jtag_debugf(" READY");
-  if(status & JTAG_GOWIN_STATUS_POR)                 jtag_debugf(" POR");
-  if(status & JTAG_GOWIN_STATUS_FLASH_LOCK)          jtag_debugf(" FLASH LOCK");
+  if(status & JTAG_GOWIN_STATUS_ENCRYPTED_FORMAT)    jtag_debugf(" ENCRYPTED_FORMAT");
+  if(status & JTAG_GOWIN_STATUS_KEY_IS_RIGHT)        jtag_debugf(" KEY_IS_RIGHT");
+  if(status & JTAG_GOWIN_STATUS_SSPI_MODE)           jtag_debugf(" SSPI_MODE");
 #endif
   
   return status;
@@ -219,39 +221,39 @@ void sendClkUs(uint32_t us)
 }
 
 void printStatusReg(uint32_t status) {
-    if (status & JTAG_GOWIN_STATUS_CRC_ERROR)        jtag_debugf("Bit 0: CRC ERROR detected\r\n");
-    if (status & JTAG_GOWIN_STATUS_BAD_COMMAND)      jtag_debugf("Bit 1: Bad command received\r\n");
-    if (status & JTAG_GOWIN_STATUS_ID_VERIFY_FAILED) jtag_debugf("Bit 2: ID verification failed\r\n");
-    if (status & JTAG_GOWIN_STATUS_TIMEOUT)          jtag_debugf("Bit 3: Timeout occurred\r\n");
-    if (status & JTAG_GOWIN_STATUS_AUTO_BOOT_2ND_FAIL) jtag_debugf("Bit 4: Auto boot 2nd failed\r\n");
-    if (status & JTAG_GOWIN_STATUS_MEMORY_ERASE)     jtag_debugf("Bit 5: Memory erase in progress\r\n");
-    if (status & JTAG_GOWIN_STATUS_PREAMBLE)         jtag_debugf("Bit 6: Preamble detected\r\n");
-    if (status & JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE) jtag_debugf("Bit 7: System edit mode active\r\n");
-    if (status & JTAG_GOWIN_STATUS_PRG_SPIFLASH_DIRECT) jtag_debugf("Bit 8: Programming SPI flash directly\r\n");
-    if (status & JTAG_GOWIN_STATUS_AUTO_BOOT_1ST_FAILED) jtag_debugf("Bit 9: Auto boot 1st failed\r\n");
-    if (status & JTAG_GOWIN_STATUS_NON_JTAG_CNF_ACTIVE) jtag_debugf("Bit 10: Non-JTAG configuration active\r\n");
-    if (status & JTAG_GOWIN_STATUS_BYPASS)           jtag_debugf("Bit 11: Bypass mode enabled\r\n");
-    if (status & JTAG_GOWIN_STATUS_I2C_SRAM_F)       jtag_debugf("Bit 12: I2C_SRAM_F\r\n");
-    if (status & JTAG_GOWIN_STATUS_DONE_FINAL)       jtag_debugf("Bit 13: Done final\r\n");
-    if (status & JTAG_GOWIN_STATUS_SECURITY_FINAL)   jtag_debugf("Bit 14: Security final\r\n");
-    if (status & JTAG_GOWIN_STATUS_ENCRYPTED_FORMAT) jtag_debugf("Bit 15: ENCRYPTED_FORMAT\r\n");
-    if (status & JTAG_GOWIN_STATUS_KEY_IS_RIGHT)     jtag_debugf("Bit 16: KEY_IS_RIGHT\r\n");
-    if (status & JTAG_GOWIN_STATUS_SSPI_MODE)        jtag_debugf("Bit 17: SSPI_MODE\r\n");
-    if (status & JTAG_GOWIN_STATUS_SER_CRC_DONE)     jtag_debugf("Bit 18: Serial CRC done\r\n");
-    if (status & JTAG_GOWIN_STATUS_SER_CRC_ERR)      jtag_debugf("Bit 19: Serial CRC error\r\n");
-    if (status & JTAG_GOWIN_STATUS_SER_ECC_CORR)     jtag_debugf("Bit 20: ECC corrected\r\n");
-    if (status & JTAG_GOWIN_STATUS_SER_ECC_UNCORR)   jtag_debugf("Bit 21: ECC uncorrectable\r\n");
-    if (status & JTAG_GOWIN_STATUS_SER_RUNNING)      jtag_debugf("Bit 22: Serial running\r\n");
-    if (status & JTAG_GOWIN_STATUS_CPU_BUS_WIDTH_0)  jtag_debugf("Bit 23: CPU_BUS_WIDTH_0\r\n");
-    if (status & JTAG_GOWIN_STATUS_CPU_BUS_WIDTH_1)  jtag_debugf("Bit 24: CPU_BUS_WIDTH_1\r\n");
+    if (status & JTAG_GOWIN_STATUS_CRC_ERROR)        jtag_debugf("Bit 0: CRC ERROR detected");
+    if (status & JTAG_GOWIN_STATUS_BAD_COMMAND)      jtag_debugf("Bit 1: Bad command received");
+    if (status & JTAG_GOWIN_STATUS_ID_VERIFY_FAILED) jtag_debugf("Bit 2: ID verification failed");
+    if (status & JTAG_GOWIN_STATUS_TIMEOUT)          jtag_debugf("Bit 3: Timeout occurred");
+    if (status & JTAG_GOWIN_STATUS_AUTO_BOOT_2ND_FAIL) jtag_debugf("Bit 4: Auto boot 2nd failed");
+    if (status & JTAG_GOWIN_STATUS_MEMORY_ERASE)     jtag_debugf("Bit 5: Memory erase in progress");
+    if (status & JTAG_GOWIN_STATUS_PREAMBLE)         jtag_debugf("Bit 6: Preamble detected");
+    if (status & JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE) jtag_debugf("Bit 7: System edit mode active");
+    if (status & JTAG_GOWIN_STATUS_PRG_SPIFLASH_DIRECT) jtag_debugf("Bit 8: Programming SPI flash directly");
+    if (status & JTAG_GOWIN_STATUS_AUTO_BOOT_1ST_FAILED) jtag_debugf("Bit 9: Auto boot 1st failed");
+    if (status & JTAG_GOWIN_STATUS_NON_JTAG_CNF_ACTIVE) jtag_debugf("Bit 10: Non-JTAG configuration active");
+    if (status & JTAG_GOWIN_STATUS_BYPASS)           jtag_debugf("Bit 11: Bypass mode enabled");
+    if (status & JTAG_GOWIN_STATUS_I2C_SRAM_F)       jtag_debugf("Bit 12: I2C_SRAM_F");
+    if (status & JTAG_GOWIN_STATUS_DONE_FINAL)       jtag_debugf("Bit 13: Done final");
+    if (status & JTAG_GOWIN_STATUS_SECURITY_FINAL)   jtag_debugf("Bit 14: Security final");
+    if (status & JTAG_GOWIN_STATUS_ENCRYPTED_FORMAT) jtag_debugf("Bit 15: ENCRYPTED_FORMAT");
+    if (status & JTAG_GOWIN_STATUS_KEY_IS_RIGHT)     jtag_debugf("Bit 16: KEY_IS_RIGHT");
+    if (status & JTAG_GOWIN_STATUS_SSPI_MODE)        jtag_debugf("Bit 17: SSPI_MODE");
+    if (status & JTAG_GOWIN_STATUS_SER_CRC_DONE)     jtag_debugf("Bit 18: Serial CRC done");
+    if (status & JTAG_GOWIN_STATUS_SER_CRC_ERR)      jtag_debugf("Bit 19: Serial CRC error");
+    if (status & JTAG_GOWIN_STATUS_SER_ECC_CORR)     jtag_debugf("Bit 20: ECC corrected");
+    if (status & JTAG_GOWIN_STATUS_SER_ECC_UNCORR)   jtag_debugf("Bit 21: ECC uncorrectable");
+    if (status & JTAG_GOWIN_STATUS_SER_RUNNING)      jtag_debugf("Bit 22: Serial running");
+    if (status & JTAG_GOWIN_STATUS_CPU_BUS_WIDTH_0)  jtag_debugf("Bit 23: CPU_BUS_WIDTH_0");
+    if (status & JTAG_GOWIN_STATUS_CPU_BUS_WIDTH_1)  jtag_debugf("Bit 24: CPU_BUS_WIDTH_1");
 #ifndef TANG_MEGA138KPRO
-    if (status & JTAG_GOWIN_STATUS_SYNC_DET_TERY_0)  jtag_debugf("Bit 25: SYNC_DET_TERY_0\r\n");
-    if (status & JTAG_GOWIN_STATUS_SYNC_DET_TERY_1)  jtag_debugf("Bit 26: SYNC_DET_TERY_1\r\n");
-    if (status & JTAG_GOWIN_STATUS_DECOMP_FAIL)      jtag_debugf("Bit 27: Decompression failed\r\n");
-    if (status & JTAG_GOWIN_STATUS_MFG_DONE)         jtag_debugf("Bit 28: Manufacturing done\r\n");
-    if (status & JTAG_GOWIN_STATUS_INIT)             jtag_debugf("Bit 29: Initialization complete\r\n");
-    if (status & JTAG_GOWIN_STATUS_WAKEUP)           jtag_debugf("Bit 30: Wakeup signal\r\n");
-    if (status & JTAG_GOWIN_STATUS_AUTO_ERASE)       jtag_debugf("Bit 31: Auto erase enabled\r\n");
+    if (status & JTAG_GOWIN_STATUS_SYNC_DET_TERY_0)  jtag_debugf("Bit 25: SYNC_DET_TERY_0");
+    if (status & JTAG_GOWIN_STATUS_SYNC_DET_TERY_1)  jtag_debugf("Bit 26: SYNC_DET_TERY_1");
+    if (status & JTAG_GOWIN_STATUS_DECOMP_FAIL)      jtag_debugf("Bit 27: Decompression failed");
+    if (status & JTAG_GOWIN_STATUS_MFG_DONE)         jtag_debugf("Bit 28: Manufacturing done");
+    if (status & JTAG_GOWIN_STATUS_INIT)             jtag_debugf("Bit 29: Initialization complete");
+    if (status & JTAG_GOWIN_STATUS_WAKEUP)           jtag_debugf("Bit 30: Wakeup signal");
+    if (status & JTAG_GOWIN_STATUS_AUTO_ERASE)       jtag_debugf("Bit 31: Auto erase enabled");
 #endif
 }
 
@@ -363,24 +365,18 @@ uint32_t readUserCode(void)
 }
 
 bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
-  // The following is being implemented by openFPGAloader. But it doesn't seem to be
-  // necessary and it's also not mentioned in the Gowin JTAG programming guide TN653
-  if(checksum != 0xffffffff) {
-    jtag_gowin_command(0x0a);
-    jtag_gowin_shiftDR((uint8_t *)&checksum, NULL, 32);
-    jtag_gowin_command(0x08);
-  }
-  
   jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
   jtag_gowin_command(JTAG_COMMAND_GOWIN_NOOP);
- 	uint32_t usercode = readUserCode();
+
   uint32_t status_reg = jtag_gowin_readStatusReg();
+  status_reg = jtag_gowin_readStatusReg(); // read twice to get updated status
   if(!(status_reg & JTAG_GOWIN_STATUS_DONE_FINAL)) {
     printStatusReg(status_reg);
-    fatal_debugf("Failed to write SRAM\r\n");
+    fatal_debugf("Failed to write SRAM");
     return false;
   }
-  jtag_debugf("SRAM successfully written, Usercode=0x%08x\r\n", usercode);
+  uint32_t usercode = readUserCode();
+  jtag_debugf("SRAM successfully written, Usercode=0x%08x", usercode);
   return true;
 }
 
