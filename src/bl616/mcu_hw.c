@@ -65,6 +65,7 @@
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
 #define PIN_JTAGSEL  GPIO_PIN_28
+/* #define PIN_RECONFIGN  GPIO_PIN_x  maybe TWI SCL ? */
 #elif TANG_NANO20K
 #warning "Building for TANG_NANO20K internal BL616"
 #include "../jtag.h"
@@ -82,6 +83,7 @@
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
 #define PIN_JTAGSEL  GPIO_PIN_10
+#define PIN_RECONFIGN  GPIO_PIN_27 /* TWI SDA */
 #elif TANG_MEGA60K
 #warning "Building for TANG_MEGA60K internal BL616"
 #define ENABLE_JTAG
@@ -863,7 +865,7 @@ static void console_init() {
   /* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK */
 #elif TANG_MEGA138KPRO
   bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX); /* K25 PLL1_TWI SCL */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_27, GPIO_UART_FUNC_UART0_RX); /* K26 PLL1_TWI SDA */
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); /* dummy pin */
   /* GPIO 10 default UART TX, FPGA N16, RX */
   /* GPIO 11 default UART RX, FPGA P15, TX */
   /* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
@@ -1019,9 +1021,14 @@ void mcu_hw_init(void) {
   /* LED6 enable */
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
-  /* configure JTAGSEL_n */
+  /* configure JTAGSEL */
   bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
+  /* configure RECONFIGn control signal*/
+  /* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
+  /* 0 = reconfig active and 1 = reconfig inactive */
+  bflb_gpio_init(gpio, PIN_RECONFIGN, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
+  bflb_gpio_set(gpio, PIN_RECONFIGN);
 #elif TANG_PRIMER25K
   /* LED5 enable 
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
@@ -1940,18 +1947,19 @@ static void mcu_hw_jtag_init(void) {
 
 void mcu_hw_fpga_reconfig(bool run) {
   // trigger FPGA reconfiguration
+#if defined (TANG_MEGA138KPRO) // || defined (TANG_CONSOLE60K)
+  // use GPIO-based reconfig, need support in core
+  bflb_gpio_reset(gpio, PIN_RECONFIGN);
+  bflb_mtimer_delay_ms(1);
+  bflb_gpio_set(gpio, PIN_RECONFIGN);
+#endif
 
   if(!jtag_open()) {
     jtag_debugf("FPGA not detected");
-    jtag_close();
   } else {
-    // make reconfig visible to user
-    if(!jtag_gowin_eraseSRAM()) {
-      jtag_debugf("Failed to erase SRAM");
-    }
     jtag_gowin_fpgaReset(); // JTAG-based reset/reconfig
-    jtag_close();
    }
+  jtag_close();
 }
 
 void mcu_hw_fpga_resume_spi(void) {
