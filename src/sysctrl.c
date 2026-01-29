@@ -269,8 +269,8 @@ static void sys_handle_event(bool ignore_coldboot) {
 
     // the second button controls the OSD, so it can be used in conjunction
     // with 
-    if(buttons & 2)
-      menu_notify(osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW);    
+    if((buttons & 2) && (!mcu_hw_jtag_is_active()))
+    menu_notify(osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW);    
   }
 
   /* check if the FPGA has the coldboot flag set */
@@ -284,7 +284,7 @@ static void sys_handle_event(bool ignore_coldboot) {
       // Check for USB-JTAG activity and don't reset (and thus break
       // the JTAG activity)
       if(mcu_hw_jtag_is_active()) {
-	      jtag_highlight_debugf("Suppressing MCU reset due to JTAG activity");
+	      debugf("Suppressing MCU reset due to JTAG activity");
         // stop OSD task to avoid further SPI traffic 
         if (menu_handle != NULL) {
           vTaskDelete(menu_handle);
@@ -315,7 +315,7 @@ void sys_handle_interrupts(unsigned char pending, bool ignore_coldboot) {
 }
 
 #ifndef FPGA_BOOT_TIMEOUT
-#define FPGA_BOOT_TIMEOUT   10000   // prolonged for GW5AST138K
+#define FPGA_BOOT_TIMEOUT   10000   /* prolonged for GW5AST138K */
 #endif
 
 bool sys_wait4fpga(void) {
