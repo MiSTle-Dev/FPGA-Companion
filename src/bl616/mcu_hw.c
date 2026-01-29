@@ -677,7 +677,7 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_IRQ   GPIO_PIN_11/* in  UART RX, crossed */
   // requesting 20Mhz on the Tang Mega actually results in 26.67MHz
   // which doesn't seem to work together with the 4k7 pulldown
-  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz */
+  #define SPI_FREQUENCY 12000000   // actually results in 13.3333MHz
 #elif TANG_MEGA60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
@@ -692,6 +692,10 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_10/* in  UART RX, crossed */
   #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz */
+#endif
+
+#ifndef SPI_FREQUENCY
+#define SPI_FREQUENCY 20000000   /* default SPI clock is 20 MHz */
 #endif
 
 #ifndef SPI_FREQUENCY
