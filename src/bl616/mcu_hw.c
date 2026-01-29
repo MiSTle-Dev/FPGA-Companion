@@ -1766,9 +1766,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
     // be working
     if((lidcode == 0xffffffff) || (lidcode == 0x00000000)) {
       jtag_highlight_debugf("JTAG doesn't seem to work. Forcing non-flash reconfig");
-      if (lidcode == IDCODE_GW2AR18) {
-        mcu_hw_fpga_reconfig(false);
-      }
+      mcu_hw_fpga_reconfig(false);
       return;
     }
     jtag_is_active = true;
