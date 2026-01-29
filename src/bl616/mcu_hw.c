@@ -684,12 +684,18 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
+  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz */
 #elif TANG_PRIMER25K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_10/* in  UART RX, crossed */
+  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz */
+#endif
+
+#ifndef SPI_FREQUENCY
+#define SPI_FREQUENCY 20000000   /* default SPI clock is 20 MHz */
 #endif
 
 #ifndef SPI_FREQUENCY
@@ -803,11 +809,7 @@ static struct bflb_device_s *rtc;
 static void system_clock_init(void) {
   /* wifipll/audiopll */
 
-#if TANG_MEGA138KPRO
-  GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_26M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
-#elif TANG_PRIMER25K
-  GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_26M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
-#elif TANG_MEGA60K
+#if defined(TANG_MEGA138KPRO) || defined(TANG_PRIMER25K)|| defined(TANG_MEGA60K)
   GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_26M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
 #else
   GLB_Power_On_XTAL_And_PLL_CLK(GLB_XTAL_40M, GLB_PLL_WIFIPLL | GLB_PLL_AUPLL);
@@ -970,8 +972,8 @@ static void mn_board_init(void) {
     heap_len = ((size_t)&__HeapLimit - (size_t)&__HeapBase);
     mm_register_heap(MM_HEAP_OCRAM_0, "OCRAM", MM_ALLOCATOR_TLSF, &__HeapBase, heap_len);
 
-    debugf("dynamic memory init success\r\n"
-           "  ocram heap size: %d Kbyte \r\n",
+    debugf("dynamic memory init success"
+           "  ocram heap size: %d Kbyte",
            ((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024);
 */
     heap_len = ((size_t)&__HeapLimit - (size_t)&__HeapBase);
