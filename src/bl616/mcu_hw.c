@@ -672,9 +672,12 @@ static struct bflb_device_s *spi_dev;
 #elif TANG_MEGA138KPRO
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
-  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
+  #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN 4K7 PD */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_11/* in  UART RX, crossed */
+  // requesting 20Mhz on the Tang Mega actually results in 26.67MHz
+  // which doesn't seem to work together with the 4k7 pulldown
+  #define SPI_FREQUENCY 12000000   // actually results in 13.3333MHz
 #elif TANG_MEGA60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
@@ -687,6 +690,10 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_10/* in  UART RX, crossed */
+#endif
+
+#ifndef SPI_FREQUENCY
+#define SPI_FREQUENCY 20000000   /* default SPI clock is 20 MHz */
 #endif
 
 void spi_isr(uint8_t pin) {
@@ -719,7 +726,7 @@ static void mcu_hw_spi_init(void) {
   bflb_gpio_set(gpio, SPI_PIN_CSN);
 
   struct bflb_spi_config_s spi_cfg = {
-    .freq = 20000000,   // 20MHz
+    .freq = SPI_FREQUENCY,   // 20MHz
     .role = SPI_ROLE_MASTER,
     .mode = SPI_MODE1,         // mode 1: idle state low, data sampled on falling edge
     .data_width = SPI_DATA_WIDTH_8BIT,
@@ -733,6 +740,10 @@ static void mcu_hw_spi_init(void) {
   bflb_spi_init(spi_dev, &spi_cfg);
 
   bflb_spi_feature_control(spi_dev, SPI_CMD_SET_DATA_WIDTH, SPI_DATA_WIDTH_8BIT);
+
+  // display the actual spi frequency
+  int freq = bflb_spi_feature_control(spi_dev, SPI_CMD_GET_FREQ, 0);
+  debugf("SPI frequency is %d", freq);
 
   // semaphore to access the spi bus
   spi_sem = xSemaphoreCreateMutex();
@@ -975,13 +986,13 @@ static void mn_board_init(void) {
     /* flash info dump */
   bl_show_flashinfo();
   if (ret != 0) {
-        debugf("flash init fail !!!\r\n");
+        debugf("flash init fail !!!");
       }
 
-    debugf("uart  sig1:%08x, sig2:%08x\r\n", getreg32(GLB_BASE + GLB_UART_CFG1_OFFSET), getreg32(GLB_BASE + GLB_UART_CFG2_OFFSET));
-    debugf("clock gen1:%08x, gen2:%08x\r\n", getreg32(GLB_BASE + GLB_CGEN_CFG1_OFFSET), getreg32(GLB_BASE + GLB_CGEN_CFG2_OFFSET));
+    debugf("uart  sig1:%08x, sig2:%08x", getreg32(GLB_BASE + GLB_UART_CFG1_OFFSET), getreg32(GLB_BASE + GLB_UART_CFG2_OFFSET));
+    debugf("clock gen1:%08x, gen2:%08x", getreg32(GLB_BASE + GLB_CGEN_CFG1_OFFSET), getreg32(GLB_BASE + GLB_CGEN_CFG2_OFFSET));
     HBN_Get_Xtal_Value(&xtal_value);
-    debugf("xtal:%dHz(%s)\r\n", xtal_value, ((getreg32(AON_BASE + AON_XTAL_CFG_OFFSET) >> 3) & 0x01) ? "oscillator" : "crystal");
+    debugf("xtal:%dHz(%s)", xtal_value, ((getreg32(AON_BASE + AON_XTAL_CFG_OFFSET) >> 3) & 0x01) ? "oscillator" : "crystal");
 
     log_start();
 
@@ -997,14 +1008,14 @@ static void mn_board_init(void) {
     /* unlock */
     bflb_irq_restore(flag);
 
-    debugf("board init done\r\n");
-    debugf("===========================\r\n");
+    debugf("board init done");
+    debugf("===========================");
 }
 
 void mcu_hw_init(void) {
   mn_board_init();
 
-  debugf("\r\n\r\n" LOGO "           FPGA Companion for BL616\r\n\r\n");
+  debugf("\r\n\r\n" LOGO "        FPGA Companion for BL616\r\n\r\n");
 
   gpio = bflb_device_get_by_name("gpio");
 
@@ -1206,11 +1217,11 @@ void wifi_event_handler(uint32_t code) {
 
 void wifi_start_firmware_task(void *param)
 {
-    debugf("Starting wifi ...\r\n");
+    debugf("Starting wifi ...");
 
     wifi_task_create();
 
-    debugf("Starting fhost ...\r\n");
+    debugf("Starting fhost ...");
     fhost_init();
 
     vTaskDelete(NULL);
@@ -1347,22 +1358,22 @@ static void wifi_info()
     wifi_sta_ip4_addr_get(&ip.addr, &mask.addr, &gw.addr, &dns.addr);
 
     ip4addr_ntoa_r((ip4_addr_t *) &ip.addr, str_tmp, sizeof(str_tmp));
-    debugf("IP  :%s \r\n", str_tmp);
+    debugf("IP  :%s", str_tmp);
     snprintf(str, sizeof(str), "IP  :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
     ip4addr_ntoa_r((ip4_addr_t *) &mask.addr, str_tmp, sizeof(str_tmp));
-    debugf("MASK:%s \r\n", str_tmp);
+    debugf("MASK:%s", str_tmp);
     snprintf(str, sizeof(str), "MASK:%s \r\n", str_tmp);
     at_wifi_puts(str);
     
     ip4addr_ntoa_r((ip4_addr_t *) &gw.addr, str_tmp, sizeof(str_tmp));
-    debugf("GW  :%s \r\n", str_tmp);
+    debugf("GW  :%s", str_tmp);
     snprintf(str, sizeof(str), "GW  :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
     ip4addr_ntoa_r((ip4_addr_t *) &dns.addr, str_tmp, sizeof(str_tmp));
-    debugf("DNS  :%s \r\n", str_tmp);
+    debugf("DNS  :%s", str_tmp);
     snprintf(str, sizeof(str), "DNS :%s \r\n", str_tmp);
     at_wifi_puts(str);
 
@@ -1385,14 +1396,14 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
   
   s_retry_num = 0;
   if (0 != wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0)) {
-    debugf("\r\nWiFI: STA failed!\r\n");
+    debugf("\r\nWiFI: STA failed!");
   } else {
     wait4event(4, 4);
     if (wifi_mgmr_sta_state_get() == 1 ) {
       at_wifi_puts("\r\nWiFI: Connected\r\n");
       wifi_info();
     } else {
-      debugf("\r\nWiFI: Connection failed!\r\n");
+      debugf("\r\nWiFI: Connection failed!");
       at_wifi_puts("\r\nWiFI: Connection failed!\r\n");
       }
     }
@@ -1402,7 +1413,7 @@ static struct tcp_pcb *tcp_pcb = NULL;
 
 static err_t mcu_tcp_connected( __attribute__((unused)) void *arg, __attribute__((unused)) struct tcp_pcb *tpcb, err_t err) {
   if (err != ERR_OK) {
-    debugf("connect failed %d\n", err);
+    debugf("connect failed %d", err);
     return ERR_OK;
   }
   
@@ -1703,7 +1714,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   } else  
   // check if the pin direction pattern matches JTAG mode
   if((dir & 0x0f) == 0x0b) {
-    debugf("\nSPI deinit and JTAG activation");
+    debugf("SPI deinit and JTAG activation");
 
   stop_hid();
 
@@ -2020,7 +2031,7 @@ static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
 
   ret = usbh_msc_scsi_init(msc_class);
   if (ret < 0) {
-      sdc_debugf("scsi_init error,ret:%d\r\n", ret);
+      sdc_debugf("scsi_init error,ret:%d", ret);
       goto delete;
   }
 
