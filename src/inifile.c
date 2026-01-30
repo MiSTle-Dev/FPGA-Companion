@@ -82,6 +82,14 @@ int inifile_read(char *name) {
 	  if(*p) {
 	    // skip to begin of filename
 	    while(*p && iswhite(*p)) p++;
+
+#ifdef INIFILE_PREFIX
+	    // skip an extra file name prefix that may have been added for
+	    // compatibility between the different MCUs. See sdc.h for more details.
+	    if(strncasecmp(p, INIFILE_PREFIX, strlen(INIFILE_PREFIX)) == 0)
+	      p += strlen(INIFILE_PREFIX);
+#endif
+	    
 	    if(*p) {
 	      // tell SDC layer what images to use as default
 	      ini_debugf("%s %d = %s", is_drive?"drive":"image",drive, p);
@@ -208,8 +216,14 @@ void inifile_write(char *name) {
 
       if(cwd && image) {
 	char str[strlen(cwd) + strlen(image) + 12];
+#ifdef INIFILE_PREFIX
+	// add prefix for compatibility, see sdc.h for details
+	sprintf(str, "%s%d=%s%s/%s\n", (drive<MAX_DRIVES)?"drive":"image",
+		(drive<MAX_DRIVES)?drive:(drive-MAX_DRIVES), INIFILE_PREFIX, cwd, image);
+#else
 	sprintf(str, "%s%d=%s/%s\n", (drive<MAX_DRIVES)?"drive":"image",
 		(drive<MAX_DRIVES)?drive:(drive-MAX_DRIVES), cwd, image);
+#endif
 	f_puts(str, &file);
       }      
     }

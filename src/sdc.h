@@ -7,9 +7,19 @@
 
 // fatfs mounts the card under /sd
 #ifdef DEV_SD
+// DEV_SD supported fatfs setups mount the sd card under /sd. This
+// is then also used when storing file names in the ini file. Thus
+// no additional prefix is needed on sd card
 #define CARD_MOUNTPOINT "/sd"
 #else
+// non DEV_SD setups mount the sd card directly as the root fs.
+// To be compatible in the ini files with the DEV_SD setups
+// an additional PREFIX is added when storing the settings in the
+// ini file. This allows to use the same ini file with all MCUs
+// and e.g. swap cards between BL616 and rp2040 based setups,
+// especially when mixing internal BL616 and external rp2040.
 #define CARD_MOUNTPOINT ""
+#define INIFILE_PREFIX "/sd"
 #endif
 
 typedef struct sdc_dir {
