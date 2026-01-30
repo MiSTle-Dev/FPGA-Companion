@@ -269,8 +269,12 @@ static void sys_handle_event(bool ignore_coldboot) {
 
     // the second button controls the OSD, so it can be used in conjunction
     // with 
+#if defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 4)
     if((buttons & 2) && (!mcu_hw_jtag_is_active()))
-    menu_notify(osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW);    
+#else
+    if(buttons & 2)
+#endif
+    menu_notify(osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW);
   }
 
   /* check if the FPGA has the coldboot flag set */
