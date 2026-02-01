@@ -1102,6 +1102,7 @@ void stop_hid(void) {
 }
 
 extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
+extern int bl_sys_reset_por(void);
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
@@ -1135,7 +1136,8 @@ void mcu_hw_reset(void) {
   //hid_keyboard_init(0, USB_BASE);
   debugf("deinit done and ready for POR reset");
   //bflb_mtimer_delay_ms(100);
-  GLB_SW_POR_Reset();
+  //GLB_SW_POR_Reset();
+  bl_sys_reset_por();
   while (1) {
     /*empty dead loop*/
   }
