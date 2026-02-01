@@ -5,7 +5,7 @@
 #include <FreeRTOS.h>
 //#include "mm.h"
 #include "mem.h"
-#include "shell.h"
+//#include "shell.h"
 #include "semphr.h"
 
 #include "usbh_core.h"
@@ -790,15 +790,13 @@ extern void log_start(void);
 extern void bl_show_flashinfo(void);
 extern void bl_show_log(void);
 extern void bl_show_component_version(void);
-extern void bflb_uart_set_console(struct bflb_device_s *dev);
-
-// the M0S uses max bitrate as I use another M0S for console debug which can
-// deal with 2MBit/s
 #define CONSOLE_BAUDRATE 2000000
 
 #ifdef CONFIG_CONSOLE_WO
+extern void bflb_wo_set_console(struct bflb_device_s *dev);
 static struct bflb_device_s *wo;
 #else
+extern void bflb_uart_set_console(struct bflb_device_s *dev);
 static struct bflb_device_s *uart0;
 #endif
 
@@ -895,13 +893,19 @@ static void console_init() {
 /* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK, only 31005 assembly */
 #elif TANG_PRIMER25K
   //bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_RX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_20, GPIO_UART_FUNC_UART0_TX); // LED
+  //bflb_gpio_uart_init(gpio, GPIO_PIN_10, GPIO_UART_FUNC_UART0_RX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_TX); // button
   bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); // dummy
-  /* GPIO_PIN_20 access at LED6, remove R23 resistor */
+  /* GPIO_PIN_20 access at LED6, not usable */
+  /* GPIO_PIN_12 access at button S3, Capacitor C22 need to be removed */
 #endif
 
-  struct bflb_uart_config_s cfg;
+#ifdef CONFIG_CONSOLE_WO
+  wo = bflb_device_get_by_name("wo");
+  bflb_wo_uart_init(wo, 2000000, GPIO_PIN_12); /* TP25K , fixme*/
+  bflb_wo_set_console(wo);
+#else
+  struct bflb_uart_config_s cfg = { 0 };
   cfg.baudrate = CONSOLE_BAUDRATE;
   cfg.data_bits = UART_DATA_BITS_8;
   cfg.stop_bits = UART_STOP_BITS_1;
@@ -910,11 +914,12 @@ static void console_init() {
   cfg.tx_fifo_threshold = 7;
   cfg.rx_fifo_threshold = 7;
   cfg.bit_order = UART_LSB_FIRST;
-  
+
   uart0 = bflb_device_get_by_name("uart0");
   
   bflb_uart_init(uart0, &cfg);
   bflb_uart_set_console(uart0);
+#endif
 }
 
 static void wifi_init(void);
@@ -1064,8 +1069,8 @@ void mcu_hw_init(void) {
 #endif
   mcu_hw_spi_init();
 
-  uart0 = bflb_device_get_by_name("uart0");
-  shell_init_with_task(uart0);
+//  uart0 = bflb_device_get_by_name("uart0");
+//  shell_init_with_task(uart0);
 
 #ifdef M0S_DOCK
   wifi_init();
@@ -2086,4 +2091,3 @@ __attribute__((weak)) uint32_t get_fattime(void)
 }
 #endif
 
-SHELL_CMD_EXPORT_ALIAS(lsusb, lsusb, ls usb);
