@@ -5,7 +5,6 @@
 #include <FreeRTOS.h>
 //#include "mm.h"
 #include "mem.h"
-//#include "shell.h"
 #include "semphr.h"
 
 #include "usbh_core.h"
@@ -33,6 +32,7 @@
 #ifdef CONFIG_CONSOLE_WO
 #include "bflb_wo.h"
 #else
+#include "shell.h"
 #include "bflb_uart.h"
 #endif
 #include "bflb_clock.h"
@@ -58,54 +58,49 @@
 #include "bflb_irq.h"
 #include "../at_wifi.h"
 
+//#define DEBUG_JTAG
+//#define DEBUG_TAP
+
 #ifdef TANG_CONSOLE60K
 #warning "Building for TANG_CONSOLE60K internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define ENABLE_JTAG
-//#define DEBUG_JTAG
-//#define DEBUG_TAP
 #define PIN_JTAGSEL  GPIO_PIN_28
-/* #define PIN_RECONFIGN  GPIO_PIN_x  maybe TWI SCL ? */
+#define PIN_UART_TX  GPIO_PIN_30
 #elif TANG_NANO20K
 #warning "Building for TANG_NANO20K internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define ENABLE_JTAG
-//#define DEBUG_JTAG
-//#define DEBUG_TAP
+#define PIN_UART_TX  GPIO_PIN_11
 #elif M0S_DOCK
 #warning "Building for M0S DOCK BL616"
+#define PIN_UART_TX  GPIO_PIN_21
 #elif TANG_MEGA138KPRO
 #warning "Building for TANG_MEGA138KPRO internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define ENABLE_JTAG
-//#define DEBUG_JTAG
-//#define DEBUG_TAP
 #define PIN_JTAGSEL  GPIO_PIN_10
-#define PIN_RECONFIGN  GPIO_PIN_27 /* TWI SDA */
+#define PIN_UART_TX  GPIO_PIN_28
 #elif TANG_MEGA60K
 #warning "Building for TANG_MEGA60K internal BL616"
+#include "../jtag.h"
+#include "./sdc_direct.h"
 #define ENABLE_JTAG
-//#define DEBUG_JTAG
-//#define DEBUG_TAP
 #define PIN_JTAGSEL  GPIO_PIN_28
+#define PIN_UART_TX  GPIO_PIN_30
 #elif TANG_PRIMER25K
 #warning "Building for TANG_PRIMER25K internal BL616"
+#include "../jtag.h"
+#include "./sdc_direct.h"
 #define ENABLE_JTAG
-//#define DEBUG_JTAG
-//#define DEBUG_TAP
 #define PIN_JTAGSEL  GPIO_PIN_11
+#define PIN_UART_TX  GPIO_PIN_12
 #endif
 
 static struct bflb_device_s *gpio;
-
-// special FPGA configuration pins
-// JTAGSEL = 1 for JTAG and 0 for SPI mode dedicated JTAG interface pin multiplex
-// BL616 UART TX O, reuse as JTAGSEL all boards except TANG_NANO20K
-// BL616 UART RX I, reuse as SPI_IRQn input 
-// TN20K JTAGSELn normally unused as JTAG always active
 
 #if defined(TANG_NANO20K)
 #define PIN_JTAG_TMS GPIO_PIN_16
@@ -683,7 +678,7 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_IRQ   GPIO_PIN_11/* in  UART RX, crossed */
   // requesting 20Mhz on the Tang Mega actually results in 26.67MHz
   // which doesn't seem to work together with the 4k7 pulldown
-  #define SPI_FREQUENCY 12000000   // actually results in 13.3333MHz
+  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz*/
 #elif TANG_MEGA60K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
@@ -698,10 +693,6 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_10/* in  UART RX, crossed */
   #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz */
-#endif
-
-#ifndef SPI_FREQUENCY
-#define SPI_FREQUENCY 20000000   /* default SPI clock is 20 MHz */
 #endif
 
 #ifndef SPI_FREQUENCY
@@ -860,57 +851,45 @@ static void peripheral_clock_init(void) {
 
 static void console_init() {
   gpio = bflb_device_get_by_name("gpio");
-  
-#ifdef M0S_DOCK
-  /* M0S Dock has debug uart on default pins 21 and 22 */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
-#elif TANG_NANO20K
-  bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
-//bflb_gpio_uart_init(gpio, GPIO_PIN_13, GPIO_UART_FUNC_UART0_RX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
-  /* GPIO_PIN_11 TX */
-  /* GPIO_PIN_13 RX */
-#elif TANG_CONSOLE60K
-  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_TX); /* M13 TWI.SCL */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); // dummy pin
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_TX); /* Debug USB-C SBU2 */
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_RX); /* Debug USB-C SBU1 */
+
+  // M0S_DOCK
+  /* GPIO 21 TX */
+  /* GPIO 22 RX */
+  // TANG_NANO20K
+  /* GPIO 11 TX */
+  /* GPIO 13 RX */
+  // TANG_CONSOLE60K
+  /* GPIO 21 TX USB-C SBU1 */
+  /* GPIO 22 RX USB-C SBU2 */
   /* GPIO 27 default UART RX, FPGA U15 TX */
   /* GPIO 28 default UART TX, FPGA V15 RX */
   /* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
   /* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK */
-#elif TANG_MEGA138KPRO
-  bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX); /* K25 PLL1_TWI SCL */
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); /* dummy pin */
+  // TANG_MEGA138KPRO
   /* GPIO 10 default UART TX, FPGA N16, RX */
   /* GPIO 11 default UART RX, FPGA P15, TX */
   /* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
   /* GPIO 28 default PLL1_TWI SCL, FPGA K25, SCL */
-#elif TANG_MEGA60K
+  // TANG_MEGA60K
   /* RX no FPGA connection available, adhoc wiring needed */
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART0_TX);
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_RX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART0_TX); // TWI.SCL, FPGA M13 DDC CLK
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); // dummy pin
   /* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, 31004 assembly,  */
-/* GPIO 27 default UART RX, FPGA U15 TX */
-/* GPIO 28 default UART TX, FPGA V15 RX */
-/* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK, only 31005 assembly */
-#elif TANG_PRIMER25K
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_11, GPIO_UART_FUNC_UART0_TX);
-  //bflb_gpio_uart_init(gpio, GPIO_PIN_10, GPIO_UART_FUNC_UART0_RX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_12, GPIO_UART_FUNC_UART0_TX); // button
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); // dummy
+  /* GPIO 27 default UART RX, FPGA U15 TX */
+  /* GPIO 28 default UART TX, FPGA V15 RX */
+  /* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK, only 31005 assembly */
+  // TANG_PRIMER25K
+  /* GPIO 11 default UART TX */
+  /* GPIO 10 default UART RX */
   /* GPIO_PIN_20 access at LED6, not usable */
   /* GPIO_PIN_12 access at button S3, Capacitor C22 need to be removed */
-#endif
 
 #ifdef CONFIG_CONSOLE_WO
   wo = bflb_device_get_by_name("wo");
-  bflb_wo_uart_init(wo, 2000000, GPIO_PIN_12); /* TP25K , fixme*/
+  bflb_wo_uart_init(wo, CONSOLE_BAUDRATE, PIN_UART_TX);
   bflb_wo_set_console(wo);
 #else
+  bflb_gpio_uart_init(gpio, PIN_UART_TX, GPIO_UART_FUNC_UART0_TX);
+  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); /* M0S Dock */
+
   struct bflb_uart_config_s cfg = { 0 };
   cfg.baudrate = CONSOLE_BAUDRATE;
   cfg.data_bits = UART_DATA_BITS_8;
@@ -1048,11 +1027,6 @@ void mcu_hw_init(void) {
   /* configure JTAGSEL */
   bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
-  /* configure RECONFIGn control signal*/
-  /* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
-  /* 0 = reconfig active and 1 = reconfig inactive */
-  bflb_gpio_init(gpio, PIN_RECONFIGN, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
-  bflb_gpio_set(gpio, PIN_RECONFIGN);
 #elif TANG_PRIMER25K
   /* LED5 enable 
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
@@ -1075,8 +1049,12 @@ void mcu_hw_init(void) {
 #endif
   mcu_hw_spi_init();
 
-//  uart0 = bflb_device_get_by_name("uart0");
-//  shell_init_with_task(uart0);
+#ifndef CONFIG_CONSOLE_WO
+#ifdef M0S_DOCK
+  uart0 = bflb_device_get_by_name("uart0");
+  shell_init_with_task(uart0);
+#endif
+#endif
 
 #ifdef M0S_DOCK
   wifi_init();
@@ -1091,6 +1069,12 @@ void mcu_hw_init(void) {
 #endif
   usb_host();
 }
+
+#ifndef CONFIG_CONSOLE_WO
+#ifdef M0S_DOCK
+  SHELL_CMD_EXPORT_ALIAS(lsusb, lsusb, ls usb);
+#endif
+#endif
 
 void stop_hid(void) {
   debugf("stop HID and XBOX tasks");
@@ -1136,7 +1120,7 @@ void mcu_hw_reset(void) {
   stop_hid();
 
   gpio = bflb_device_get_by_name("gpio");
-  bflb_irq_disable(gpio->irq_num);
+  //bflb_irq_disable(gpio->irq_num);
 
   bflb_gpio_deinit(gpio, GPIO_PIN_0);
   bflb_gpio_deinit(gpio, GPIO_PIN_1);
@@ -1145,12 +1129,12 @@ void mcu_hw_reset(void) {
 
   debugf("usb host deinit");
   usbh_deinitialize(0);
-  bflb_mtimer_delay_ms(250);
+  //bflb_mtimer_delay_ms(250);
 
-  debugf("start usb hid device mode");
-  hid_keyboard_init(0, USB_BASE);
+  //debugf("start usb hid device mode");
+  //hid_keyboard_init(0, USB_BASE);
   debugf("deinit done and ready for POR reset");
-  bflb_mtimer_delay_ms(100);
+  //bflb_mtimer_delay_ms(100);
   GLB_SW_POR_Reset();
   while (1) {
     /*empty dead loop*/
@@ -1969,12 +1953,6 @@ static void mcu_hw_jtag_init(void) {
 
 void mcu_hw_fpga_reconfig(bool run) {
   // trigger FPGA reconfiguration
-#if defined (TANG_MEGA138KPRO) // || defined (TANG_CONSOLE60K)
-  // use GPIO-based reconfig, need support in core
-  bflb_gpio_reset(gpio, PIN_RECONFIGN);
-  bflb_mtimer_delay_ms(1);
-  bflb_gpio_set(gpio, PIN_RECONFIGN);
-#endif
 
   if(!jtag_open()) {
     jtag_debugf("FPGA not detected");
