@@ -228,15 +228,20 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
     state->last_state_btn_extra = btn_extra;
     usb_debugf("JOY%d: D %02x X %02x Y %02x EB %02x", state->js_index, joy, ax, ay, btn_extra);
 
-    mcu_hw_spi_begin();
-    mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-    mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
-    mcu_hw_spi_tx_u08(state->js_index);
-    mcu_hw_spi_tx_u08(joy);
-    mcu_hw_spi_tx_u08(ax); // e.g. gamepad X
-    mcu_hw_spi_tx_u08(ay); // e.g. gamepad Y
-    mcu_hw_spi_tx_u08(btn_extra); // e.g. gamepad extra buttons
-    mcu_hw_spi_end();
+    if(osd_is_visible()) {	       
+      // if OSD is visible, then process events locally
+      menu_joystick_state(joy);	      
+    } else {      
+      mcu_hw_spi_begin();
+      mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+      mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
+      mcu_hw_spi_tx_u08(state->js_index);
+      mcu_hw_spi_tx_u08(joy);
+      mcu_hw_spi_tx_u08(ax); // e.g. gamepad X
+      mcu_hw_spi_tx_u08(ay); // e.g. gamepad Y
+      mcu_hw_spi_tx_u08(btn_extra); // e.g. gamepad extra buttons
+      mcu_hw_spi_end();
+    }
   }
 }
 

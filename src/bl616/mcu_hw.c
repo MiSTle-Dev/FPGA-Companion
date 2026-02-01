@@ -22,6 +22,7 @@
 #include "../debug.h"
 #include "../mcu_hw.h"
 #include "../inifile.h"
+#include "../menu.h"
 #include "bl616_glb.h"
 
 #include "bflb_mtimer.h"
@@ -405,15 +406,20 @@ static void xbox_parse(struct xbox_info_S *xbox) {
     xbox->last_state_y = sThumbLY;
     usb_debugf("XBOX Joy%d: B %02x EB %02x X %02x Y %02x", xbox->js_index, state, state_btn_extra, ax, ay);
 
-    mcu_hw_spi_begin();
-    mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-    mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
-    mcu_hw_spi_tx_u08(xbox->js_index);
-    mcu_hw_spi_tx_u08(state);
-    mcu_hw_spi_tx_u08(ax); // gamepad analog X
-    mcu_hw_spi_tx_u08(ay); // gamepad analog Y
-    mcu_hw_spi_tx_u08(state_btn_extra); // gamepad extra buttons
-    mcu_hw_spi_end();
+    if(osd_is_visible()) {	       
+      // if OSD is visible, then process events locally
+      menu_joystick_state(state);
+    } else {
+      mcu_hw_spi_begin();
+      mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+      mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
+      mcu_hw_spi_tx_u08(xbox->js_index);
+      mcu_hw_spi_tx_u08(state);
+      mcu_hw_spi_tx_u08(ax); // gamepad analog X
+      mcu_hw_spi_tx_u08(ay); // gamepad analog Y
+      mcu_hw_spi_tx_u08(state_btn_extra); // gamepad extra buttons
+      mcu_hw_spi_end();
+    }
   }
 }
 

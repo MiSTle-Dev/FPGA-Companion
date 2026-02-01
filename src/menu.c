@@ -988,3 +988,22 @@ void menu_notify(unsigned long msg) {
   xQueueSendToBackFromISR(menu_queue, &msg,  ( TickType_t ) 0);
 }
 
+void menu_joystick_state(unsigned char state) {
+  static unsigned char prev_state = 0;
+
+  if(state != prev_state) {
+    static unsigned long msg;
+    menu_debugf("Joystick state change to %02x", state);
+
+    msg = 0;
+    if(state & 0x08) msg = MENU_EVENT_UP;      
+    if(state & 0x04) msg = MENU_EVENT_DOWN;      
+    if(state & 0x02) msg = MENU_EVENT_BACK;      
+    if(state & 0x10) msg = MENU_EVENT_SELECT;
+    if(!msg) msg = MENU_EVENT_KEY_RELEASE;
+    menu_notify(msg);
+
+    prev_state = state;
+  }
+}
+
