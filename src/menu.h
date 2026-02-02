@@ -31,5 +31,6 @@ void menu_set_value(unsigned char id, unsigned char value);
 void menu_do(int);
 void menu_notify(unsigned long msg);
 void menu_joystick_state(unsigned char state);
+void menu_button_state(unsigned char state);
 
 #endif // MENU_H

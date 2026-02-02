@@ -315,5 +315,10 @@ void hid_handle_event(void) {
   uint8_t db9 = mcu_hw_spi_tx_u08(0x00);
   mcu_hw_spi_end();
 
-  debugf("DB9: %02x", db9);
+  // forward the DB9 event to the menu system
+  // if the OSD is visible. It's up to the core
+  // to suppress internal joystick handling while
+  // the OSD is open.
+  if(osd_is_visible())
+    menu_joystick_state(db9);
 }

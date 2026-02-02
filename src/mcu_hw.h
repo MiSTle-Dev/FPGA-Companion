@@ -22,6 +22,8 @@ void mcu_hw_spi_begin(void);
 unsigned char mcu_hw_spi_tx_u08(unsigned char b);
 void mcu_hw_spi_end(void);
 
+bool mcu_hw_hid_present(void);
+
 // received a byte via the io port (e.g. rs232 from core)
 void mcu_hw_port_byte(unsigned char);
 
