@@ -30,6 +30,7 @@
 #include "menu.h"
 #include "sysctrl.h"
 #include "debug.h"
+#include "mcu_hw.h"
 
 // this is the u8g2_font_helvR08_te with any trailing
 // spaces removed
@@ -337,8 +338,9 @@ static bool menu_is_root(void) {
 }
 
 static int menu_entry_is_usable(void) {
-  // not root menu? Then all entries are usable
-  if(!menu_is_root()) return 1;
+  // not root menu? Then all entries are usable. Root menu
+  // title is only usable if no hid keyboard or gamepad is present
+  if(!menu_is_root() || !mcu_hw_hid_present()) return 1;
 
   // in root menu only the title is unusable
   return menu_state->selected != 0;
@@ -388,8 +390,16 @@ static void menu_draw_title(const char *s, bool arrow, bool selected) {
   if(arrow) {
     u8g2_DrawXBM(&u8g2, 0, 1, 8, 8, icn_left_bits);    
     x = 8;
+  } else if(!mcu_hw_hid_present()) {
+    // without keyboard or joystick connected, the menu runs in
+    // "single button" mode
+  
+    // no arrow? Then this is the root menu. In that case
+    // a cross is drawn in "single button mode"
+    u8g2_DrawXBM(&u8g2, 0, 1, 8, 8, icn_empty_bits);    
+    x = 10;
   }
-
+  
   // draw title in bold and seperator line
   u8g2_SetFont(&u8g2, u8g2_font_helvB08_tr);
   u8g2_DrawStr(&u8g2, x, MENU_ENTRY_BASE, s);
@@ -660,11 +670,13 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
 // all other entries in step down
 static void menu_pop(void) {
   menu_debugf("menu_pop()");
-  
-  // free first entry in chain and make next one the new first
 
-  // this should never happen ...
-  if(!menu_state) return;
+  // "pop"ing the root menu means to hide it. This will only
+  // happen in single button mode with the roots title
+  if(!menu_state->prev) {
+    osd_enable(OSD_INVISIBLE);
+    return;
+  }
 
   // neither should this as we never really close the
   // root menu
@@ -1007,3 +1019,72 @@ void menu_joystick_state(unsigned char state) {
   }
 }
 
+// ===========  "single button" menu control ================
+
+// The menu is only controlled through the single OSD hw button
+// whenever no keyboard or gamepad is connected.
+
+// three events are supported:
+// <200ms: next menu entry
+// >200ms and < 3s: select menu entry
+// >3s: up one menu level
+
+static TickType_t menu_button_last_event = 0;
+static TimerHandle_t menu_button_timer = NULL;
+
+static void menu_button_timer_handler(__attribute__((unused)) TimerHandle_t arg) {
+  menu_debugf("button timer event");
+
+  menu_notify(MENU_EVENT_BACK);
+  menu_notify(MENU_EVENT_KEY_RELEASE);
+  menu_button_last_event = 0;
+}
+
+void menu_button_state(unsigned char state) {
+  menu_debugf("Button state %02x", state);
+
+  if(mcu_hw_hid_present()) {
+    if(state & 0x01) {
+      // with keyboard and/or gamepad detected implement the same behaviour as
+      // previous versions had
+      menu_notify(osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW);
+    }
+  } else {
+    static unsigned char prev_state = 0;
+
+    if(state != prev_state) {
+      menu_debugf("Button state change to %02x", state);
+
+      // button has been pressed?
+      if(state & 1) {
+	// show the osd if it's closed
+	if(!osd_is_visible())
+	  menu_notify(MENU_EVENT_SHOW);
+	else {	
+	  menu_button_last_event = xTaskGetTickCount();
+	  
+	  if(!menu_button_timer)
+	    menu_button_timer = xTimerCreate( "Button timer", pdMS_TO_TICKS(3000), pdFALSE,
+					      NULL, menu_button_timer_handler);
+	  
+	  xTimerStart(menu_button_timer, 0);
+	}
+      } else if(menu_button_last_event) {
+	xTimerStop(menu_button_timer, 0);
+
+	// button action depends on press duration
+	TickType_t len = xTaskGetTickCount() - menu_button_last_event;
+	if(len > pdMS_TO_TICKS(200)) {
+	  menu_notify(MENU_EVENT_SELECT);
+	  menu_notify(MENU_EVENT_KEY_RELEASE);
+	} else {
+	  menu_notify(MENU_EVENT_DOWN);
+	  menu_notify(MENU_EVENT_KEY_RELEASE);
+	}
+	menu_button_last_event = 0;
+      }
+	
+      prev_state = state;
+    }
+  }
+}

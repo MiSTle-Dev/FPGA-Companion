@@ -47,6 +47,11 @@ typedef struct {
     void *arg;
 } hid_host_event_queue_t;
 
+bool mcu_hw_hid_present(void) {
+#warning "TODO: mcu_hw_hid_present() needs to be implemented"
+  return false;
+}
+
 void hid_host_interface_callback(hid_host_device_handle_t hid_device_handle,
                                  const hid_host_interface_event_t event, void *arg) {
     uint8_t data[16];

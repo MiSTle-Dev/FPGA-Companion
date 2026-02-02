@@ -234,6 +234,8 @@ static struct usb_config {
   } hid_info[CONFIG_USBHOST_MAX_HID_CLASS];
 } usb_config;
   
+struct usb_config *usbh;
+
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t hid_buffer[CONFIG_USBHOST_MAX_HID_CLASS][MAX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XBOX_CLASS][XBOX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[CONFIG_USBHOST_MAX_HID_CLASS][128];
@@ -256,9 +258,24 @@ void usbh_hid_callback(void *arg, int nbytes) {
 
 void usbh_xbox_callback(void *arg, int nbytes) {
   struct xbox_info_S *xbox = (struct xbox_info_S *)arg;
-    xSemaphoreGiveFromISR(xbox->sem, NULL);
-    xbox->nbytes = nbytes;
-  }  
+  xSemaphoreGiveFromISR(xbox->sem, NULL);
+  xbox->nbytes = nbytes;
+}  
+
+bool mcu_hw_hid_present(void) {
+  for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
+    if(usbh->hid_info[i].state == STATE_RUNNING) {
+      if(usbh->hid_info[i].report.type == REPORT_TYPE_MOUSE)    return true;
+      if(usbh->hid_info[i].report.type == REPORT_TYPE_KEYBOARD) return true;      
+    }
+  }
+    
+  for(int i=0;i<CONFIG_USBHOST_MAX_XBOX_CLASS;i++)
+    if(usbh->xbox_info[i].state == STATE_RUNNING) 
+      return true;
+
+  return false;
+}
 
 static void usbh_update(struct usb_config *usb) {
   // check for active hid devices
@@ -523,8 +540,6 @@ static void usbh_xbox_client_thread(void *argument) {
 #endif
   }
 }
-
-struct usb_config *usbh;
 
 static void usbh_hid_thread(void *argument) {
   usb_debugf("Starting usb host task...");

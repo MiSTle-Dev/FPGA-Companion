@@ -168,6 +168,21 @@ uint8_t byteScaleAnalog(int16_t xbox_val)
   return scale_val;
 }
 
+bool mcu_hw_hid_present(void) {
+  for(int idx=0;idx<MAX_HID_DEVICES;idx++) {
+    if(hid_device[idx].dev_addr != 0xff) {    
+      if(hid_device[idx].rep.type == REPORT_TYPE_KEYBOARD) return true;
+      if(hid_device[idx].rep.type == REPORT_TYPE_JOYSTICK) return true;
+    }
+  }
+    
+  for(int idx=0;idx<MAX_XBOX_DEVICES;idx++)
+    if(xbox_state[idx].dev_addr != 0xff)
+      return true;
+    
+  return false;
+}
+
 // check for presence of usb devices and drive leds accordingly
 static void usb_check_devices(void) {
 #ifdef LED_MOUSE_PIN
