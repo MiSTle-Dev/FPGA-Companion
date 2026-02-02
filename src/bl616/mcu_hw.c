@@ -68,15 +68,18 @@
 #define ENABLE_JTAG
 #define PIN_JTAGSEL  GPIO_PIN_28
 #define PIN_UART_TX  GPIO_PIN_30
+#define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_NANO20K
 #warning "Building for TANG_NANO20K internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define ENABLE_JTAG
 #define PIN_UART_TX  GPIO_PIN_11
+#define PIN_UART_RX  GPIO_PIN_22
 #elif M0S_DOCK
 #warning "Building for M0S DOCK BL616"
 #define PIN_UART_TX  GPIO_PIN_21
+#define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_MEGA138KPRO
 #warning "Building for TANG_MEGA138KPRO internal BL616"
 #include "../jtag.h"
@@ -84,6 +87,7 @@
 #define ENABLE_JTAG
 #define PIN_JTAGSEL  GPIO_PIN_10
 #define PIN_UART_TX  GPIO_PIN_28
+#define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_MEGA60K
 #warning "Building for TANG_MEGA60K internal BL616"
 #include "../jtag.h"
@@ -91,6 +95,7 @@
 #define ENABLE_JTAG
 #define PIN_JTAGSEL  GPIO_PIN_28
 #define PIN_UART_TX  GPIO_PIN_30
+#define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_PRIMER25K
 #warning "Building for TANG_PRIMER25K internal BL616"
 #include "../jtag.h"
@@ -98,6 +103,7 @@
 #define ENABLE_JTAG
 #define PIN_JTAGSEL  GPIO_PIN_11
 #define PIN_UART_TX  GPIO_PIN_12
+#define PIN_UART_RX  GPIO_PIN_22
 #endif
 
 static struct bflb_device_s *gpio;
@@ -852,45 +858,15 @@ static void peripheral_clock_init(void) {
 static void console_init() {
   gpio = bflb_device_get_by_name("gpio");
 
-  // M0S_DOCK
-  /* GPIO 21 TX */
-  /* GPIO 22 RX */
-  // TANG_NANO20K
-  /* GPIO 11 TX */
-  /* GPIO 13 RX */
-  // TANG_CONSOLE60K
-  /* GPIO 21 TX USB-C SBU1 */
-  /* GPIO 22 RX USB-C SBU2 */
-  /* GPIO 27 default UART RX, FPGA U15 TX */
-  /* GPIO 28 default UART TX, FPGA V15 RX */
-  /* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
-  /* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK */
-  // TANG_MEGA138KPRO
-  /* GPIO 10 default UART TX, FPGA N16, RX */
-  /* GPIO 11 default UART RX, FPGA P15, TX */
-  /* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
-  /* GPIO 28 default PLL1_TWI SCL, FPGA K25, SCL */
-  // TANG_MEGA60K
-  /* RX no FPGA connection available, adhoc wiring needed */
-  /* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, 31004 assembly,  */
-  /* GPIO 27 default UART RX, FPGA U15 TX */
-  /* GPIO 28 default UART TX, FPGA V15 RX */
-  /* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK, only 31005 assembly */
-  // TANG_PRIMER25K
-  /* GPIO 11 default UART TX */
-  /* GPIO 10 default UART RX */
-  /* GPIO_PIN_20 access at LED6, not usable */
-  /* GPIO_PIN_12 access at button S3, Capacitor C22 need to be removed */
-
 #ifdef CONFIG_CONSOLE_WO
   wo = bflb_device_get_by_name("wo");
   bflb_wo_uart_init(wo, CONSOLE_BAUDRATE, PIN_UART_TX);
   bflb_wo_set_console(wo);
 #else
   bflb_gpio_uart_init(gpio, PIN_UART_TX, GPIO_UART_FUNC_UART0_TX);
-  bflb_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX); /* M0S Dock */
+  bflb_gpio_uart_init(gpio, PIN_UART_RX, GPIO_UART_FUNC_UART0_RX);
 
-  struct bflb_uart_config_s cfg = { 0 };
+  struct bflb_uart_config_s cfg;
   cfg.baudrate = CONSOLE_BAUDRATE;
   cfg.data_bits = UART_DATA_BITS_8;
   cfg.stop_bits = UART_STOP_BITS_1;
@@ -899,7 +875,7 @@ static void console_init() {
   cfg.tx_fifo_threshold = 7;
   cfg.rx_fifo_threshold = 7;
   cfg.bit_order = UART_LSB_FIRST;
-
+  
   uart0 = bflb_device_get_by_name("uart0");
   
   bflb_uart_init(uart0, &cfg);
@@ -1050,10 +1026,8 @@ void mcu_hw_init(void) {
   mcu_hw_spi_init();
 
 #ifndef CONFIG_CONSOLE_WO
-#ifdef M0S_DOCK
   uart0 = bflb_device_get_by_name("uart0");
   shell_init_with_task(uart0);
-#endif
 #endif
 
 #ifdef M0S_DOCK
@@ -1069,12 +1043,6 @@ void mcu_hw_init(void) {
 #endif
   usb_host();
 }
-
-#ifndef CONFIG_CONSOLE_WO
-#ifdef M0S_DOCK
-  SHELL_CMD_EXPORT_ALIAS(lsusb, lsusb, ls usb);
-#endif
-#endif
 
 void stop_hid(void) {
   debugf("stop HID and XBOX tasks");
@@ -1121,22 +1089,22 @@ void mcu_hw_reset(void) {
   stop_hid();
 
   gpio = bflb_device_get_by_name("gpio");
-  //bflb_irq_disable(gpio->irq_num);
+  bflb_irq_disable(gpio->irq_num);
 
   bflb_gpio_deinit(gpio, GPIO_PIN_0);
   bflb_gpio_deinit(gpio, GPIO_PIN_1);
   bflb_gpio_deinit(gpio, GPIO_PIN_2);
   bflb_gpio_deinit(gpio, GPIO_PIN_3);
 
-  debugf("usb host deinit");
-  usbh_deinitialize(0);
-  //bflb_mtimer_delay_ms(250);
+  bflb_gpio_irq_detach(SPI_PIN_IRQ);
+  bflb_spi_deinit(spi_dev);
 
-  //debugf("start usb hid device mode");
-  //hid_keyboard_init(0, USB_BASE);
+  usbh_deinitialize(0);
+  bflb_mtimer_delay_ms(10);
+
+  hid_keyboard_init(0, USB_BASE);
   debugf("deinit done and ready for POR reset");
-  //bflb_mtimer_delay_ms(100);
-  //GLB_SW_POR_Reset();
+  bflb_mtimer_delay_ms(100);
   bl_sys_reset_por();
   while (1) {
     /*empty dead loop*/
@@ -2077,3 +2045,40 @@ __attribute__((weak)) uint32_t get_fattime(void)
 }
 #endif
 
+#ifndef CONFIG_CONSOLE_WO
+  SHELL_CMD_EXPORT_ALIAS(lsusb, lsusb, ls usb);
+#endif
+
+// M0S_DOCK
+/* GPIO 21 default UART TX */
+/* GPIO 22 default UART RX */
+
+// TANG_NANO20K
+/* GPIO 11 default UART TX */
+/* GPIO 13 default UARTRX */
+
+// TANG_CONSOLE60K
+/* GPIO 27 default UART RX, FPGA U15 TX */
+/* GPIO 28 default UART TX, FPGA V15 RX */
+/* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
+/* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK */
+/* GPIO 21 USB-C SBU1 */
+/* GPIO 22 USB-C SBU2 */
+
+// TANG_MEGA138KPRO
+/* GPIO 10 default UART TX, FPGA N16, RX */
+/* GPIO 11 default UART RX, FPGA P15, TX */
+/* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
+/* GPIO 28 default PLL1_TWI SCL, FPGA K25, SCL */
+
+// TANG_MEGA60K
+/* GPIO 27 default UART RX, FPGA U15 TX */
+/* GPIO 28 default UART TX, FPGA V15 RX */
+/* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK, only 31005 assembly */
+/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, 31004 assembly,  */
+
+// TANG_PRIMER25K
+/* GPIO 11 default UART TX */
+/* GPIO 10 default UART RX */
+/* GPIO_PIN_20 access at LED6, not usable for UART, unknown reason */
+/* GPIO_PIN_12 access at button S3, Capacitor C22 need to be removed */
