@@ -81,9 +81,11 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
 	// Caution: Since the OSD closes on the press event, the following
 	// release event will be sent into the core. The core should thus
 	// cope with release events that did not have a press event before
-	if(buffer[2+i] == inifile_option_get(INIFILE_OPTION_HOTKEY))
-	  msg = osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW;
-	else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
+	if(buffer[2+i] == inifile_option_get(INIFILE_OPTION_HOTKEY)) {
+	  // for now, shift-F12 activates the system menu
+	  if(buffer[0] & 0x22) msg = MENU_EVENT_SYSTEM;
+	  else	  msg = osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW;
+	} else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
  	  msg = MENU_EVENT_BACK;
 	else {
 	  if(!osd_is_visible())

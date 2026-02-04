@@ -852,16 +852,63 @@ static void ws_led_timer(__attribute__((unused)) TimerHandle_t pxTimer) {
 }
 #endif
 
+// keep track of one single device only, by now
+static int msc_dev_addr = -1;
+static volatile bool msc_busy = 0;
+
+static bool disk_io_complete(uint8_t dev_addr, tuh_msc_complete_data_t const * cb_data) {
+  usb_debugf("disk_io_complete(%d)", dev_addr);
+  (void) dev_addr; (void) cb_data;
+  msc_busy = 0;
+  return true;
+}
+
+// This should never be called from the USB task itself
+void mcu_hw_usb_sector_read(void *buffer, int sector) {
+  usb_debugf("mcu_hw_usb_sector_read(%d, %p, %d)", msc_dev_addr, buffer, sector);
+  if(msc_dev_addr < 0 || msc_busy) return;
+  
+  msc_busy = 1;
+  tuh_msc_read10(msc_dev_addr, 0, buffer, sector, 1, disk_io_complete, 0);
+  while(msc_busy);
+}
+
+bool mcu_hw_usb_msc_present(void) {
+  return msc_dev_addr >= 0;
+}
+
 // Invoked when a device with MassStorage interface is mounted
 void tuh_msc_mount_cb(uint8_t dev_addr) {
   uint16_t vid, pid;
   tuh_vid_pid_get(dev_addr, &vid, &pid);
   usb_debugf("[%04x:%04x][%u] MSC mounted", vid, pid, dev_addr);
+
+  if(msc_dev_addr >= 0) {
+    usb_debugf("Skipping additional device");
+    return;
+  }
+
+  if(tuh_msc_get_block_size(dev_addr, 0) != 512) {
+    usb_debugf("Unsupported block size %lu", tuh_msc_get_block_size(dev_addr, 0));
+    return;
+  }
+  
+  // Get capacity of device
+  usb_debugf("Block count: %lu", tuh_msc_get_block_count(dev_addr, 0));
+  msc_dev_addr = dev_addr;
+
+  menu_notify(MENU_EVENT_USB_MOUNTED);
 }
 
 // Invoked when a device with MassStorage interface is unmounted
-void tuh_msc_umount_cb(__attribute__((unused)) uint8_t dev_addr) {
-  usb_debugf("MSC unmounted");
+void tuh_msc_umount_cb(uint8_t dev_addr) {
+  usb_debugf("[%u] MSC unmounted", dev_addr);
+
+  // mark device as unused
+  if(msc_dev_addr == dev_addr) {
+    msc_dev_addr = -1;   
+    menu_notify(MENU_EVENT_USB_UMOUNTED);
+  }
 }
 
 extern char __StackLimit, __bss_end__;   
@@ -1361,4 +1408,8 @@ void mcu_hw_init(void) {
 #ifdef ENABLE_JTAG
   mcu_hw_jtag_init();
 #endif
+}
+
+void mcu_hw_upload_core(char *name) {
+  debugf("Request to upload core %s", name);  
 }

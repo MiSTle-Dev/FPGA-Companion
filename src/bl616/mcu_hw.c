@@ -1993,6 +1993,7 @@ void jtag_toggleClk(uint32_t clk_len)
 
 // USB host MSC support
 static usb_osal_thread_t usbh_msc_handle = NULL;
+static bool usb_msc_mounted = false;
 
 static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
 {
@@ -2011,6 +2012,9 @@ static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
 
   fatfs_usbh_driver_register(msc_class);
 
+  usb_msc_mounted = true;
+  menu_notify(MENU_EVENT_USB_MOUNTED);
+
     // clang-format off
 delete: 
     usb_osal_thread_delete(NULL);
@@ -2024,6 +2028,8 @@ void usbh_msc_run(struct usbh_msc *msc_class)
 
 void usbh_msc_stop(struct usbh_msc *msc_class)
 {
+  menu_notify(MENU_EVENT_USB_UMOUNTED);
+  usb_msc_mounted = false;
 }
 
 #ifdef CONFIG_BFLOG
@@ -2063,6 +2069,14 @@ __attribute__((weak)) uint32_t get_fattime(void)
 #ifndef CONFIG_CONSOLE_WO
   SHELL_CMD_EXPORT_ALIAS(lsusb, lsusb, ls usb);
 #endif
+
+void mcu_hw_upload_core(char *name) {
+  debugf("Request to upload core %s", name);  
+}
+
+bool mcu_hw_usb_msc_present(void) {
+  return usb_msc_mounted;
+}
 
 // M0S_DOCK
 /* GPIO 21 default UART TX */

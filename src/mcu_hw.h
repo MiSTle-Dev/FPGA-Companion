@@ -23,6 +23,9 @@ unsigned char mcu_hw_spi_tx_u08(unsigned char b);
 void mcu_hw_spi_end(void);
 
 bool mcu_hw_hid_present(void);
+void mcu_hw_usb_sector_read(void *buffer, int sector);
+void mcu_hw_upload_core(char *name);
+bool mcu_hw_usb_msc_present(void);
 
 // received a byte via the io port (e.g. rs232 from core)
 void mcu_hw_port_byte(unsigned char);
