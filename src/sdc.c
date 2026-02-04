@@ -34,7 +34,7 @@ static SemaphoreHandle_t sdc_sem;
 static FATFS fs;
 
 // disk and rom images
-static FIL fil[MAX_DRIVES+MAX_IMAGES];
+static FIL fil[MAX_DRIVES+MAX_IMAGES+MAX_CORES];
 static DWORD *lktbl[MAX_DRIVES];
 
 static void sdc_spi_begin(void) {
@@ -179,16 +179,40 @@ static SDC_RESULT sdc_ioctl(BYTE cmd, void *buff) {
 DRESULT sdc_disk_ioctl(__attribute__((unused)) BYTE pdrv, BYTE cmd, void *buff) { return sdc_ioctl(cmd, buff); }
 DRESULT sdc_disk_read(__attribute__((unused)) BYTE pdrv, BYTE *buff, LBA_t sector, UINT count) { return sdc_read(buff, sector, count); }
 DRESULT sdc_disk_write(__attribute__((unused)) BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count) { return sdc_write(buff, sector, count); }
-DSTATUS sdc_disk_status(BYTE pdrv) { return 0; }
+DSTATUS sdc_disk_status(__attribute__((unused)) BYTE pdrv) { return 0; }
 DSTATUS sdc_disk_initialize(BYTE pdrv) { sdc_debugf("sdc_initialize(%d)", pdrv); return 0; }
 
 #else
 #ifndef DEV_SD  // bouffalo sdk sets DEV_SD
 // FatFS variant in bouffalo SDK defines DEV_SD
-DRESULT disk_ioctl(__attribute__((unused)) BYTE pdrv, BYTE cmd, void *buff) { return sdc_ioctl(cmd, buff); }
-DRESULT disk_read(__attribute__((unused)) BYTE pdrv, BYTE *buff, LBA_t sector, UINT count) { return sdc_read(buff, sector, count); }
-DRESULT disk_write(__attribute__((unused)) BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count) { return sdc_write(buff, sector, count); }
-DSTATUS disk_status(__attribute__((unused)) BYTE pdrv) { return 0; }
+DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
+  sdc_debugf("disk_ioctl(%d, %d)", pdrv, cmd);  
+  return sdc_ioctl(cmd, buff);
+}
+
+DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count) {
+  sdc_debugf("disk_read(%d, %lu)", pdrv, sector);  
+
+  if(pdrv == 1) {
+    mcu_hw_usb_sector_read(buff, sector);
+    return RES_OK;
+  }
+    
+  return sdc_read(buff, sector, count);
+}
+
+DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count) {
+  if(pdrv == 1) return RES_WRPRT;  
+  return sdc_write(buff, sector, count);
+}
+
+DSTATUS disk_status(BYTE pdrv) {
+  if(pdrv == 1 && !mcu_hw_usb_msc_present()) 
+    return RES_NOTRDY;
+
+  return RES_OK;
+}
+
 DSTATUS disk_initialize(__attribute__((unused)) BYTE pdrv) { return 0; }
 #else
 static int sdc_status() { return 0; }
@@ -271,8 +295,10 @@ static int fs_init() {
 
 // -------------- higher layer routines provided to the firmware ----------------
  
-// keep track of working directory for each drive
-static char *cwd[MAX_DRIVES+MAX_IMAGES];
+// keep track of working directory for each drive and a core that may
+// be selected from the system menu on setups that supports USB/SD card
+// loadimg of cores
+static char *cwd[MAX_DRIVES+MAX_IMAGES+MAX_CORES];
 static char *image_name[MAX_DRIVES+MAX_IMAGES];
 
 // a FreeRTOS'd version of strdup
@@ -284,6 +310,7 @@ static inline char *StrDup(const char *s) {
 
 void sdc_set_default(int drive, const char *name) {
   sdc_debugf("set default %d: %s", drive, name);
+  if(drive >= MAX_DRIVES+MAX_IMAGES) return;
   
   // A valid filename will currently always begin with the mount point
   // This is actually handled differently with different firmware variants (bl616/pico/...)
@@ -501,15 +528,19 @@ int sdc_image_open(int drive, char *name) {
   if(drive < MAX_DRIVES) {
     // tell core that the "disk" has been removed
     sdc_image_inserted(drive, 0);
-  } else {
+  } else if(drive < MAX_DRIVES+MAX_IMAGES) {
     // TODO: report image de-selection
     sdc_rom_image_selected(drive-MAX_DRIVES, 0);
+  } else {    
+    sdc_debugf("CORE open");
   }
     
+  if(drive < MAX_DRIVES+MAX_IMAGES) {
   // forget about any previous name
   if(image_name[drive]) {
     vPortFree(image_name[drive]);
     image_name[drive] = NULL;
+  }
   }
   
   // nothing to be inserted? Do nothing!
@@ -595,7 +626,7 @@ int sdc_image_open(int drive, char *name) {
 
     // allow direct mapping if possible
     if(start_sector) sdc_image_enable_direct(drive, start_sector);
-  } else {
+  } else if(drive < MAX_DRIVES+MAX_IMAGES) {
     char image = drive-MAX_DRIVES;
     
     sdc_debugf("IMG %d: Mounting %s", image, fname);
@@ -636,13 +667,30 @@ int sdc_image_open(int drive, char *name) {
     
     // remember current image name
     image_name[drive] = StrDup(name);    
-  }
+  } else
+    mcu_hw_upload_core(fname);
     
   return 0;
 }
 
+static bool sdc_cwd_is_root(int drive) {
+  // no cwd set is also treated as root
+  if(!cwd[drive]) return true;
+
+  // as well as an empty cwd
+  if(!cwd[drive][0]) return true;
+
+  if(strcmp(cwd[drive], "/") == 0) return true;
+  if(strcmp(cwd[drive], "/sd") == 0) return true;
+  if(strcmp(cwd[drive], "/usb") == 0) return true;
+
+  return false;
+}
+
 sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
   static sdc_dir_entry_t *sdc_dir = NULL;
+  
+  sdc_debugf("sdc_readdir(%d,%s,%s)", drive, name, cwd[drive]);
   
   int dir_compare(sdc_dir_entry_t *d1, sdc_dir_entry_t *d2) {
     // comparing directory with regular file? 
@@ -750,7 +798,7 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
   sdc_dir = NULL;
   
   // add "<UP>" entry for anything but root
-  if(strcmp(cwd[drive], CARD_MOUNTPOINT) != 0) {
+  if(!sdc_cwd_is_root(drive)) {
     strcpy(fno.fname, "..");
     fno.fattrib = AM_DIR;
     fno.fsize = 0;
@@ -798,7 +846,7 @@ int sdc_init(void) {
   sdc_debugf("---- SDC init ----");
 
   if(fs_init() == 0) {
-    // setup paths
+    // setup paths to default to the sd card
     for(int d=0;d<MAX_DRIVES+MAX_IMAGES;d++) {
       cwd[d] = StrDup(CARD_MOUNTPOINT);
       image_name[d] = NULL;
@@ -806,7 +854,18 @@ int sdc_init(void) {
     sdc_debugf("SD card is ready");
   }
 
+  // clear the cwd for the core slots as 
+  for(int d=MAX_DRIVES+MAX_IMAGES;d<MAX_DRIVES+MAX_IMAGES+MAX_CORES;d++)
+    cwd[d] = NULL;
+    
   return 0;
+}
+
+void sdc_set_cwd(int drive, char *path) {
+  sdc_debugf("Setting cwd[%d] to %s", drive, path);
+  
+  if(cwd[drive]) vPortFree(cwd[drive]);
+  cwd[drive] = StrDup(path);  
 }
 
 void sdc_mount_defaults(void) {

@@ -94,10 +94,9 @@ typedef struct
 
 // ---------------- core ----------------
 
-static bool report_is_usable(uint16_t bit_count, uint8_t report_complete, hid_report_t *conf)
-{
+static bool report_is_usable(uint16_t bit_count, uint8_t report_complete, hid_report_t *conf) {
 	hidp_debugf("  - total bit count: %d (%d bytes, %d bits)", 
-                bit_count, (bit_count + 7) / 8, bit_count % 8);
+	      bit_count, bit_count/8, bit_count%8);
 
     // FIX: round report size up
     conf->report_size = (bit_count + 7) / 8;
@@ -150,22 +149,21 @@ static bool report_is_usable(uint16_t bit_count, uint8_t report_complete, hid_re
 	return false;
 }
 
-bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t *conf, uint16_t *rbytes)
-{
+bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t *conf, uint16_t *rbytes) {
 	int8_t app_collection = 0;
 	int8_t phys_log_collection = 0;
 	uint8_t skip_collection = 0;
-    int8_t generic_desktop = -1;
+	int8_t generic_desktop = -1;   // depth at which first gen_desk was found
 	uint8_t collection_depth = 0;
 
 	uint8_t i;
 
+	//
 	uint8_t buttons = 0;
 	uint8_t report_size = 0, report_count = 0;
     uint16_t bit_count = 0;
-
-    int32_t logical_minimum = 0, logical_maximum = 0;
-    int32_t physical_minimum = 0, physical_maximum = 0;
+    int32_t logical_minimum=0, logical_maximum=0;
+    int32_t physical_minimum=0, physical_maximum=0;
 
     // FIX: set active Report ID at the end
     uint8_t active_report_id = 0;
@@ -181,8 +179,7 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
 	uint8_t btns = 0;
 	int8_t hat = -1;
 
-    for (i = 0; i < MAX_AXES; i++)
-        axis[i] = -1;
+	for (i=0; i<MAX_AXES; i++) axis[i] = -1;
 
 	conf->type = REPORT_TYPE_NONE;
 
@@ -398,32 +395,29 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                     }
                 }
 
-                for (int c = 0; c < MAX_AXES; c++)
-                {
-                    if (axis[c] >= 0)
-                    {
+					for(int c=0;c<MAX_AXES;c++) {
+						if(axis[c] >= 0) {
 							uint16_t cnt = bit_count + report_size * axis[c];
-                        hidp_debugf("  (%c-AXIS @ %d (byte %d, bit %d))", 'X' + c, cnt, cnt / 8, cnt & 7);
-                        if (conf->type == REPORT_TYPE_JOYSTICK || conf->type == REPORT_TYPE_MOUSE)
-                        {
+							hidp_debugf("  (%c-AXIS @ %d (byte %d, bit %d))", 'X'+c,
+							  cnt, cnt/8, cnt&7);
+
+							if((conf->type == REPORT_TYPE_JOYSTICK) || (conf->type == REPORT_TYPE_MOUSE)) {
+								// save in joystick report
 								conf->joystick_mouse.axis[c].offset = cnt;
 								conf->joystick_mouse.axis[c].size = report_size;
-                            conf->joystick_mouse.axis[c].logical.min = (int16_t)logical_minimum;
-                            conf->joystick_mouse.axis[c].logical.max = (int16_t)logical_maximum;
-                            if (c == 0)
-                                report_complete |= JOY_MOUSE_REQ_AXIS_X;
-                            if (c == 1)
-                                report_complete |= JOY_MOUSE_REQ_AXIS_Y;
+								conf->joystick_mouse.axis[c].logical.min = logical_minimum;
+								conf->joystick_mouse.axis[c].logical.max = logical_maximum;
+								if(c==0) report_complete |= JOY_MOUSE_REQ_AXIS_X;
+								if(c==1) report_complete |= JOY_MOUSE_REQ_AXIS_Y;
 							}
 						}
 					}
 
-                if (hat >= 0 && conf->type == REPORT_TYPE_JOYSTICK)
-                {
-						uint16_t cnt = bit_count + report_size * hat;
+                if (hat >= 0 && conf->type == REPORT_TYPE_JOYSTICK) {
+					uint16_t cnt = bit_count + report_size * hat;
                     hidp_debugf("  (HAT @ %d (byte %d, bit %d), size %d)", cnt, cnt / 8, cnt & 7, report_size);
-							conf->joystick_mouse.hat.offset = cnt;
-							conf->joystick_mouse.hat.size = report_size;
+					conf->joystick_mouse.hat.offset = cnt;
+					conf->joystick_mouse.hat.size = report_size;
                     conf->joystick_mouse.hat.logical.min = (int16_t)logical_minimum;
                     conf->joystick_mouse.hat.logical.max = (int16_t)logical_maximum;
                     conf->joystick_mouse.hat.physical.min = (int16_t)physical_minimum;

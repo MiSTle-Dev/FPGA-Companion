@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <ff.h>
+#include <diskio.h>
 
 #ifdef ESP_PLATFORM
 #include <freertos/FreeRTOS.h>
@@ -59,7 +60,7 @@ typedef struct menu_state {
   int selected; 
   int scroll;
   union {
-    config_menu_t *menu;  
+    const config_menu_t *menu;  
     config_fsel_t *fsel;
   };
   
@@ -133,7 +134,7 @@ static void menu_setup_variable(char id, int value) {
   }
 }
 
-static void menu_setup_menu_variables(config_menu_t *menu) {
+static void menu_setup_menu_variables(const config_menu_t *menu) {
   config_menu_entry_t *me = menu->entries;
   while(me) {
     if(me->type == CONFIG_MENU_ENTRY_MENU)
@@ -318,29 +319,35 @@ static void menu_push(void) {
   menu_state = state;
 }
 
-static int menu_count_entries(void) {
+static int menu_len(const config_menu_t *menu) {
   int entries = 0;
-
-  if(menu_state->type == CONFIG_MENU_ENTRY_MENU) {
-    config_menu_entry_t *me = menu_state->menu->entries;
+  config_menu_entry_t *me = menu->entries;
     while(me) {
       entries++;
       me = me->next;
     }
-  } else if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR)
+  return entries;
+}
+
+static int menu_count_entries(void) {
+  int entries = 0;
+
+  if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
+    entries = menu_len(menu_state->menu);
+  else if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR)
     entries = dir_len(menu_state->dir);
     
   return entries+1;  // title is also an entry
 }
 
-static bool menu_is_root(void) {
-  return menu_state->menu == cfg->menu;
+static bool menu_is_root(const config_menu_t *menu) {
+  return menu == cfg->menu;
 }
 
 static int menu_entry_is_usable(void) {
   // not root menu? Then all entries are usable. Root menu
   // title is only usable if no hid keyboard or gamepad is present
-  if(!menu_is_root() || !mcu_hw_hid_present()) return 1;
+  if(!menu_is_root(menu_state->menu) || !mcu_hw_hid_present()) return 1;
 
   // in root menu only the title is unusable
   return menu_state->selected != 0;
@@ -555,7 +562,34 @@ static int menu_wrap_text(int y_in, const char *msg) {
 }
 
 // draw a dialog box
+static bool dialog_opened_osd = false;
+static TimerHandle_t dialog_disappear_timer = NULL;  
+
+static bool menu_dialog_is_open(void) {
+  if(!dialog_disappear_timer) return false;  // no timer -> no dialog
+  return xTimerIsTimerActive(dialog_disappear_timer) != pdFALSE;
+}
+
+static void menu_dialog_timeout(__attribute__((unused)) TimerHandle_t arg) {
+  menu_debugf("Close dialog");
+  if(dialog_opened_osd) osd_enable(OSD_INVISIBLE);    
+  else                  menu_do(0);
+}
+
+static void menu_dialog_close(void) {
+  xTimerStop(dialog_disappear_timer, 0);
+  menu_dialog_timeout(NULL);
+}
+  
 void menu_draw_dialog(const char *title,  const char *msg) {
+  // check if osd is already visible
+  dialog_opened_osd = !osd_is_visible();
+  if(dialog_opened_osd) osd_enable(OSD_VISIBLE);
+
+  dialog_disappear_timer = xTimerCreate( "Dialog timer", pdMS_TO_TICKS(2000), pdFALSE,
+					 NULL, menu_dialog_timeout);	  
+  xTimerStart(dialog_disappear_timer, 0);
+  
   u8g2_ClearBuffer(&u8g2);
 
   // MENU_LINE_Y is the height of the title incl line
@@ -577,42 +611,42 @@ void menu_draw_dialog(const char *title,  const char *msg) {
   u8g2_SendBuffer(&u8g2);
 }
 
-void menu_draw(void) {
-  // draw a test dialog box
-  //  menu_draw_dialog("Title", "This is a rather long text which needs to wrap!");  return;
-  
+static void menu_draw(const config_menu_t *menu, int selected, int scroll) {
   u8g2_ClearBuffer(&u8g2);
  
-  if(menu_state->type == CONFIG_MENU_ENTRY_MENU) {
     // =============== draw a regular menu =================
-    menu_debugf("drawing '%s'", menu_state->menu->label);  
+  menu_debugf("drawing '%s'", menu->label);  
     
     // draw the title
-    menu_draw_title(menu_state->menu->label, !menu_is_root(), menu_state->selected == 0);
+  menu_draw_title(menu->label, !menu_is_root(menu), selected == 0);
 
-    config_menu_entry_t *entry = menu_state->menu->entries;
-    for(int i=0;i<menu_state->scroll;i++) entry=entry->next;  // skip first "scroll" entries
+  config_menu_entry_t *entry = menu->entries;
+  for(int i=0;i<scroll;i++) entry=entry->next;  // skip first "scroll" entries
     for(int i=0;i<4 && entry;i++,entry=entry->next)           // then draw up to four entries
-      menu_draw_entry(entry, i, menu_state->selected == menu_state->scroll+i+1);    
-  } else {
+    menu_draw_entry(entry, i, selected == scroll+i+1);    
+  
+  u8g2_SendBuffer(&u8g2);
+}
+
+static void menu_fsel_draw(config_fsel_t *fsel, sdc_dir_entry_t *dir, int selected, int scroll) {
+  u8g2_ClearBuffer(&u8g2);
+
     // =============== draw a fileselector =================    
-    menu_debugf("drawing '%s'", menu_state->fsel->label);
+  menu_debugf("drawing '%s'", fsel->label);
     
-    menu_draw_title(menu_state->fsel->label, true, menu_state->selected == 0);
+  menu_draw_title(fsel->label, true, selected == 0);
     menu_timer_enable(false);
     fs_scroll_cur = -1;
 
     // draw up to four entries
-    for(int i=0;i<4 && i<dir_len(menu_state->dir)-menu_state->scroll;i++) {            
-      menu_debugf("file %s", dir_entry(menu_state->dir, i+menu_state->scroll)->name);
-      menu_fs_draw_entry(i, dir_entry(menu_state->dir, i+menu_state->scroll));
+  for(int i=0;i<4 && i<dir_len(dir)-scroll;i++) {            
+    menu_debugf("file %s", dir_entry(dir, i+scroll)->name);
+    menu_fs_draw_entry(i, dir_entry(dir, i+scroll));
     }
-  }
-    
   u8g2_SendBuffer(&u8g2);
 }
 
-void menu_goto(config_menu_t *menu) {
+void menu_goto(const config_menu_t *menu) {
   menu_push();
   
   // prepare menu state ...
@@ -623,6 +657,8 @@ void menu_goto(config_menu_t *menu) {
 }
 
 static void menu_file_selector_open(config_menu_entry_t *entry) {
+  menu_debugf("menu_file_selector_open()");
+
   // the file selector can either be opened from disk image file
   // selectors or from rom image selectors  
   if(entry->type == CONFIG_MENU_ENTRY_IMAGE) {
@@ -635,6 +671,24 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
     fsel_state.index = entry->fsel->index;
     fsel_state.none_str = NULL;
     fsel_state.none_icn = NULL;
+  }
+    
+  // The file selector usually works on the sd card as that is what
+  // the cores are reading data from. But cores may be loaded from
+  // USB as well. The file selectors default path will begin with
+  // "/usb" in that case
+
+  // Initialize current working directory if needed
+  if(!sdc_get_cwd(fsel_state.index)) {
+    bool is_usb = strncasecmp(entry->fsel->def, "/usb", 4) == 0;
+    
+    // check if USB is to be used but isn't present
+    if(is_usb && (disk_status(1) != RES_OK)) {
+      menu_draw_dialog("USB Error", "No USB mass storage device connected!");
+      return;
+    }
+
+    sdc_set_cwd(fsel_state.index, is_usb?"/usb":"/sd");
   }
     
   menu_push();
@@ -858,7 +912,10 @@ static void menu_key_repeat(__attribute__((unused)) TimerHandle_t arg) {
     if(menu_key_last_event == MENU_EVENT_PGUP)   menu_entry_go(-4);
     if(menu_key_last_event == MENU_EVENT_PGDOWN) menu_entry_go( 4);
 
-    menu_draw();
+    if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
+      menu_draw(menu_state->menu, menu_state->selected, menu_state->scroll);
+    else
+      menu_fsel_draw(menu_state->fsel, menu_state->dir, menu_state->selected, menu_state->scroll);
   
     xTimerChangePeriod( menu_key_repeat_timer, pdMS_TO_TICKS(100), 0);
     xTimerStart( menu_key_repeat_timer, 0 );
@@ -871,6 +928,15 @@ void menu_stop_repeat(void) {
 }
 
 void menu_do(int event) {
+  //
+  if(menu_dialog_is_open()) {
+    // if the dialog is open, then any key event will close it
+    if((event >= MENU_EVENT_UP) && (event <= MENU_EVENT_BACK))
+      menu_dialog_close();
+
+    return;
+  }
+
   // -1 is a timer event used to scroll the current file name if it's to long
   // for the OSD
   if(event < 0) {
@@ -920,7 +986,14 @@ void menu_do(int event) {
     if(event == MENU_EVENT_SELECT) menu_select();
     if(event == MENU_EVENT_BACK)   menu_back();
   }
-  menu_draw();
+
+  // if no dialog is open, then draw menu/fsel
+  if(!menu_dialog_is_open()) {  
+    if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
+      menu_draw(menu_state->menu, menu_state->selected, menu_state->scroll);
+    else
+      menu_fsel_draw(menu_state->fsel, menu_state->dir, menu_state->selected, menu_state->scroll);  
+  }
 }
 
 TimerHandle_t menu_timer_handle;
@@ -939,6 +1012,22 @@ static void menu_timer(__attribute__((unused)) TimerHandle_t pxTimer) {
   xQueueSendToBack(menu_queue, &msg,  ( TickType_t ) 0);
 }
 
+static const config_menu_t system_menu_main;
+
+// check if menu is the system menu or a submenu of it xyz
+static bool menu_is_systemmenu(void) {
+  menu_state_t *ms = menu_state;
+  
+  while(ms) {
+    if((ms->type == CONFIG_MENU_ENTRY_MENU) &&
+       (ms->menu == &system_menu_main))
+      return true;
+
+    ms = ms->prev;
+  }
+  return false;
+}  
+
 static void menu_task(__attribute__((unused)) void *parms) {
   menu_debugf("task running");
 
@@ -948,6 +1037,39 @@ static void menu_task(__attribute__((unused)) void *parms) {
     long cmd;
     xQueueReceive(menu_queue, &cmd, 0xffffffffUL);
     menu_debugf("command %ld", cmd);
+
+    if(cmd == MENU_EVENT_SYSTEM) {
+      menu_debugf("system menu requested");
+      
+      // open osd if it's not open, yet
+      if(!osd_is_visible()) osd_enable(OSD_VISIBLE);
+
+      // check if we are already in system menu
+      if(!menu_is_systemmenu()) {
+	menu_goto(&system_menu_main);
+	menu_do(0);   // (re)draw menu
+      } else
+	menu_debugf("Already in system menu");
+    } else
+    
+    // catch some non-user controlled events here
+    if(cmd == MENU_EVENT_USB_MOUNTED) {
+      menu_debugf("USB mount event");
+
+      vTaskDelay(100);
+
+      static FATFS usb_fs;
+      FRESULT fres;
+      if ( (fres = f_mount(&usb_fs, "/usb", 1)) != FR_OK ) menu_debugf("/usb mount failed: %d", fres);
+      else {
+	menu_debugf("/usb mounted");
+	menu_draw_dialog("USB", "A USB mass storage device has been detected!");
+      }
+    } else if(cmd == MENU_EVENT_USB_UMOUNTED) {
+      if (f_unmount("/usb") != FR_OK )	menu_debugf("/usb unmount failed");
+      else	                        menu_debugf("/usb unmounted");
+      menu_draw_dialog("USB", "A USB mass storage device has been removed!");
+    } else
     menu_do(cmd);
   }
 }
@@ -1088,3 +1210,50 @@ void menu_button_state(unsigned char state) {
     }
   }
 }
+
+/* ================= system menu =================== */
+
+// the system menu is hard coded as it doesn't need to
+// be modified by the running core
+
+// the usb core file selector
+static char *core_exts[] = { "fs", "bin", NULL }; 
+
+#if MAX_CORES < 2
+#error "Setup at least 2 cores in config.h"
+#endif
+
+static const config_fsel_t sdc_core_fsel = {
+  .index = MAX_DRIVES+MAX_IMAGES+1,
+  .label = "Load Core from SD",
+  .def = "/sd/core.bin",
+  .ext = (char**)core_exts
+};
+
+// second entry in main system menu
+static const config_menu_entry_t system_menu_sdc_core_fsel = {
+  .type = CONFIG_MENU_ENTRY_FILESELECTOR,
+  .fsel = (config_fsel_t*)&sdc_core_fsel
+};
+
+static const config_fsel_t usb_core_fsel = {
+  .index = MAX_DRIVES+MAX_IMAGES+0,
+  .label = "Load Core from USB",
+  .def = "/usb/core.bin",
+  .ext = (char**)core_exts
+};
+
+// first entry in main system menu
+static const config_menu_entry_t system_menu_usb_core_fsel = {
+  .type = CONFIG_MENU_ENTRY_FILESELECTOR,
+  .fsel = (config_fsel_t*)&usb_core_fsel,
+  .next = (config_menu_entry_t*)&system_menu_sdc_core_fsel
+};
+
+
+// the main system menu
+static const config_menu_t system_menu_main = {
+  .label = "Companion",
+  .entries = (config_menu_entry_t*)&system_menu_usb_core_fsel
+};
+

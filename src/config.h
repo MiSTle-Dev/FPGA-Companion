@@ -16,6 +16,7 @@
 
 #define MAX_DRIVES                   (8)   // max disk floppy/hdd drives supported
 #define MAX_IMAGES                   (8)   // max rom/memory images supported
+#define MAX_CORES                    (2)   // max core files supported
 #define MAX_HID_DEVICES              (6)
 #define MAX_XBOX_DEVICES             (2)
 
