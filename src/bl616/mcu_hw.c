@@ -3,14 +3,16 @@
 */
 
 #include <FreeRTOS.h>
-//#include "mm.h"
-#include "mem.h"
+#include "mm.h"
 #include "semphr.h"
 
 #include "usbh_core.h"
 #include "usbh_hid.h"
 #include "usbh_msc.h"
 #include "usbd_core.h"
+#include "bflb_name.h"
+#include "../usb_controller_maps.h"
+
 #include "ff.h"
 #include "fatfs_diskio_register.h"
 
@@ -22,12 +24,12 @@
 #include "../mcu_hw.h"
 #include "../inifile.h"
 #include "../menu.h"
-#include "bl616_glb.h"
 
+#include "bl616_glb.h" //
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
 #include "bflb_dma.h"
-#include "bflb_gpio.h"
+#include "bflb_gpio.h" //
 #include "bflb_wdg.h"
 #ifdef CONFIG_CONSOLE_WO
 #include "bflb_wo.h"
@@ -35,24 +37,36 @@
 #include "shell.h"
 #include "bflb_uart.h"
 #endif
-#include "bflb_clock.h"
-#include "bflb_flash.h"
+#include "bflb_clock.h" //
+#include "bflb_flash.h" //
+#include "bflb_xip_sflash.h" //
+#include "bflb_sf_ctrl.h" //
+#include "board_flash_psram.h" //
+
 #include <lwip/tcpip.h>
-#include "lwip/tcp.h"
-#include "lwip/dns.h"
-#include "lwip/pbuf.h"
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
-#include "bl_fw_api.h"
-//#include "fhost_api.h"
+#include <lwip/pbuf.h>
+#include <lwip/tcp.h>
+
+
+//#include <lwip/tcpip.h>
+//#include "lwip/tcp.h"
+//#include "lwip/dns.h"
+//#include "lwip/pbuf.h"
+//#include <lwip/sockets.h>
+//#include <lwip/netdb.h>
+//#include "bl_fw_api.h"
+#include "fhost_api.h"
 #include "wifi_mgmr_ext.h"
 #include "wifi_mgmr.h"
 #include "rfparam_adapter.h"
-#include "bflb_rtc.h"
-#include "bflb_acomp.h"
-#include "bflb_efuse.h"
-#include "board.h"
-#include "bl616_tzc_sec.h"
+
+#include "bflb_rtc.h" //
+#include "bflb_acomp.h" //
+#include "bflb_efuse.h" //
+#include "board.h" //
+#include "bl616_tzc_sec.h" //
 #include "task.h"
 #include "timers.h"
 #include "bflb_irq.h"
@@ -154,9 +168,6 @@ void jtag_exit_gpio_out_mode(void) {
 	*reg_gpio_tdi = jtag_tdi_cfg;
 }
 
-extern uint32_t __HeapBase;
-extern uint32_t __HeapLimit;
-
 static void mcu_hw_jtag_init(void);
 
 /* ============================================================================================= */
@@ -175,6 +186,7 @@ static void mcu_hw_jtag_init(void);
 #define STATE_DETECTED  1 
 #define STATE_RUNNING   2
 #define STATE_FAILED    3
+#define NO_JOYSTICK 255
 
 #define XINPUT_GAMEPAD_DPAD_UP 0x0001
 #define XINPUT_GAMEPAD_DPAD_DOWN 0x0002
@@ -186,6 +198,37 @@ static void mcu_hw_jtag_init(void);
 #define XINPUT_GAMEPAD_RIGHT_SHOULDER 0x0200
 
 extern void shell_init_with_task(struct bflb_device_s *shell);
+
+// Lookup if there is a map for current gamepad
+const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
+                                          uint16_t pid,
+                                          int version_optional)
+{
+  const UsbGamepadMap *fallback = NULL;
+
+  for (size_t i = 0; i < kUsbGamepadMapsCount; i++)
+  {
+    const UsbGamepadMap *m = &kUsbGamepadMaps[i];
+
+    if (m->vid == vid && m->pid == pid)
+    {
+      if (version_optional >= 0)
+      {
+        if (m->version == (uint16_t)version_optional)
+        {
+          return m; // version hit
+        }
+      }
+      else
+      {
+        if (!fallback)
+          fallback = m;
+      }
+    }
+  }
+
+  return fallback;
+}
 
 void set_led(int pin, int on) {
 #ifdef M0S_DOCK
@@ -214,7 +257,8 @@ static struct usb_config {
     TickType_t rate_start;
     unsigned long rate_events;
 #endif    
-  } xbox_info[CONFIG_USBHOST_MAX_XBOX_CLASS];
+    volatile uint8_t stop; // thread stop flag
+} xbox_info[CONFIG_USBHOST_MAX_XBOX_CLASS];
     
   struct hid_info_S {
     int index;
@@ -231,11 +275,12 @@ static struct usb_config {
     unsigned long rate_events;
 #endif
     hid_state_t hid_state;
+    volatile uint8_t stop; // thread stop flag
   } hid_info[CONFIG_USBHOST_MAX_HID_CLASS];
 } usb_config;
   
 struct usb_config *usbh;
-
+  
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t hid_buffer[CONFIG_USBHOST_MAX_HID_CLASS][MAX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XBOX_CLASS][XBOX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[CONFIG_USBHOST_MAX_HID_CLASS][128];
@@ -258,8 +303,8 @@ void usbh_hid_callback(void *arg, int nbytes) {
 
 void usbh_xbox_callback(void *arg, int nbytes) {
   struct xbox_info_S *xbox = (struct xbox_info_S *)arg;
-  xSemaphoreGiveFromISR(xbox->sem, NULL);
-  xbox->nbytes = nbytes;
+    xSemaphoreGiveFromISR(xbox->sem, NULL);
+    xbox->nbytes = nbytes;
 }  
 
 bool mcu_hw_hid_present(void) {
@@ -275,7 +320,7 @@ bool mcu_hw_hid_present(void) {
       return true;
 
   return false;
-}
+  }  
 
 static void usbh_update(struct usb_config *usb) {
   // check for active hid devices
@@ -428,15 +473,15 @@ static void xbox_parse(struct xbox_info_S *xbox) {
       // if OSD is visible, then process events locally
       menu_joystick_state(state);
     } else {
-      mcu_hw_spi_begin();
-      mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-      mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
-      mcu_hw_spi_tx_u08(xbox->js_index);
-      mcu_hw_spi_tx_u08(state);
-      mcu_hw_spi_tx_u08(ax); // gamepad analog X
-      mcu_hw_spi_tx_u08(ay); // gamepad analog Y
-      mcu_hw_spi_tx_u08(state_btn_extra); // gamepad extra buttons
-      mcu_hw_spi_end();
+    mcu_hw_spi_begin();
+    mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+    mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
+    mcu_hw_spi_tx_u08(xbox->js_index);
+    mcu_hw_spi_tx_u08(state);
+    mcu_hw_spi_tx_u08(ax); // gamepad analog X
+    mcu_hw_spi_tx_u08(ay); // gamepad analog Y
+    mcu_hw_spi_tx_u08(state_btn_extra); // gamepad extra buttons
+    mcu_hw_spi_end();
     }
   }
 }
@@ -448,27 +493,141 @@ static void usbh_hid_client_thread(void *argument) {
 
   usb_debugf("HID client #%d: thread started", hid->index);
 
-  while(1) {
+  uint16_t vendor_id = hid->class->hport->device_desc.idVendor;
+  uint16_t product_id = hid->class->hport->device_desc.idProduct;
+  uint16_t version_id = hid->class->hport->device_desc.bcdDevice;
+
+  usb_debugf("idVendor: 0x%04x          ", vendor_id);
+  usb_debugf("idProduct: 0x%04x         ", product_id);
+  usb_debugf("bcdDevice(version): 0x%04x         ", version_id);
+  usb_debugf("report type: 0x%04x          ", hid->report.type);
+
+  const UsbGamepadMap *map;
+
+  if (hid->report.type == REPORT_TYPE_JOYSTICK) {
+    usb_debugf("HID client #%d: trying to allocate joystick", hid->index);
+    hid->hid_state.joystick.js_index = hid_allocate_joystick();
+    usb_debugf("  -> joystick %d", hid->hid_state.joystick.js_index);
+  }
+
+  
+  if (hid->report.type == REPORT_TYPE_JOYSTICK)
+  {
+
+    // lookup for VID/PID/Version
+    map = find_usb_gamepad_map(vendor_id, product_id, version_id);
+
+    if (map)
+    {
+      usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
+                 map->name, map->vid, map->pid, map->version);
+
+      hid->report.map = map;
+      hid->report.map_found = 1;
+      hid->report.map_checked = 1;
+    }
+    else
+    {
+      usb_debugf("No map for VID=%04x PID=%04x, VERSION=%04x", vendor_id, product_id, version_id);
+      hid->report.map = NULL;
+      hid->report.map_found = 0;
+      hid->report.map_checked = 1;
+    }
+  }
+
+  size_t len = hid->report.report_size + (hid->report.report_id_present ? 1 : 0);
+  uint8_t interval = hid->class->intin
+                         ? hid->class->intin->bInterval
+                         : 1;
+
+  usbh_int_urb_fill(&hid->class->intin_urb,
+                    hid->class->hport,
+                    hid->class->intin,
+                    hid->buffer, len,
+                    interval,
+                    usbh_hid_callback, hid);
+
+  if (hid->class->hport->device_desc.idVendor == 0x2563 && hid->class->hport->device_desc.idProduct == 0x0575) {
+    usb_debugf("SHANWAN gamepad detected in bootstrap mode - triggering switch to HID mode");
+
+    // Sending GET_REPORT to initiate 0079:181c
+    uint8_t dummy_report[27];
+    int ret = usbh_hid_get_report(hid->class,
+                                  1, // INPUT report
+                                  0, // Report ID = 0
+                                  dummy_report,
+                                  27); // report size
+
+    usb_debugf("GET_REPORT ret=%d - device should reenumerate as 0079:181c", ret);
+  }
+
+  usb_debugf("HID client #%d: entering hid thread loop", hid->index);
+
+  while (1) {
+    if (hid->stop)
+      break;
+    if (!hid->class->hport || !hid->class->hport->connected)
+      break;
+
+    usbh_int_urb_fill(&hid->class->intin_urb,
+                      hid->class->hport,
+                      hid->class->intin,
+                      hid->buffer, len,
+                      interval,
+                      usbh_hid_callback, hid);
+
     int ret = usbh_submit_urb(&hid->class->intin_urb);
-    if (ret < 0)
-      usb_debugf("HID client #%d: submit failed", hid->index);
-    else {
-      // Wait for result
-      xSemaphoreTake(hid->sem, 0xffffffffUL);
-      if(hid->nbytes > 0)
-	hid_parse(&hid->report, &hid->hid_state, hid->buffer, hid->nbytes);
-      
-      hid->nbytes = 0;
-    }      
+
+    if (hid->stop)
+      break;
+    if (ret < 0) {
+      if (ret == -USB_ERR_NODEV || ret == -USB_ERR_NOTCONN)
+        break;
+
+      if (hid->stop)
+      {
+        usb_debugf("HID client #%d: stop signal received - exiting HID loop", hid->index);
+        break;
+      }
+
+      if (ret != -USB_ERR_TIMEOUT)
+        usb_debugf("HID client #%d: submit failed, %d", hid->index, ret);
+
+      continue;
+    }
+
+    if (xSemaphoreTake(hid->sem, portMAX_DELAY) != pdTRUE) {
+      if (hid->stop)
+        break;
+      usbh_kill_urb(&hid->class->intin_urb);
+      continue;
+    }
+
+    if (hid->stop)
+      break;
+
+    if (hid->nbytes > 0) {
+      hid_parse(&hid->report, &hid->hid_state, hid->buffer, hid->nbytes);
+    }
+
+    hid->nbytes = 0;
 
 #ifdef RATE_CHECK
     hid->rate_events++;
-    if(!(hid->rate_events % 100)) {
-     float ms_since_start = (xTaskGetTickCount() - hid->rate_start) * portTICK_PERIOD_MS;
-     usb_debugf("Rate = %f events/sec",  1000 * hid->rate_events /  ms_since_start);
-    }    
+    if (!(hid->rate_events % 100)) {
+      float ms_since_start = (xTaskGetTickCount() - hid->rate_start) * portTICK_PERIOD_MS;
+      usb_debugf("Rate = %f events/sec", 1000 * hid->rate_events / ms_since_start);
+    }
 #endif
   }
+
+  usb_debugf("HID client #%d: stopping", hid->index);
+  if (hid->hid_state.joystick.js_index != NO_JOYSTICK) {
+    hid_release_joystick(hid->hid_state.joystick.js_index);
+    hid->hid_state.joystick.js_index = NO_JOYSTICK;
+  }
+  hid->task_handle = NULL;
+  vTaskDelete(NULL);
 }
 
 // from fixcontroler.py: https://gist.github.com/adnanh/f60f069fc9185a48b73db9987b9e9108
@@ -485,7 +644,7 @@ uint8_t xbox_ep2_packets[4][3] = {{0x01, 0x03, 0x02}, {0x02, 0x08, 0x03},
 
 static void xbox_init(struct xbox_info_S *xbox) {
   for (int i = 0; i < 4; i++) {
-      usbh_bulk_urb_fill(&xbox->class->intout_urb,
+      usbh_int_urb_fill(&xbox->class->intout_urb,
           xbox->class->hport,
           xbox->class->intout,
           xbox_ep2_packets[i], 3,
@@ -541,109 +700,70 @@ static void usbh_xbox_client_thread(void *argument) {
   }
 }
 
-static void usbh_hid_thread(void *argument) {
-  usb_debugf("Starting usb host task...");
+void usbh_hid_run(struct usbh_hid *hid_class)
+{
+  struct usb_config *usb = &usb_config;
 
-  usbh = (struct usb_config *)argument;
+  uint8_t i = hid_class->minor;
+  const char *driver_name = hid_class->hport->config.intf[hid_class->intf].class_driver->driver_name;
+  debugf("New Path - connected - Driver name: %s intf: %d minor: %u rep_size: %u", hid_class->hport->config.intf[hid_class->intf].class_driver->driver_name, i, hid_class->minor, hid_class->report_size);
+  if (driver_name && strcmp(driver_name, "hid") == 0) {
+    usb->hid_info[i].class = hid_class;
 
-  // request status (currently only dummy data, will return 0x5c, 0x42)
-  // in the long term the core is supposed to return its HID demands
-  // (keyboard matrix type, joystick type and number, ...)
-  
-  mcu_hw_spi_begin();
-  mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-  mcu_hw_spi_tx_u08(SPI_HID_STATUS);
-  mcu_hw_spi_tx_u08(0x00);
-  usb_debugf("HID status #0: %02x", mcu_hw_spi_tx_u08(0x00));
-  usb_debugf("HID status #1: %02x", mcu_hw_spi_tx_u08(0x00));
-  mcu_hw_spi_end();
+    usb_debugf("NEW HID %d", i);
+    uint8_t ifnt = usb->hid_info[i].class->intf;
+    memset(&usb->hid_info[i].report, 0, sizeof(usb->hid_info[i].report));
 
-  while (1) {
-    usbh_update(usbh);
-
-    for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
-      if(usbh->hid_info[i].state == STATE_DETECTED) {
-	usb_debugf("NEW HID device %d", i);
-	usbh->hid_info[i].state = STATE_RUNNING; 
-
-	if( usbh->hid_info[i].report.type == REPORT_TYPE_JOYSTICK ) {	
-	  usbh->hid_info[i].hid_state.joystick.js_index = hid_allocate_joystick();
-	  usb_debugf("  -> joystick %d", usbh->hid_info[i].hid_state.joystick.js_index);
-	}
-	  
-#if 0
-	// set report protocol 1 if subclass != BOOT_INTF
-	// CherryUSB doesn't report the InterfaceSubClass (HID_BOOT_INTF_SUBCLASS)
-	// we thus set boot protocol on keyboards
-	if( usbh->hid_info[i].report.type == REPORT_TYPE_KEYBOARD ) {	
-	  // /* 0x0 = boot protocol, 0x1 = report protocol */
-	  usb_debugf("setting boot protocol");
-	  ret = usbh_hid_set_protocol(usbh->hid_info[i].class, HID_PROTOCOL_BOOT);
-	  if (ret < 0) {
-	    usb_debugf("failed");
-	    usbh->hid_info[i].state = STATE_FAILED;  // failed
-	    continue;
-	  }
-	}
-#endif
-
-	// setup urb
-	usbh_int_urb_fill(&usbh->hid_info[i].class->intin_urb,
-			  usbh->hid_info[i].class->hport,
-			  usbh->hid_info[i].class->intin, usbh->hid_info[i].buffer,
-			  usbh->hid_info[i].report.report_size + (usbh->hid_info[i].report.report_id_present ? 1:0),
-			  0, usbh_hid_callback, &usbh->hid_info[i]);
-
-#ifdef RATE_CHECK
-	usbh->hid_info[i].rate_start = xTaskGetTickCount();
-	usbh->hid_info[i].rate_events = 0;
-#endif
-	
-	// start a new thread for the new device
-	xTaskCreate(usbh_hid_client_thread, (char *)"hid_task", 1024,
-		    &usbh->hid_info[i], configMAX_PRIORITIES-3, &usbh->hid_info[i].task_handle );
-      }
-    }
-    
-    for(int i=0;i<CONFIG_USBHOST_MAX_XBOX_CLASS;i++) {
-      if(usbh->xbox_info[i].state == STATE_DETECTED) {
-	usb_debugf("NEW XBOX device %d", i);
-	usbh->xbox_info[i].state = STATE_RUNNING; 
-
-	// search for free joystick slot
-	usbh->xbox_info[i].js_index = hid_allocate_joystick();
-	usb_debugf("  -> joystick %d", usbh->xbox_info[i].js_index);
-	
-	// setup urb
-	usbh_int_urb_fill(&usbh->xbox_info[i].class->intin_urb,
-			  usbh->xbox_info[i].class->hport,
-			  usbh->xbox_info[i].class->intin, usbh->xbox_info[i].buffer,
-			  XBOX_REPORT_SIZE,
-			  0, usbh_xbox_callback, &usbh->xbox_info[i]);
-	
-#ifdef RATE_CHECK
-	usbh->xbox_info[i].rate_start = xTaskGetTickCount();
-	usbh->xbox_info[i].rate_events = 0;
-#endif
-
-	// start a new thread for the new device
-	xTaskCreate(usbh_xbox_client_thread, (char *)"xbox_task", 2048,
-		    &usbh->xbox_info[i], configMAX_PRIORITIES-3, &usbh->xbox_info[i].task_handle );
-      }
+    uint16_t rep_desc = usbh_hid_get_report_descriptor(hid_class, report_desc[i], 1024);
+    if (rep_desc < 0)
+    {
+      usb_debugf("usbh_hid_get_report_descriptor issue");
+      usb->hid_info[i].state = STATE_FAILED;
+      return;
     }
 
-    // this thread only handles new devices and thus doesn't have to run very
-    // often
-    vTaskDelay(pdMS_TO_TICKS(100));
+    if (!parse_report_descriptor(report_desc[i], (uint16_t)rep_desc, &usb->hid_info[i].report, NULL))
+    {
+      usb->hid_info[i].state = STATE_FAILED;
+      return;
+    }
+
+    uint8_t ifn = usb->hid_info[i].class->intf;
+    const struct usb_interface_descriptor *id =
+        &usb->hid_info[i].class->hport->config.intf[ifn].altsetting[0].intf_desc;
+
+    usb->hid_info[i].stop = 0;
+    usb->hid_info[i].state = STATE_DETECTED;
+  }
+
+  xTaskCreate(usbh_hid_client_thread, (char *)"hid_task", 1024,
+              &usb->hid_info[i], configMAX_PRIORITIES - 3, &usb->hid_info[i].task_handle);
+}
+
+void usbh_hid_stop(struct usbh_hid *hid_class)
+{
+  uint8_t i = hid_class->minor;
+  usb_config.hid_info[i].stop = 1;
+
+  if (usb_config.hid_info[i].hid_state.joystick.js_index != NO_JOYSTICK)
+  {
+    hid_release_joystick(usb_config.hid_info[i].hid_state.joystick.js_index);
+    usb_config.hid_info[i].hid_state.joystick.js_index = NO_JOYSTICK;
   }
 }
 
+static struct bflb_device_s *usb_dev;
+static TaskHandle_t usb_handle;
+
 void usb_host(void) {
-  TaskHandle_t usb_handle;
 
   usb_debugf("init usb hid host");
 
-  usbh_initialize(0, USB_BASE);
+  usb_dev = bflb_device_get_by_name(BFLB_NAME_USB_V2);
+  if (!usb_dev) {
+      usb_debugf("usb device not found");
+      return -1;
+  }
 
   // initialize all HID info entries
   for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
@@ -662,7 +782,14 @@ void usb_host(void) {
     usb_config.xbox_info[i].usb = &usb_config;
     usb_config.xbox_info[i].sem = xSemaphoreCreateBinary();
   }
-  xTaskCreate(usbh_hid_thread, (char *)"usb_task", 2048, &usb_config, configMAX_PRIORITIES-3, &usb_handle);
+
+  usbh_initialize(0, usb_dev->reg_base);
+}
+
+uint8_t usbh_get_hport_active_config_index(struct usbh_hubport *hport)
+{
+    struct usb_device_descriptor *dev_desc = &(hport->device_desc);
+    return 0;
 }
 
 /* ============================================================================================= */
@@ -805,9 +932,17 @@ void mcu_hw_irq_ack(void) {
 /* ============================================================================================= */
 
 extern void log_start(void);
+
+extern uint32_t __HeapBase;
+extern uint32_t __HeapLimit;
+
+extern uint32_t _heap_wifi_start;
+extern uint32_t _heap_wifi_size;
+
 extern void bl_show_flashinfo(void);
 extern void bl_show_log(void);
 extern void bl_show_component_version(void);
+
 #define CONSOLE_BAUDRATE 2000000
 
 #ifdef CONFIG_CONSOLE_WO
@@ -822,7 +957,7 @@ static struct bflb_device_s *uart0;
 static struct bflb_device_s *rtc;
 #endif
 
-static void system_clock_init(void) {
+static void ATTR_CLOCK_SECTION __attribute__((noinline)) system_clock_init(void) {
   /* wifipll/audiopll */
 
 #if defined(TANG_MEGA138KPRO) || defined(TANG_PRIMER25K)|| defined(TANG_MEGA60K)
@@ -833,6 +968,12 @@ static void system_clock_init(void) {
   GLB_Set_MCU_System_CLK(GLB_MCU_SYS_CLK_TOP_WIFIPLL_320M);
   HBN_Set_MCU_XCLK_Sel(HBN_MCU_XCLK_XTAL);
   CPU_Set_MTimer_CLK(ENABLE, BL_MTIMER_SOURCE_CLOCK_MCU_XCLK, Clock_System_Clock_Get(BL_SYSTEM_CLOCK_XCLK) / 1000000 - 1);
+
+#ifdef CONFIG_WIFI6
+    /* enable wifi clock */
+    GLB_PER_Clock_UnGate(GLB_AHB_CLOCK_IP_WIFI_PHY | GLB_AHB_CLOCK_IP_WIFI_MAC_PHY | GLB_AHB_CLOCK_IP_WIFI_PLATFORM);
+    GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_WIFI);
+#endif
 }
 
 /* TODO: disabled everything we don't need or use */
@@ -872,7 +1013,7 @@ static void peripheral_clock_init(void) {
 
 static void console_init() {
   gpio = bflb_device_get_by_name("gpio");
-
+  
 #ifdef CONFIG_CONSOLE_WO
   wo = bflb_device_get_by_name("wo");
   bflb_wo_uart_init(wo, CONSOLE_BAUDRATE, PIN_UART_TX);
@@ -909,6 +1050,7 @@ static void mn_board_init(void) {
 
     /* lock */
     flag = bflb_irq_save();
+
     ret = bflb_flash_init();
 
     /* system clock */
@@ -918,6 +1060,12 @@ static void mn_board_init(void) {
 
     /* irq init */
     bflb_irq_initialize();
+
+#ifdef CONFIG_WIFI6
+    extern void interrupt0_handler(void);
+    bflb_irq_attach(WIFI_IRQn, (irq_callback)interrupt0_handler, NULL);
+    bflb_irq_enable(WIFI_IRQn);
+#endif
 
     gpio = bflb_device_get_by_name("gpio");
     // deinit all GPIOs
@@ -947,30 +1095,29 @@ static void mn_board_init(void) {
     /* console init (uart or wo) */
     console_init();
 
-/*  
-// newer SDK
+    /* ram heap init */
     mem_manager_init();
+    /* ocram heap init */
     heap_len = ((size_t)&__HeapLimit - (size_t)&__HeapBase);
     mm_register_heap(MM_HEAP_OCRAM_0, "OCRAM", MM_ALLOCATOR_TLSF, &__HeapBase, heap_len);
+    mm_register_heap(MM_HEAP_WRAM_0, "WRAM", MM_ALLOCATOR_TLSF, &_heap_wifi_start, (uintptr_t)&_heap_wifi_size);
 
-    debugf("dynamic memory init success"
-           "  ocram heap size: %d Kbyte",
-           ((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024);
-*/
-    heap_len = ((size_t)&__HeapLimit - (size_t)&__HeapBase);
-    kmem_init((void *)&__HeapBase, heap_len);
+    debugf("\r\ndynamic memory init success");
+    debugf("ocram heap size: %d Kbyte",((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024);
 
     /* boot info dump */
     bl_show_log();
     /* version info dump */
     bl_show_component_version();
 
+    /* chip info dump */
+    bl_show_chipinfo();
 
     /* flash info dump */
-  bl_show_flashinfo();
-  if (ret != 0) {
-        debugf("flash init fail !!!");
-      }
+    bl_show_flashinfo();
+    if (ret != 0) {
+          debugf("flash init fail !!!");
+        }
 
     debugf("uart  sig1:%08x, sig2:%08x", getreg32(GLB_BASE + GLB_UART_CFG1_OFFSET), getreg32(GLB_BASE + GLB_UART_CFG2_OFFSET));
     debugf("clock gen1:%08x, gen2:%08x", getreg32(GLB_BASE + GLB_CGEN_CFG1_OFFSET), getreg32(GLB_BASE + GLB_CGEN_CFG2_OFFSET));
@@ -1117,7 +1264,7 @@ void mcu_hw_reset(void) {
   usbh_deinitialize(0);
   bflb_mtimer_delay_ms(10);
 
-  hid_keyboard_init(0, USB_BASE);
+  hid_keyboard_init(0, usb_dev->reg_base);
   debugf("deinit done and ready for POR reset");
   bflb_mtimer_delay_ms(100);
   bl_sys_reset_por();
@@ -1222,19 +1369,13 @@ static void wifi_init(void) {
   debugf("PHY RF init success!");
 
   tcpip_init(NULL, NULL);
-  
-  /* enable wifi clock */
-  GLB_PER_Clock_UnGate(GLB_AHB_CLOCK_IP_WIFI_PHY | GLB_AHB_CLOCK_IP_WIFI_MAC_PHY | GLB_AHB_CLOCK_IP_WIFI_PLATFORM);
-  GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_WIFI);
 
   /* Enable wifi irq */
   extern void interrupt0_handler(void);
   bflb_irq_attach(WIFI_IRQn, (irq_callback)interrupt0_handler, NULL);
   bflb_irq_enable(WIFI_IRQn);
-// newer SDK
-//xTaskCreate(wifi_start_firmware_task, "wifi init", 1024, NULL, 10, NULL);
 
-  xTaskCreate(wifi_main, (char *)"fw", WIFI_STACK_SIZE, NULL, TASK_PRIORITY_FW, &wifi_fw_task);
+  xTaskCreate(wifi_start_firmware_task, "wifi init", 1024, NULL, 10, NULL);
 }
 
 static void wait4event(char code, char code2) {
@@ -2061,7 +2202,7 @@ __attribute__((weak)) uint32_t get_fattime(void)
 #endif
 
 #ifndef CONFIG_CONSOLE_WO
-  SHELL_CMD_EXPORT_ALIAS(lsusb, lsusb, ls usb);
+SHELL_CMD_EXPORT_ALIAS(lsusb, lsusb, ls usb);
 #endif
 
 // M0S_DOCK

@@ -214,6 +214,16 @@
 /* ---------------- FSDEV Configuration ---------------- */
 //#define CONFIG_USBDEV_FSDEV_PMA_ACCESS 2 // maybe 1 or 2, many chips may have a difference
 
+/* ---------------- DWC2 Configuration ---------------- */
+/* enable dwc2 buffer dma mode for device
+ * in xxx32 chips, only pb14/pb15 can support dma mode, pa11/pa12 is not supported(only a few supports, but we ignore them)
+*/
+// #define CONFIG_USB_DWC2_DMA_ENABLE
+
+/* ---------------- MUSB Configuration ---------------- */
+#define CONFIG_USB_MUSB_EP_NUM 8
+// #define CONFIG_USB_MUSB_SUNXI
+
 /* ================ USB Host Port Configuration ==================*/
 #ifndef CONFIG_USBHOST_MAX_BUS
 #define CONFIG_USBHOST_MAX_BUS 1
@@ -238,10 +248,27 @@
 
 /* ---------------- OHCI Configuration ---------------- */
 #define CONFIG_USB_OHCI_HCOR_OFFSET (0x0)
+#define CONFIG_USB_OHCI_ED_NUM 10
+#define CONFIG_USB_OHCI_TD_NUM 3
+// #define CONFIG_USB_OHCI_DESC_DCACHE_ENABLE
 
 /* ---------------- XHCI Configuration ---------------- */
 #define CONFIG_USB_XHCI_HCCR_OFFSET (0x0)
 
+/* ---------------- DWC2 Configuration ---------------- */
+// nothing to define
+
+/* ---------------- MUSB Configuration ---------------- */
+#define CONFIG_USB_MUSB_PIPE_NUM 8
+// #define CONFIG_USB_MUSB_SUNXI
+// #define CONFIG_USB_MUSB_WITHOUT_MULTIPOINT
+
+/* When your chip hardware supports high-speed and wants to initialize it in high-speed mode,
+ * the relevant IP will configure the internal or external high-speed PHY according to CONFIG_USB_HS.
+*/
+#ifndef BL702
+#define CONFIG_USB_HS
+#endif
 
 #ifndef usb_phyaddr2ramaddr
 #define usb_phyaddr2ramaddr(addr) (addr)
