@@ -787,7 +787,7 @@ void sdc_boot(void) {
     return;
   }
 
-  if(f_mount(&fs, "", 1) != FR_OK) {
+  if(f_mount(&fs, "/sd", 1) != FR_OK) {
     sdc_debugf("direct mount failed");
     sdc_direct_release();
     mcu_hw_fpga_reconfig(true);
@@ -802,7 +802,7 @@ void sdc_boot(void) {
   if(!upload_ok) upload_ok = sdc_direct_upload_core_fs("core.fs");  
     
   // unmount the fs
-  f_mount(NULL, "", 0);
+  f_unmount("/sd");
   
   // release the sd card
   sdc_direct_release();
