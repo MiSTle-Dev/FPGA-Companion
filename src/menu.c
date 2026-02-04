@@ -322,10 +322,10 @@ static void menu_push(void) {
 static int menu_len(const config_menu_t *menu) {
   int entries = 0;
   config_menu_entry_t *me = menu->entries;
-    while(me) {
-      entries++;
-      me = me->next;
-    }
+  while(me) {
+    entries++;
+    me = me->next;
+  }
   return entries;
 }
 
@@ -501,7 +501,7 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected) 
   if(entry->type == CONFIG_MENU_ENTRY_FILESELECTOR) {
     // icon depends if floppy is inserted
     u8g2_DrawXBM(&u8g2, hl_w-MENU_ENTRY_BASE, ypos-8, 8, 8,
-	 sdc_get_image_name(entry->fsel->index)?icn_floppy_bits:icn_empty_bits);
+		 sdc_get_image_name(entry->fsel->index)?icn_floppy_bits:icn_empty_bits);
   }
   
   if(entry->type == CONFIG_MENU_ENTRY_TOGGLE) 
@@ -614,15 +614,15 @@ void menu_draw_dialog(const char *title,  const char *msg) {
 static void menu_draw(const config_menu_t *menu, int selected, int scroll) {
   u8g2_ClearBuffer(&u8g2);
  
-    // =============== draw a regular menu =================
+  // =============== draw a regular menu =================
   menu_debugf("drawing '%s'", menu->label);  
     
-    // draw the title
+  // draw the title
   menu_draw_title(menu->label, !menu_is_root(menu), selected == 0);
 
   config_menu_entry_t *entry = menu->entries;
   for(int i=0;i<scroll;i++) entry=entry->next;  // skip first "scroll" entries
-    for(int i=0;i<4 && entry;i++,entry=entry->next)           // then draw up to four entries
+  for(int i=0;i<4 && entry;i++,entry=entry->next)           // then draw up to four entries
     menu_draw_entry(entry, i, selected == scroll+i+1);    
   
   u8g2_SendBuffer(&u8g2);
@@ -631,18 +631,18 @@ static void menu_draw(const config_menu_t *menu, int selected, int scroll) {
 static void menu_fsel_draw(config_fsel_t *fsel, sdc_dir_entry_t *dir, int selected, int scroll) {
   u8g2_ClearBuffer(&u8g2);
 
-    // =============== draw a fileselector =================    
+  // =============== draw a fileselector =================    
   menu_debugf("drawing '%s'", fsel->label);
-    
+  
   menu_draw_title(fsel->label, true, selected == 0);
-    menu_timer_enable(false);
-    fs_scroll_cur = -1;
+  menu_timer_enable(false);
+  fs_scroll_cur = -1;
 
-    // draw up to four entries
+  // draw up to four entries
   for(int i=0;i<4 && i<dir_len(dir)-scroll;i++) {            
     menu_debugf("file %s", dir_entry(dir, i+scroll)->name);
     menu_fs_draw_entry(i, dir_entry(dir, i+scroll));
-    }
+  }
   u8g2_SendBuffer(&u8g2);
 }
 
@@ -1070,11 +1070,11 @@ static void menu_task(__attribute__((unused)) void *parms) {
       else	                        menu_debugf("/usb unmounted");
       menu_draw_dialog("USB", "A USB mass storage device has been removed!");
     } else
-    menu_do(cmd);
+      menu_do(cmd);
   }
 }
 
-  TaskHandle_t menu_handle = NULL;
+TaskHandle_t menu_handle = NULL;
 
 void menu_init(void) {
   menu_debugf("Initializing");
