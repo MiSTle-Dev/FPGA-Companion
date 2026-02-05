@@ -1116,10 +1116,21 @@ void menu_init(void) {
   
   // start a thread for the on screen display    
   xTaskCreate(menu_task, (char *)"menu_task", 4096, NULL, configMAX_PRIORITIES-3, &menu_handle);
+
+  // At this point, the USB may already be ready. But since the
+  // menu task wasn't ready by now, it never had a chance to be mounted properly
+  if(mcu_hw_usb_msc_present()) {
+    menu_debugf("triggering delayed USB init");
+    menu_notify(MENU_EVENT_USB_MOUNTED);
+  }
 }
-  
+
+// queue an event for the menu task
 void menu_notify(unsigned long msg) {
-  xQueueSendToBackFromISR(menu_queue, &msg,  ( TickType_t ) 0);
+  if(menu_queue) 
+    xQueueSendToBackFromISR(menu_queue, &msg,  ( TickType_t ) 0);
+  else
+    menu_debugf("menu_notify(): queue/menu task not ready!");
 }
 
 void menu_joystick_state(unsigned char state) {

@@ -312,9 +312,7 @@ void sdc_set_default(int drive, const char *name) {
   sdc_debugf("set default %d: %s", drive, name);
   if(drive >= MAX_DRIVES+MAX_IMAGES) return;
   
-  // A valid filename will currently always begin with the mount point
-  // This is actually handled differently with different firmware variants (bl616/pico/...)
-  // and the settings are thus not portable
+  // A valid filename will always begin with the mount point
   if(strncasecmp(name, CARD_MOUNTPOINT, strlen(CARD_MOUNTPOINT)) == 0) {
     // name should consist of path and image name
     char *p = strrchr(name+strlen(CARD_MOUNTPOINT), '/');
@@ -857,7 +855,7 @@ int sdc_init(void) {
   // clear the cwd for the core slots as 
   for(int d=MAX_DRIVES+MAX_IMAGES;d<MAX_DRIVES+MAX_IMAGES+MAX_CORES;d++)
     cwd[d] = NULL;
-    
+
   return 0;
 }
 
