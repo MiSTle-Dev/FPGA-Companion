@@ -312,9 +312,7 @@ void sdc_set_default(int drive, const char *name) {
   sdc_debugf("set default %d: %s", drive, name);
   if(drive >= MAX_DRIVES+MAX_IMAGES) return;
   
-  // A valid filename will currently always begin with the mount point
-  // This is actually handled differently with different firmware variants (bl616/pico/...)
-  // and the settings are thus not portable
+  // A valid filename will always begin with the mount point
   if(strncasecmp(name, CARD_MOUNTPOINT, strlen(CARD_MOUNTPOINT)) == 0) {
     // name should consist of path and image name
     char *p = strrchr(name+strlen(CARD_MOUNTPOINT), '/');
@@ -534,13 +532,13 @@ int sdc_image_open(int drive, char *name) {
   } else {    
     sdc_debugf("CORE open");
   }
-    
+
   if(drive < MAX_DRIVES+MAX_IMAGES) {
-  // forget about any previous name
-  if(image_name[drive]) {
-    vPortFree(image_name[drive]);
-    image_name[drive] = NULL;
-  }
+    // forget about any previous name
+    if(image_name[drive]) {
+      vPortFree(image_name[drive]);
+      image_name[drive] = NULL;
+    }
   }
   
   // nothing to be inserted? Do nothing!
@@ -689,7 +687,7 @@ static bool sdc_cwd_is_root(int drive) {
 
 sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
   static sdc_dir_entry_t *sdc_dir = NULL;
-  
+
   sdc_debugf("sdc_readdir(%d,%s,%s)", drive, name, cwd[drive]);
   
   int dir_compare(sdc_dir_entry_t *d1, sdc_dir_entry_t *d2) {
@@ -818,7 +816,7 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
   
   int ret = f_opendir(&dir, cwd[drive]);
   sdc_debugf("opendir(%s)=%d", cwd[drive], ret);
- 
+   
   if(ret == 0) {  
     do {
       f_readdir(&dir, &fno);
@@ -857,7 +855,7 @@ int sdc_init(void) {
   // clear the cwd for the core slots as 
   for(int d=MAX_DRIVES+MAX_IMAGES;d<MAX_DRIVES+MAX_IMAGES+MAX_CORES;d++)
     cwd[d] = NULL;
-    
+
   return 0;
 }
 

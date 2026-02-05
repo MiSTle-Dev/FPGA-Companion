@@ -324,7 +324,7 @@ void sys_handle_interrupts(unsigned char pending, bool ignore_coldboot) {
 
 bool sys_wait4fpga(void) {
   sys_debugf("Waiting for FPGA to become ready");
-  
+
   // try to establish connection to FPGA for five seconds. Assume the FPGA is
   // not properly configured after that
   int fpga_ok, timeout = FPGA_BOOT_TIMEOUT/10;  // timeout is in 10ms units
