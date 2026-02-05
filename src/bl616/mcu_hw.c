@@ -1115,8 +1115,11 @@ void mcu_hw_reset(void) {
   bflb_spi_deinit(spi_dev);
 
   usbh_deinitialize(0);
+#ifdef TANG_PRIMER25K
   bflb_mtimer_delay_ms(10);
-
+#else
+  bflb_mtimer_delay_ms(250);
+#endif
   hid_keyboard_init(0, USB_BASE);
   debugf("deinit done and ready for POR reset");
   bflb_mtimer_delay_ms(100);
@@ -2071,7 +2074,43 @@ __attribute__((weak)) uint32_t get_fattime(void)
 #endif
 
 void mcu_hw_upload_core(char *name) {
-  debugf("Request to upload core %s", name);  
+  debugf("Request to upload core %s", name);
+
+  bool upload_ok = false;
+  uint64_t start;
+  FATFS fs;
+  FRESULT res = FR_NOT_READY;
+
+
+  if (strstr(name, "/sd/") != NULL) {
+#if defined(TANG_CONSOLE60K) || defined(TANG_MEGA60K)
+    f_mount(NULL, "/sd", 1);
+    sdc_direct_init();
+    start = bflb_mtimer_get_time_ms();
+    while ((res = f_mount(&fs, "/sd", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 500)
+      bflb_mtimer_delay_ms(100);
+    if (res == FR_OK) {
+        sdc_debugf("SD card mounted");
+        upload_ok = sdc_direct_upload_core_bin(name);
+        f_mount(NULL, "/sd", 1);
+      } else {
+        sdc_debugf("SD card not found...");
+    }
+    sdc_direct_release();
+#endif
+  } else {
+      f_mount(NULL, "/usb", 1);
+      start = bflb_mtimer_get_time_ms();
+      while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 1000)
+        bflb_mtimer_delay_ms(100);
+      if (res != FR_OK) {
+          debugf("failed to mount USB drive");
+      } else {
+          debugf("USB drive mounted");
+          upload_ok = sdc_direct_upload_core_bin(name);
+          f_mount(NULL, "/usb", 1);
+        }
+  }
 }
 
 bool mcu_hw_usb_msc_present(void) {
@@ -2084,7 +2123,7 @@ bool mcu_hw_usb_msc_present(void) {
 
 // TANG_NANO20K
 /* GPIO 11 default UART TX */
-/* GPIO 13 default UARTRX */
+/* GPIO 13 default UART RX */
 
 // TANG_CONSOLE60K
 /* GPIO 27 default UART RX, FPGA U15 TX */
@@ -2103,11 +2142,10 @@ bool mcu_hw_usb_msc_present(void) {
 // TANG_MEGA60K
 /* GPIO 27 default UART RX, FPGA U15 TX */
 /* GPIO 28 default UART TX, FPGA V15 RX */
-/* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK, only 31005 assembly */
-/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, 31004 assembly,  */
+/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, could be used as UART TX */
 
 // TANG_PRIMER25K
 /* GPIO 11 default UART TX */
 /* GPIO 10 default UART RX */
-/* GPIO_PIN_20 access at LED6, not usable for UART, unknown reason */
-/* GPIO_PIN_12 access at button S3, Capacitor C22 need to be removed */
+/* GPIO 20 access at LED6, not usable for UART, unknown reason */
+/* GPIO 12 access at button S3, Capacitor C22 need to be removed */
