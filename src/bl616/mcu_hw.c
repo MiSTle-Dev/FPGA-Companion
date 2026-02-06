@@ -278,9 +278,7 @@ static struct usb_config {
     volatile uint8_t stop; // thread stop flag
   } hid_info[CONFIG_USBHOST_MAX_HID_CLASS];
 } usb_config;
-  
-struct usb_config *usbh;
-  
+
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t hid_buffer[CONFIG_USBHOST_MAX_HID_CLASS][MAX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XBOX_CLASS][XBOX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[CONFIG_USBHOST_MAX_HID_CLASS][128];
@@ -308,111 +306,20 @@ void usbh_xbox_callback(void *arg, int nbytes) {
 }  
 
 bool mcu_hw_hid_present(void) {
-  for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
-    if(usbh->hid_info[i].state == STATE_RUNNING) {
-      if(usbh->hid_info[i].report.type == REPORT_TYPE_MOUSE)    return true;
-      if(usbh->hid_info[i].report.type == REPORT_TYPE_KEYBOARD) return true;      
-    }
-  }
-    
-  for(int i=0;i<CONFIG_USBHOST_MAX_XBOX_CLASS;i++)
-    if(usbh->xbox_info[i].state == STATE_RUNNING) 
-      return true;
+  struct usb_config *usb = &usb_config;
 
+  for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
+      if(usb->hid_info[i].state == STATE_DETECTED)
+      return true;
+    }
+
+  for(int i=0;i<CONFIG_USBHOST_MAX_XBOX_CLASS;i++) {
+    if(usb->xbox_info[i].state == STATE_DETECTED)
+      return true;
+    }
   return false;
   }  
 
-static void usbh_update(struct usb_config *usb) {
-  // check for active hid devices
-  for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
-    char *dev_str = "/dev/inputX";
-    dev_str[10] = '0' + i;
-    usb->hid_info[i].class = (struct usbh_hid *)usbh_find_class_instance(dev_str);
-    
-    if(usb->hid_info[i].class && usb->hid_info[i].state == STATE_NONE) {
-      usb_debugf("NEW HID %d", i);
-
-      usb_debugf("Interval: %d", usb->hid_info[i].class->hport->config.intf[i].altsetting[0].ep[0].ep_desc.bInterval);
-	 
-      usb_debugf("Interface %d", usb->hid_info[i].class->intf);
-      usb_debugf("  class %d", usb->hid_info[i].class->hport->config.intf[i].altsetting[0].intf_desc.bInterfaceClass);
-      usb_debugf("  subclass %d", usb->hid_info[i].class->hport->config.intf[i].altsetting[0].intf_desc.bInterfaceSubClass);
-      usb_debugf("  protocol %d", usb->hid_info[i].class->hport->config.intf[i].altsetting[0].intf_desc.bInterfaceProtocol);
-      int rep_desc = usbh_hid_get_report_descriptor(usb->hid_info[i].class, report_desc[i], 128);
-      if (rep_desc < 0) {
-        usb_debugf("usbh_hid_get_report_descriptor issue");}
-      bool skip = false;
-      uint16_t vendor_id = usb->hid_info[i].class->hport->device_desc.idVendor;
-      uint16_t product_id = usb->hid_info[i].class->hport->device_desc.idProduct;
-      if (vendor_id == 0x2dc8 && product_id == 0x3107) {  // 8bitdo wireless adapter
-          skip = true;
-      }
-      // parse report descriptor ...
-      usb_debugf("report descriptor: %p", report_desc[i]);
-      if(skip || !parse_report_descriptor(report_desc[i], 128, &usb->hid_info[i].report, NULL)) {
-	usb->hid_info[i].state = STATE_FAILED;   // parsing failed, don't use
-	return;
-      }
-      
-      usb->hid_info[i].state = STATE_DETECTED;
-    }
-    
-    else if(!usb->hid_info[i].class && usb->hid_info[i].state != STATE_NONE) {
-      usb_debugf("HID LOST %d", i);
-      vTaskDelete( usb->hid_info[i].task_handle );
-      usb->hid_info[i].state = STATE_NONE;
-
-      if(usb->hid_info[i].report.type == REPORT_TYPE_JOYSTICK) {
-	usb_debugf("Joystick %d gone", usb->hid_info[i].hid_state.joystick.js_index);
-	hid_release_joystick(usb->hid_info[i].hid_state.joystick.js_index);
-      }
-    }
-  }
-
-  // check for active xbox devices
-  for(int i=0;i<CONFIG_USBHOST_MAX_XBOX_CLASS;i++) {
-    char *dev_str = "/dev/xboxX";
-    dev_str[9] = '0' + i;
-    usb->xbox_info[i].class = (struct usbh_hid *)usbh_find_class_instance(dev_str);
-    
-    if(usb->xbox_info[i].class && usb->xbox_info[i].state == STATE_NONE) {
-      usb_debugf("NEW XBOX %d", i);
-
-      usb_debugf("Interval: %d", usb->xbox_info[i].class->hport->config.intf[i].altsetting[0].ep[0].ep_desc.bInterval);
-	 
-      usb_debugf("Interface %d", usb->xbox_info[i].class->intf);
-      usb_debugf("  class %d", usb->xbox_info[i].class->hport->config.intf[i].altsetting[0].intf_desc.bInterfaceClass);
-      usb_debugf("  subclass %d", usb->xbox_info[i].class->hport->config.intf[i].altsetting[0].intf_desc.bInterfaceSubClass);
-      usb_debugf("  protocol %d", usb->xbox_info[i].class->hport->config.intf[i].altsetting[0].intf_desc.bInterfaceProtocol);
-	
-      usb->xbox_info[i].state = STATE_DETECTED;
-    }
-    
-    else if(!usb->xbox_info[i].class && usb->xbox_info[i].state != STATE_NONE) {
-      usb_debugf("XBOX %d", i);
-      vTaskDelete( usb->xbox_info[i].task_handle );
-      usb->xbox_info[i].state = STATE_NONE;
-      
-      usb_debugf("Joystick %d gone", usb->xbox_info[i].js_index);
-      hid_release_joystick(usb->xbox_info[i].js_index);
-    }
-  }
-
-  // check for number of mice and keyboards and update leds
-  int mice = 0, keyboards = 0;  
-  for(int i=0;i<CONFIG_USBHOST_MAX_HID_CLASS;i++) {
-    if(usb->hid_info[i].state == STATE_RUNNING) {
-      if(usb->hid_info[i].report.type == REPORT_TYPE_MOUSE)    mice++;
-      if(usb->hid_info[i].report.type == REPORT_TYPE_KEYBOARD) keyboards++;      
-    }
-  }
-
-  extern void set_led(int pin, int on);
-#ifdef M0S_DOCK
-  set_led(GPIO_PIN_27, mice);
-  set_led(GPIO_PIN_28, keyboards);
-#endif
-}
 
 static void xbox_parse(struct xbox_info_S *xbox) {
 #if 0
@@ -708,6 +615,18 @@ void usbh_hid_run(struct usbh_hid *hid_class)
   const char *driver_name = hid_class->hport->config.intf[hid_class->intf].class_driver->driver_name;
   debugf("New Path - connected - Driver name: %s intf: %d minor: %u rep_size: %u", hid_class->hport->config.intf[hid_class->intf].class_driver->driver_name, i, hid_class->minor, hid_class->report_size);
   if (driver_name && strcmp(driver_name, "hid") == 0) {
+    // request status (currently only dummy data, will return 0x5c, 0x42)
+    // in the long term the core is supposed to return its HID demands
+    // (keyboard matrix type, joystick type and number, ...)
+    
+    mcu_hw_spi_begin();
+    mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+    mcu_hw_spi_tx_u08(SPI_HID_STATUS);
+    mcu_hw_spi_tx_u08(0x00);
+    usb_debugf("HID status #0: %02x", mcu_hw_spi_tx_u08(0x00));
+    usb_debugf("HID status #1: %02x", mcu_hw_spi_tx_u08(0x00));
+    mcu_hw_spi_end();
+
     usb->hid_info[i].class = hid_class;
 
     usb_debugf("NEW HID %d", i);
@@ -1207,29 +1126,22 @@ void mcu_hw_init(void) {
 }
 
 void stop_hid(void) {
-  debugf("stop HID and XBOX tasks");
-  for (int i = 0; i < CONFIG_USBHOST_MAX_XBOX_CLASS; i++) {
-      char *dev_str = "/dev/xboxX";
-      dev_str[9] = '0' + i;
-      usbh->xbox_info[i].class = (struct usbh_hid *)usbh_find_class_instance(dev_str);
-
-    if (usbh->xbox_info[i].task_handle != NULL) {
-            vTaskDelete(usbh->xbox_info[i].task_handle);
-            usbh->xbox_info[i].task_handle = NULL;
-        }
-    }
+  struct usb_config *usb = &usb_config;
 
   for (int i = 0; i < CONFIG_USBHOST_MAX_HID_CLASS; i++) {
-    char *dev_str = "/dev/inputX";
-    dev_str[10] = '0' + i;
-    usbh->hid_info[i].class = (struct usbh_hid *)usbh_find_class_instance(dev_str);
-
-    if (usbh->hid_info[i].task_handle != NULL) {
-          vTaskDelete(usbh->hid_info[i].task_handle);
-          usbh->hid_info[i].task_handle = NULL;
-      }
+    if(usb->hid_info[i].state != STATE_NONE ) {
+      usb_debugf("HID shutdown %d", i);
+      usb->hid_info[i].stop = 1;
+    }
   }
-}
+
+  for (int i = 0; i < CONFIG_USBHOST_MAX_XBOX_CLASS; i++) {
+    if(usb->xbox_info[i].state != STATE_NONE ) {
+      usb_debugf("HID xbox shutdown %d", i);
+      usb->xbox_info[i].stop = 1;
+    }
+  }
+ }
 
 extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
 extern int bl_sys_reset_por(void);
@@ -1244,11 +1156,13 @@ void mcu_hw_reset(void) {
   wdg_cfg.comp_val = 1000;
   wdg_cfg.mode = WDG_MODE_RESET;
 
-  wdg = bflb_device_get_by_name("watchdog");
+  wdg = bflb_device_get_by_name("watchdog0");
   bflb_wdg_init(wdg, &wdg_cfg);
-  bflb_wdg_start(wdg); // to be sure...
+  bflb_wdg_start(wdg);
+  bflb_wdg_reset_countervalue(wdg);
 
   stop_hid();
+  vTaskDelay(pdMS_TO_TICKS(250));
 
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
@@ -1262,15 +1176,7 @@ void mcu_hw_reset(void) {
   bflb_spi_deinit(spi_dev);
 
   usbh_deinitialize(0);
-#ifdef TANG_PRIMER25K
-  bflb_mtimer_delay_ms(10);
-#else
-  bflb_mtimer_delay_ms(250);
-#endif
-  hid_keyboard_init(0, usb_dev->reg_base);
-  debugf("deinit done and ready for POR reset");
-  bflb_mtimer_delay_ms(100);
-  bl_sys_reset_por();
+  debugf("deinit done and waiting for WDT POR reset");
   while (1) {
     /*empty dead loop*/
   }
@@ -1842,15 +1748,16 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   if((dir & 0x0f) == 0x0b) {
     debugf("SPI deinit and JTAG activation");
 
-  stop_hid();
+   stop_hid();
+   vTaskDelay(pdMS_TO_TICKS(250));
 
-#ifndef TANG_NANO20K
+  #ifndef TANG_NANO20K
     bflb_gpio_deinit(gpio, SPI_PIN_MISO);
     bflb_gpio_deinit(gpio, SPI_PIN_MOSI);
     bflb_gpio_deinit(gpio, SPI_PIN_SCK);
     bflb_gpio_deinit(gpio, SPI_PIN_CSN);
 #endif
-    bflb_irq_disable(gpio->irq_num);
+    bflb_gpio_irq_detach(SPI_PIN_IRQ);
 
     bflb_gpio_deinit(gpio, PIN_JTAG_TCK);
     bflb_gpio_deinit(gpio, PIN_JTAG_TDI);
@@ -2118,7 +2025,7 @@ void mcu_hw_fpga_resume_spi(void) {
   GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
 #endif
   jtag_is_active = false;
-  bflb_irq_enable(gpio->irq_num);
+  bflb_gpio_irq_attach(SPI_PIN_IRQ, spi_isr);
 }
 
 void jtag_toggleClk(uint32_t clk_len)
