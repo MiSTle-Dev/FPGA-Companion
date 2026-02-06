@@ -1428,7 +1428,7 @@ extern TaskHandle_t menu_handle;
 
 void mcu_hw_upload_core(char *name) {
   debugf("Request to upload core %s", name);  
-
+#ifdef ENABLE_JTAG
   // stop various tasks so they don't interfere with the
   // download. We don't have to care about any consequences
   // as we'll reboot afterwards, anyways
@@ -1443,6 +1443,7 @@ void mcu_hw_upload_core(char *name) {
   vTaskDelete(pio_usb_task_handle);
   pio_usb_task_handle = NULL;
 
+  // TODO: Check why this locks up ...
   //  vTaskDelete(menu_handle);
   //  menu_handle = NULL;
 
@@ -1450,4 +1451,5 @@ void mcu_hw_upload_core(char *name) {
 
   // restart companion to cope with new core
   mcu_hw_reset();
+#endif
 }
