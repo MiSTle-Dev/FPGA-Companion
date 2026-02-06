@@ -191,7 +191,7 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
 }
 
 DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count) {
-  sdc_debugf("disk_read(%d, %lu)", pdrv, sector);  
+  // sdc_debugf("disk_read(%d, %lu)", pdrv, sector);  
 
   if(pdrv == 1) {
     mcu_hw_usb_sector_read(buff, sector);
@@ -326,6 +326,10 @@ void sdc_set_default(int drive, const char *name) {
 }
 
 char *sdc_get_image_name(int drive) {
+  // core names aren't stored (yet)
+  if(drive >= MAX_DRIVES + MAX_IMAGES)
+    return NULL;
+  
   return image_name[drive];
 }
 
@@ -529,8 +533,6 @@ int sdc_image_open(int drive, char *name) {
   } else if(drive < MAX_DRIVES+MAX_IMAGES) {
     // TODO: report image de-selection
     sdc_rom_image_selected(drive-MAX_DRIVES, 0);
-  } else {    
-    sdc_debugf("CORE open");
   }
 
   if(drive < MAX_DRIVES+MAX_IMAGES) {

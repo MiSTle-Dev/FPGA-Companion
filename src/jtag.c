@@ -222,12 +222,9 @@ static bool jtag_gowin_disableCfg(void) {
   return jtag_gowin_pollFlag(JTAG_GOWIN_STATUS_SYSTEM_EDIT_MODE, 0);
 }
 
-static void sendClkUs(uint32_t us)
-{
-  uint64_t clocks = 15000000;
-  clocks *= us;
-  clocks /= 1000000;
-  jtag_toggleClk(clocks);
+// toggle the jtag clock for the given time
+static void sendClkUs(uint32_t us) {
+  mcu_hw_jtag_toggleClk(15 * us);
 }
 
 static void printStatusReg(uint32_t status) {

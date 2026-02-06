@@ -545,8 +545,6 @@ bool sdc_direct_upload_core_bin(const char *name) {
     return false;
   }
   
-  jtag_debugf("GW2AR-18 detected");
-    
   // measure total download time
   TickType_t ticks = xTaskGetTickCount();
   
