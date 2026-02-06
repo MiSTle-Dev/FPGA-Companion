@@ -14,9 +14,10 @@ static bool is_gw2a = false;
 
 volatile uint32_t idcode = 0;
 
-void printStatusReg(uint32_t status);
+static void printStatusReg(uint32_t status);
 
 static void jtag_gowin_command(uint8_t cmd) {
+  uint8_t zero = 0;
   // stay in RUN-TEST/IDLE like openFPGAloader
   mcu_hw_jtag_tms(1, 0b000000, 6);
 
@@ -24,7 +25,7 @@ static void jtag_gowin_command(uint8_t cmd) {
   mcu_hw_jtag_tms(1, 0b0011, 4);
 
   // shift command into IR
-  mcu_hw_jtag_data(&cmd, NULL, 7);
+  mcu_hw_jtag_data(&cmd, &zero, 7);
 
   // send TMS 1/1/0 to return into RUN-TEST/IDLE
   mcu_hw_jtag_tms((cmd&0x80)?1:0, 0b1, 1);
@@ -82,14 +83,21 @@ static void jtag_gowin_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, uint
 
 static uint32_t jtag_gowin_command_read32(uint8_t cmd) {
   uint32_t retval = 0;
+  uint8_t zero = 0;
   
   jtag_gowin_command(cmd);
-  jtag_gowin_shiftDR(NULL, (uint8_t*)&retval, 32);
+  jtag_gowin_shiftDR(&zero, (uint8_t*)&retval, 32);
 
   return retval;
 }
 
-uint32_t jtag_identify(void) {
+static uint32_t readUserCode(void) {
+  uint32_t usercode = 0;
+  usercode = jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_USERCODE);
+	return usercode;
+}
+
+static uint32_t jtag_identify(void) {
   // send a bunch of 1's to return into Test-Logic-Reset state.
   mcu_hw_jtag_tms(1, 0b11111, 5);
   
@@ -97,8 +105,9 @@ uint32_t jtag_identify(void) {
   mcu_hw_jtag_tms(1, 0b0010, 4);
 
   // shift data into DR
-  uint32_t lidcode;
-  mcu_hw_jtag_data(NULL, (uint8_t*)&lidcode, 32);
+  uint32_t lidcode = 0;
+  uint8_t zero = 0;
+  mcu_hw_jtag_data(&zero, (uint8_t*)&lidcode, 32);
 
   // send TMS 1/1/0 to go into Run-Test-Idle state
   mcu_hw_jtag_tms(1, 0b011, 3);
@@ -137,7 +146,8 @@ void jtag_close(void) {
 }
 
 static uint32_t jtag_gowin_readStatusReg(void) {
-  uint32_t status = jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_STATUS);
+  uint32_t status = 0xffffffff;
+  status = jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_STATUS);
 
 #if 0
   jtag_debugf("Status: %08lx", status);
@@ -186,7 +196,7 @@ static void jtag_gowin_gw2a_force_state(void) {
 }
 
 static bool jtag_gowin_pollFlag(uint32_t mask, uint32_t value) {
-  uint32_t status;
+  uint32_t status = 0xffffffff;
   int timeout = 0;
   do {
     status = jtag_gowin_readStatusReg();
@@ -217,7 +227,7 @@ static void sendClkUs(uint32_t us) {
   mcu_hw_jtag_toggleClk(15 * us);
 }
 
-void printStatusReg(uint32_t status) {
+static void printStatusReg(uint32_t status) {
     if (status & JTAG_GOWIN_STATUS_CRC_ERROR)        jtag_debugf("Bit 0: CRC ERROR detected");
     if (status & JTAG_GOWIN_STATUS_BAD_COMMAND)      jtag_debugf("Bit 1: Bad command received");
     if (status & JTAG_GOWIN_STATUS_ID_VERIFY_FAILED) jtag_debugf("Bit 2: ID verification failed");
@@ -256,11 +266,10 @@ void printStatusReg(uint32_t status) {
 
 // prepare SRAM upload
 bool jtag_gowin_eraseSRAM(void) {
-  uint32_t status;
   jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_USERCODE);
 
   // Clearing if failed loading
-  status = jtag_gowin_readStatusReg();
+  uint32_t status = jtag_gowin_readStatusReg();
 
   if ((idcode == IDCODE_GW5AST138)||(idcode == IDCODE_GW5A25)) {
     if ((status & JTAG_GOWIN_STATUS_DONE_FINAL) == 0) {
@@ -350,16 +359,12 @@ bool jtag_gowin_writeSRAM_prepare(void) {
 }
 
 bool jtag_gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool first, bool last) {
-
-  jtag_gowin_shiftDR_part(data, NULL, len, (first?JTAG_FLAG_BEGIN:0) | (last?JTAG_FLAG_END:0));
+  uint8_t zero = 0;
+  jtag_gowin_shiftDR_part(data, &zero, len, (first?JTAG_FLAG_BEGIN:0) | (last?JTAG_FLAG_END:0));
   
   return true;
 }
 
-uint32_t readUserCode(void)
-{
-	return jtag_gowin_command_read32(JTAG_COMMAND_GOWIN_USERCODE);
-}
 
 bool jtag_gowin_writeSRAM_postproc(uint32_t checksum) {
   jtag_gowin_command(JTAG_COMMAND_GOWIN_CONFIG_DISABLE);
