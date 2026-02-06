@@ -1980,7 +1980,7 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_irq_enable(gpio->irq_num);
 }
 
-void jtag_toggleClk(uint32_t clk_len)
+void mcu_hw_jtag_toggleClk(uint32_t clk_len)
 {
   jtag_enter_gpio_out_mode();
 

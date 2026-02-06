@@ -712,7 +712,7 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
 	menu_state->selected = i+1;
 	
 	if(dir_len(menu_state->dir) > 4 && menu_state->selected > 3) {
-	  debugf("more than 4 files an selected is > 3");
+	  debugf("more than 4 files and selected is > 3");
 	  if(menu_state->selected < dir_len(menu_state->dir)-1) menu_state->scroll = menu_state->selected - 3;
 	  else                                                  menu_state->scroll = dir_len(menu_state->dir)-4;
 	}

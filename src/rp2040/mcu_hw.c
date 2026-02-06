@@ -138,6 +138,7 @@ static struct {
   uint8_t state_btn_extra;
 } xbox_state[MAX_XBOX_DEVICES];
 
+TaskHandle_t pio_usb_task_handle = NULL;
 extern void usb_jtag_poll(void);
 static void pio_usb_task(__attribute__((unused)) void *parms) {
   // mark all hid and xbox entries as unused
@@ -857,7 +858,7 @@ static int msc_dev_addr = -1;
 static volatile bool msc_busy = 0;
 
 static bool disk_io_complete(uint8_t dev_addr, tuh_msc_complete_data_t const * cb_data) {
-  usb_debugf("disk_io_complete(%d)", dev_addr);
+  // usb_debugf("disk_io_complete(%d)", dev_addr);
   (void) dev_addr; (void) cb_data;
   msc_busy = 0;
   return true;
@@ -865,12 +866,17 @@ static bool disk_io_complete(uint8_t dev_addr, tuh_msc_complete_data_t const * c
 
 // This should never be called from the USB task itself
 void mcu_hw_usb_sector_read(void *buffer, int sector) {
-  usb_debugf("mcu_hw_usb_sector_read(%d, %p, %d)", msc_dev_addr, buffer, sector);
+  // usb_debugf("mcu_hw_usb_sector_read(%d, %p, %d)", msc_dev_addr, buffer, sector);
   if(msc_dev_addr < 0 || msc_busy) return;
   
   msc_busy = 1;
   tuh_msc_read10(msc_dev_addr, 0, buffer, sector, 1, disk_io_complete, 0);
-  while(msc_busy);
+
+  // wait for transfer to be done. If the pio task is not running, then
+  // actively call the usb host task handler
+  while(msc_busy)
+    // if(!pio_usb_task_handle)
+      tuh_task();
 }
 
 bool mcu_hw_usb_msc_present(void) {
@@ -1252,6 +1258,13 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
   }
 }
 
+void mcu_hw_jtag_toggleClk(uint32_t clk_len) {
+  while(clk_len--) {
+    gpio_put(PIN_JTAG_TCK, 1);
+    gpio_put(PIN_JTAG_TCK, 0);
+  }
+}
+
 static void mcu_hw_jtag_init(void) {
   // -------- init FPGA control pins ---------
 
@@ -1363,7 +1376,7 @@ void mcu_hw_init(void) {
   tusb_init(BOARD_TUD_RHPORT, &dev_init);
 #endif
 
-  xTaskCreate(pio_usb_task, "usb_task", 2048, NULL, configMAX_PRIORITIES, NULL);
+  xTaskCreate(pio_usb_task, "usb_task", 2048, NULL, configMAX_PRIORITIES, &pio_usb_task_handle);
 
 #ifdef WS2812_PIN
   uint offset = pio_add_program(pio0, &ws2812_program);  
@@ -1410,6 +1423,31 @@ void mcu_hw_init(void) {
 #endif
 }
 
+extern TaskHandle_t com_task_handle;
+extern TaskHandle_t menu_handle;
+
 void mcu_hw_upload_core(char *name) {
   debugf("Request to upload core %s", name);  
+
+  // stop various tasks so they don't interfere with the
+  // download. We don't have to care about any consequences
+  // as we'll reboot afterwards, anyways
+  vTaskDelete(com_task_handle);
+  com_task_handle = NULL;
+
+  // disable SPI interrupts to prevent main IRQ handler from running
+  gpio_set_irq_enabled(SPI_IRQ_PIN, GPIO_IRQ_LEVEL_LOW, false);
+
+  // stop the USB task. This requires the sector read routine to
+  // call the tuh_task while waiting
+  vTaskDelete(pio_usb_task_handle);
+  pio_usb_task_handle = NULL;
+
+  //  vTaskDelete(menu_handle);
+  //  menu_handle = NULL;
+
+  sdc_direct_upload_core_bin(name);
+
+  // restart companion to cope with new core
+  mcu_hw_reset();
 }

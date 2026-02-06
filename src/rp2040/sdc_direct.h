@@ -10,5 +10,6 @@ bool sdc_direct_read(uint32_t lba, uint8_t *buffer);
 
 // called by main if accessing the FPGA times out
 void sdc_boot(void);
+bool sdc_direct_upload_core_bin(const char *name);
 
 #endif // SDC_DIRECT_H
