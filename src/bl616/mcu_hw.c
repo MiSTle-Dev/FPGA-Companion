@@ -5,6 +5,7 @@
 #include <FreeRTOS.h>
 #include "mm.h"
 #include "semphr.h"
+#include "async_event.h"
 
 #include "usbh_core.h"
 #include "usbh_hid.h"
@@ -1200,10 +1201,13 @@ static int wifi_state = WIFI_STATE_UNKNOWN;
 static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
 static int s_retry_num = 0;
-static wifi_conf_t conf = { .country_code = "CN" }; // "CN","US","JP","EU"
-static QueueHandle_t wifi_event_queue;
+static wifi_conf_t conf = { .country_code = "EU" }; // "CN","US","JP","EU"
+static QueueHandle_t wifi_event_queue = NULL;
 
-void wifi_event_handler(uint32_t code) {
+void wifi_event_handler(async_input_event_t ev, void *priv)
+{
+  uint32_t code = ev->code;
+
   switch (code) {
   case CODE_WIFI_ON_INIT_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_INIT_DONE", __func__);
@@ -1255,8 +1259,17 @@ void wifi_event_handler(uint32_t code) {
 
 void wifi_start_firmware_task(void *param)
 {
+    /* network init */
+    tcpip_init(NULL, NULL);
     debugf("Starting wifi ...");
 
+    if (0 != rfparam_init(0, NULL, 0)) {
+      debugf("PHY RF init failed!");
+      return;
+    }
+    debugf("PHY RF init success!");
+
+    async_register_event_filter(EV_WIFI, wifi_event_handler, NULL);
     wifi_task_create();
 
     debugf("Starting fhost ...");
@@ -1265,19 +1278,9 @@ void wifi_start_firmware_task(void *param)
     vTaskDelete(NULL);
 }
 
-static TaskHandle_t wifi_fw_task;
 
 static void wifi_init(void) {
   wifi_event_queue = xQueueCreate(10, sizeof(char));
-
-  if (0 != rfparam_init(0, NULL, 0)) {
-    debugf("PHY RF init failed!");
-    return;
-  }
-  
-  debugf("PHY RF init success!");
-
-  tcpip_init(NULL, NULL);
 
   /* Enable wifi irq */
   extern void interrupt0_handler(void);
