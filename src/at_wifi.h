@@ -9,7 +9,5 @@ void at_wifi_init(void);
 void at_wifi_port_byte(unsigned char);
 void at_wifi_puts(char *);
 void at_wifi_puts_n(char *, int);
-uint8_t pet2asc(uint8_t c);
-uint8_t asc2pet(uint8_t c);
 
 #endif // AT_WIFI_H

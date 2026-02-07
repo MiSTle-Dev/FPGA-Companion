@@ -753,18 +753,16 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
-  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz */
 #elif TANG_PRIMER25K
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_10/* in  UART RX, crossed */
-  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz */
 #endif
 
 #ifndef SPI_FREQUENCY
-#define SPI_FREQUENCY 20000000   /* default SPI clock is 20 MHz */
+#define SPI_FREQUENCY 20000000   /* default SPI clock is 20 MHz, actually 26Mhz ! */
 #endif
 
 void spi_isr(uint8_t pin) {
