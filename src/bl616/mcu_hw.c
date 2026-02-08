@@ -9,6 +9,7 @@
 
 #include "usbh_core.h"
 #include "usbh_hid.h"
+#include "usbh_xbox.h"
 #include "usbh_msc.h"
 #include "usbd_core.h"
 #include "bflb_name.h"
@@ -26,11 +27,11 @@
 #include "../inifile.h"
 #include "../menu.h"
 
-#include "bl616_glb.h" //
+#include "bl616_glb.h"
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
 #include "bflb_dma.h"
-#include "bflb_gpio.h" //
+#include "bflb_gpio.h"
 #include "bflb_wdg.h"
 #ifdef CONFIG_CONSOLE_WO
 #include "bflb_wo.h"
@@ -38,36 +39,27 @@
 #include "shell.h"
 #include "bflb_uart.h"
 #endif
-#include "bflb_clock.h" //
-#include "bflb_flash.h" //
-#include "bflb_xip_sflash.h" //
-#include "bflb_sf_ctrl.h" //
-#include "board_flash_psram.h" //
+#include "bflb_clock.h"
+#include "bflb_flash.h"
+#include "bflb_xip_sflash.h"
+#include "bflb_sf_ctrl.h"
+#include "board_flash_psram.h"
 
 #include <lwip/tcpip.h>
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
-
-
-//#include <lwip/tcpip.h>
-//#include "lwip/tcp.h"
-//#include "lwip/dns.h"
-//#include "lwip/pbuf.h"
-//#include <lwip/sockets.h>
-//#include <lwip/netdb.h>
-//#include "bl_fw_api.h"
 #include "fhost_api.h"
 #include "wifi_mgmr_ext.h"
 #include "wifi_mgmr.h"
 #include "rfparam_adapter.h"
 
-#include "bflb_rtc.h" //
-#include "bflb_acomp.h" //
-#include "bflb_efuse.h" //
-#include "board.h" //
-#include "bl616_tzc_sec.h" //
+#include "bflb_rtc.h" 
+#include "bflb_acomp.h"
+#include "bflb_efuse.h"
+#include "board.h"
+#include "bl616_tzc_sec.h"
 #include "task.h"
 #include "timers.h"
 #include "bflb_irq.h"
@@ -246,19 +238,23 @@ static struct usb_config {
     struct usbh_hid *class;
     uint8_t *buffer;
     int nbytes;
-    struct usb_config *usb;
-    SemaphoreHandle_t sem;
-    TaskHandle_t task_handle;    
+    hid_report_t report;
+
     unsigned char last_state;
     unsigned char js_index;
     unsigned char last_state_btn_extra;
     int16_t last_state_x;
     int16_t last_state_y;
-    #ifdef RATE_CHECK
+
+    struct usb_config *usb;
+    SemaphoreHandle_t sem;
+    TaskHandle_t task_handle;
+#ifdef RATE_CHECK
     TickType_t rate_start;
     unsigned long rate_events;
-#endif    
-    volatile uint8_t stop; // thread stop flag
+#endif
+    hid_state_t xbox_state;
+    volatile uint8_t stop;
 } xbox_info[CONFIG_USBHOST_MAX_XBOX_CLASS];
     
   struct hid_info_S {
@@ -270,13 +266,13 @@ static struct usb_config {
     hid_report_t report;
     struct usb_config *usb;
     SemaphoreHandle_t sem;
-    TaskHandle_t task_handle;    
+    TaskHandle_t task_handle;
 #ifdef RATE_CHECK
     TickType_t rate_start;
     unsigned long rate_events;
 #endif
     hid_state_t hid_state;
-    volatile uint8_t stop; // thread stop flag
+    volatile uint8_t stop;
   } hid_info[CONFIG_USBHOST_MAX_HID_CLASS];
 } usb_config;
 
@@ -488,6 +484,7 @@ static void usbh_hid_client_thread(void *argument) {
 
     if (hid->stop)
       break;
+
     if (ret < 0) {
       if (ret == -USB_ERR_NODEV || ret == -USB_ERR_NOTCONN)
         break;
@@ -569,34 +566,99 @@ static void xbox_init(struct xbox_info_S *xbox) {
 static void usbh_xbox_client_thread(void *argument) {
   struct xbox_info_S *xbox = (struct xbox_info_S *)argument;
   int ret = 0;
+  const UsbGamepadMap *map;
 
   usb_debugf("XBOX client #%d: thread started", xbox->index);
 
-    // Send initialization packets
-    for (int i = 0; i < CONFIG_USBHOST_MAX_XBOX_CLASS; i++) {
-      if ((ret = usbh_control_transfer(xbox->class->hport, &xbox_init_packets[i], xbox->buffer)) < 0) {
-        usb_debugf("XBOX: init packet %d failed: %d", i, ret);
-      }
-  }
-  xbox_init(xbox);
-  usb_debugf("XBOX client #%d: all init packets sent, entering main loop.\n", xbox->index);
+  uint16_t vendor_id = xbox->class->hport->device_desc.idVendor;
+  uint16_t product_id = xbox->class->hport->device_desc.idProduct;
+  uint16_t version_id = xbox->class->hport->device_desc.bcdDevice;
 
-    // setup urb
-    usbh_int_urb_fill(&xbox->class->intin_urb, xbox->class->hport, 
-      xbox->class->intin, xbox->buffer, XBOX_REPORT_SIZE,
-      50, usbh_xbox_callback, xbox);
+  usb_debugf("idVendor: 0x%04x          ", vendor_id);
+  usb_debugf("idProduct: 0x%04x         ", product_id);
+  usb_debugf("bcdDevice(version): 0x%04x         ", version_id);
+  usb_debugf("report type: 0x%04x          ", xbox->report.type);
+
+  // Send initialization packets
+  for (int i = 0; i < CONFIG_USBHOST_MAX_XBOX_CLASS; i++) {
+    if ((ret = usbh_control_transfer(xbox->class->hport, &xbox_init_packets[i], xbox->buffer)) < 0) {
+      usb_debugf("XBOX: init packet %d failed: %d", i, ret);
+     }
+   }
+  xbox_init(xbox);
+  usb_debugf("XBOX client #%d: all init packets sent", xbox->index);
+
+  // lookup for VID/PID/Version
+  map = find_usb_gamepad_map(vendor_id, product_id, version_id);
+
+  if (map) {
+    usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
+                map->name, map->vid, map->pid, map->version);
+
+    xbox->report.map = map;
+    xbox->report.map_found = 1;
+    xbox->report.map_checked = 1;
+  } 
+  else {
+    usb_debugf("No map for VID=%04x PID=%04x, VERSION=%04x", vendor_id, product_id, version_id);
+    xbox->report.map = NULL;
+    xbox->report.map_found = 0;
+    xbox->report.map_checked = 1;
+  }
+
+  // todo interval
+  uint8_t interval = xbox->class->intin
+                         ? xbox->class->intin->bInterval
+                         : 1;
 
   while(1) {
+    if (xbox->stop)
+      break;
+
+    if (!xbox->class->hport || !xbox->class->hport->connected)
+      break;
+
+    usbh_int_urb_fill(&xbox->class->intin_urb, 
+                    xbox->class->hport, 
+                    xbox->class->intin, 
+                    xbox->buffer, XBOX_REPORT_SIZE,
+                    interval,
+                    usbh_xbox_callback, xbox);
+
     int ret = usbh_submit_urb(&xbox->class->intin_urb);
-    if (ret < 0)
-      usb_debugf("XBOX client #%d: submit failed", xbox->index);
-    else {
-      // Wait for result
-      xSemaphoreTake(xbox->sem, 0xffffffffUL);
-      if(xbox->nbytes == XBOX_REPORT_SIZE)
-        xbox_parse(xbox);
-      xbox->nbytes = 0;
-    }      
+
+    if (xbox->stop)
+      break;
+
+    if (ret < 0) {
+      if (ret == -USB_ERR_NODEV || ret == -USB_ERR_NOTCONN)
+        break;
+
+      if (xbox->stop) {
+        usb_debugf("HID client #%d: stop signal received - exiting HID loop", xbox->index);
+        break;
+      }
+
+      if (ret != -USB_ERR_TIMEOUT)
+        usb_debugf("HID client #%d: submit failed, %d", xbox->index, ret);
+
+      continue;
+    }
+
+    if (xSemaphoreTake(xbox->sem, portMAX_DELAY) != pdTRUE) {
+      if (xbox->stop)
+        break;
+      usbh_kill_urb(&xbox->class->intin_urb);
+      continue;
+    }
+
+    if (xbox->stop)
+      break;
+
+    if(xbox->nbytes == XBOX_REPORT_SIZE)
+      xbox_parse(xbox);
+
+    xbox->nbytes = 0;
 
 #ifdef RATE_CHECK
     xbox->rate_events++;
@@ -606,6 +668,10 @@ static void usbh_xbox_client_thread(void *argument) {
     }    
 #endif
   }
+
+  usb_debugf("XBOX client #%d: stopping", xbox->index);
+  xbox->task_handle = NULL;
+  vTaskDelete(NULL);
 }
 
 void usbh_hid_run(struct usbh_hid *hid_class)
@@ -613,8 +679,10 @@ void usbh_hid_run(struct usbh_hid *hid_class)
   struct usb_config *usb = &usb_config;
 
   uint8_t i = hid_class->minor;
+
   const char *driver_name = hid_class->hport->config.intf[hid_class->intf].class_driver->driver_name;
   debugf("New Path - connected - Driver name: %s intf: %d minor: %u rep_size: %u", hid_class->hport->config.intf[hid_class->intf].class_driver->driver_name, i, hid_class->minor, hid_class->report_size);
+
   if (driver_name && strcmp(driver_name, "hid") == 0) {
     // request status (currently only dummy data, will return 0x5c, 0x42)
     // in the long term the core is supposed to return its HID demands
@@ -672,8 +740,48 @@ void usbh_hid_stop(struct usbh_hid *hid_class)
   }
 }
 
+void usbh_xbox_run(struct usbh_xbox *xbox_class) {
+  struct usb_config *usb = &usb_config;
+
+  uint8_t i = xbox_class->minor;
+
+  const char *driver_name = xbox_class->hport->config.intf[xbox_class->intf].class_driver->driver_name;
+  debugf("New Path - connected - XBOX Driver name: %s intf: %d minor: %u", xbox_class->hport->config.intf[xbox_class->intf].class_driver->driver_name, i, xbox_class->minor);
+
+  if (driver_name && strcmp(driver_name, "xbox") == 0) {
+
+    usb->xbox_info[i].class = xbox_class;
+
+    usb_debugf("NEW XBOX HID %d", i);
+    uint8_t ifnt = usb->xbox_info[i].class->intf;
+    memset(&usb->xbox_info[i].report, 0, sizeof(usb->xbox_info[i].report));
+
+    uint16_t rep_desc = usbh_hid_get_report_descriptor(xbox_class, report_desc[i], 1024);
+    if (rep_desc < 0)
+    {
+      usb_debugf("usbh_hid_get_report_descriptor issue");
+      usb->xbox_info[i].state = STATE_FAILED;
+      return;
+    }
+
+    uint8_t ifn = usb->xbox_info[i].class->intf;
+    const struct usb_interface_descriptor *id =
+        &usb->xbox_info[i].class->hport->config.intf[ifn].altsetting[0].intf_desc;
+
+    usb->xbox_info[i].stop = 0;
+    usb->xbox_info[i].state = STATE_DETECTED;
+  }
+
+	xTaskCreate(usbh_xbox_client_thread, (char *)"xbox_task", 2048,
+		    &usb->xbox_info[i], configMAX_PRIORITIES-3, &usb->xbox_info[i].task_handle );
+}
+
+void usbh_xbox_stop(struct usbh_xbox *xbox_class) {
+  uint8_t i = xbox_class->minor;
+  usb_config.xbox_info[i].stop = 1;
+}
+
 static struct bflb_device_s *usb_dev;
-static TaskHandle_t usb_handle;
 
 void usb_host(void) {
 
@@ -1142,8 +1250,6 @@ void stop_hid(void) {
   }
  }
 
-extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
-extern int bl_sys_reset_por(void);
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
