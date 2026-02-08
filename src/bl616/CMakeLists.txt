@@ -150,6 +150,7 @@ target_sources(app PRIVATE
    	../xml.c
     ../at_wifi.c
     ../puff.c
+    hid_keyboard_template.c
     ../jtag.c
     sdc_direct.c
 )

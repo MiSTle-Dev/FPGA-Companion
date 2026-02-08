@@ -27,6 +27,7 @@
 #include "../inifile.h"
 #include "../menu.h"
 
+#include <bl616_hbn.h>
 #include "bl616_glb.h"
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
@@ -867,6 +868,7 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_10/* in  UART RX, crossed */
+  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz*/
 #endif
 
 #ifndef SPI_FREQUENCY
@@ -1250,6 +1252,8 @@ void stop_hid(void) {
   }
  }
 
+extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
+extern int bl_sys_reset_por(void);
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
@@ -1281,7 +1285,16 @@ void mcu_hw_reset(void) {
   bflb_spi_deinit(spi_dev);
 
   usbh_deinitialize(0);
+#ifdef TANG_PRIMER25K
+  bflb_mtimer_delay_ms(10);
+  hid_keyboard_init(0,  usb_dev->reg_base);
+  bflb_mtimer_delay_ms(100);
+  debugf("deinit done and system POR reset");
+  HBN_Set_User_Boot_Config(1);
+  bl_sys_reset_por();
+#else
   debugf("deinit done and waiting for WDT POR reset");
+#endif
   while (1) {
     /*empty dead loop*/
   }
