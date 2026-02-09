@@ -22,6 +22,7 @@
 #include "../mcu_hw.h"
 #include "../inifile.h"
 #include "../menu.h"
+#include "../gowin.h"
 #include "bl616_glb.h"
 
 #include "bflb_mtimer.h"
@@ -1872,7 +1873,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
   // We aren't really shifting, but instead setting bits
   // via mask. This makes a difference for the last byte
   // when not reading all 8 bits
-  if(dlen) {
+  if(dlen && rxd) {
     // jtag_highlight_debugf("last byte %02x, rshift = %d", *rxd, dlen);
     *rxd <<= 8-dlen;
   }
@@ -1945,7 +1946,7 @@ void mcu_hw_fpga_reconfig(bool run) {
   if(!jtag_open()) {
     jtag_debugf("FPGA not detected");
   } else {
-    jtag_gowin_fpgaReset(); // JTAG-based reset/reconfig
+    gowin_fpgaReset(); // JTAG-based reset/reconfig
    }
   jtag_close();
 }

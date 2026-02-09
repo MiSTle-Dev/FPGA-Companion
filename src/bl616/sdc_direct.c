@@ -20,6 +20,7 @@
 #include "../debug.h"
 #include "../mcu_hw.h"
 #include "../jtag.h"
+#include "../gowin.h"
 #include <sys/stat.h>
 
 static struct bflb_device_s *gpio;
@@ -84,29 +85,27 @@ bool sdc_direct_upload_core_bin(const char *name) {
     return false;
   }
     
-  if(!jtag_open()) {
+  if(!gowin_open()) {
     jtag_debugf("FPGA not detected");
     jtag_close();
     f_close(&fil);
     return false;
   }
   
-  sdc_debugf("JTAG FPGA detected :%08lx", idcode);
-    
   // measure total download time
   TickType_t ticks = xTaskGetTickCount();
   
   jtag_debugf("=== Erase SRAM ===");
-  if(!jtag_gowin_eraseSRAM()) {
+  if(!gowin_eraseSRAM()) {
     jtag_debugf("Failed to erase SRAM");
     jtag_close();
     f_close(&fil);
     return false;
   }
 
-  if (idcode == IDCODE_GW5AST138) {
+  if (gowin_idcode() == IDCODE_GW5AST138) {
     jtag_debugf("=== 2nd Erase SRAM ===");
-    if(!jtag_gowin_eraseSRAM()) {
+    if(!gowin_eraseSRAM()) {
       jtag_debugf("Failed to erase SRAM");
       jtag_close();
       f_close(&fil);
@@ -114,7 +113,7 @@ bool sdc_direct_upload_core_bin(const char *name) {
     }
   }
   jtag_debugf("=== Load SRAM ===");
-  jtag_gowin_writeSRAM_prepare();
+  gowin_writeSRAM_prepare();
 
   FRESULT fr;
   UINT bytes = 0, total = 0;
@@ -158,12 +157,12 @@ bool sdc_direct_upload_core_bin(const char *name) {
   }
 
   // send TMS 1/0 to return into RUN-TEST/IDLE
-   if (idcode == IDCODE_GW2AR18) {
+  if (gowin_idcode() == IDCODE_GW2AR18) {
     mcu_hw_jtag_tms(1, 0b01, 2);
   }
   free(fbuf_cached);
 // don't set checksum
-  jtag_gowin_writeSRAM_postproc(0xffffffff);
+  gowin_writeSRAM_postproc(0xffffffff);
   
   sdc_debugf("Read %lu bytes", total);
   
@@ -186,7 +185,7 @@ bool sdc_direct_upload_core_fs(const char *name) {
   }
     
   // transmit core via JTAG
-  if(!jtag_open()) {
+  if(!gowin_open()) {
     jtag_debugf("FPGA not detected");    
     jtag_close();
     f_close(&fil);
@@ -199,16 +198,16 @@ bool sdc_direct_upload_core_fs(const char *name) {
   TickType_t ticks = xTaskGetTickCount();
   
   jtag_debugf("=== Erase SRAM ===");
-  if(!jtag_gowin_eraseSRAM()) {
+  if(!gowin_eraseSRAM()) {
     jtag_debugf("Failed to erase SRAM");
     jtag_close();
     f_close(&fil);
     return false;
   }
   
-  if (idcode == IDCODE_GW5AST138) {
+  if (gowin_idcode() == IDCODE_GW5AST138) {
     jtag_debugf("=== 2nd Erase SRAM ===");
-    if(!jtag_gowin_eraseSRAM()) {
+    if(!gowin_eraseSRAM()) {
       jtag_debugf("Failed to erase SRAM");
       jtag_close();
       f_close(&fil);
@@ -217,7 +216,7 @@ bool sdc_direct_upload_core_fs(const char *name) {
   }
 
   jtag_debugf("=== Load SRAM ===");
-  jtag_gowin_writeSRAM_prepare();
+  gowin_writeSRAM_prepare();
   
   // =================== parse the fs file =================
   // these are rather huge (>7MB for the GW2AR-18) and mainly contain
@@ -305,7 +304,7 @@ bool sdc_direct_upload_core_fs(const char *name) {
 	  // sdc_debugf("line %d: %ld (total %ld, used %d)", line, line_data, total_data, used);
 	  // hexdump(data, line_data);
 	  
-	  jtag_gowin_writeSRAM_transfer(data, 8*line_data, !line, line>100 && line_data == 2);
+	  gowin_writeSRAM_transfer(data, 8*line_data, !line, line>100 && line_data == 2);
 	  
 	  line_data = 0;
 	  line++;
@@ -333,7 +332,7 @@ bool sdc_direct_upload_core_fs(const char *name) {
   
   // TODO: Figure out where the checksum is supposed to come from. The checksum openFPGAloader
   // downloads is not the one mentioned in the .fs header.
-  jtag_gowin_writeSRAM_postproc(0xffffffff);
+  gowin_writeSRAM_postproc(0xffffffff);
   
   sdc_debugf("Read %lu bytes", total);
   
@@ -390,7 +389,7 @@ void sdc_boot(void) {
   // on upload failure reconfig the FPGA and allow it to (re-)boot from flash
   if(!upload_ok) {
     sdc_debugf("Upload failed");
-    jtag_gowin_fpgaReset();
+    gowin_fpgaReset();
   } else {
     sdc_debugf("Upload successful, FPGA now running new core");
   }

@@ -99,6 +99,7 @@ target_sources(app PRIVATE
     ../puff.c
     hid_keyboard_template.c
     ../jtag.c
+    ../gowin.c
     sdc_direct.c
 )
 
