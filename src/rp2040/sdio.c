@@ -322,66 +322,11 @@ void sdio_release(void) {
 
 // gain direct access to the sd card
 void sdio_take_over(void) {
+  // there's no need to check for the presence of the sd card
+  // here as this is only being called when the user has selected
+  // a file and this in turn only happens if the sd card has already
+  // been working properly
+  
   mcu_hw_fpga_reconfig(false);
   sdio_init();
-}
-
-/* TODO: Move this into mcu_hw.c as it's quite hardware specific */
-#include "ff.h"
-
-void sdc_boot(void) {
-  FATFS sdio_fs;
-
-  // before doing anything, check if an SD card is inserted
-  
-  // -------- init SD control pins ---------
-  gpio_init(PIN_SD_DET);
-  gpio_set_dir(PIN_SD_DET, GPIO_IN);
-  if(gpio_get(PIN_SD_DET)) {
-    sdc_debugf("No card inserted");
-    return;
-  }
-  
-  // The FPGA is not ready, but it may still drive the SD card.
-  // So reconfigure the FPGA without allowing it to boot from flash
-  mcu_hw_fpga_reconfig(false);
-  
-  // try to boot the FPGA from SD card
-  sdc_debugf("Attempting direct SD card boot ...");
-  
-  if(!sdio_init()) {
-    sdc_debugf("No usable card found. Stopping boot attempt");
-    sdio_release();
-    mcu_hw_fpga_reconfig(true);
-    return;
-  }
-
-  if(f_mount(&sdio_fs, "/sd", 1) != FR_OK) {
-    sdc_debugf("direct mount failed");
-    sdio_release();
-    mcu_hw_fpga_reconfig(true);
-    return;
-  }
-  
-  sdc_debugf("Card mounted directly");
-  // we can now try to load a core from SD card
-
-  // try to load core.bin and if that doesn't work core.fs
-  bool upload_ok = gowin_upload_core_bin("core.bin");
-  if(!upload_ok) upload_ok = gowin_upload_core_fs("core.fs");  
-    
-  // unmount the fs
-  f_unmount("/sd");
-  
-  // release the sd card
-  sdio_release();
-  
-  // on upload failure reconfig the FPGA and allow it to (re-)boot from flash
-  if(!upload_ok) {
-    sdc_debugf("Upload failed, triggering FPGA reconfig from flash");
-    mcu_hw_fpga_reconfig(true);
-  }
-
-  mcu_hw_reset();
-  
 }

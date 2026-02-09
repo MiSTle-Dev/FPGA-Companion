@@ -53,7 +53,6 @@ void jtag_exit_gpio_out_mode(void);
 
 // this board also has the ability to boot the FPGA from SD card
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
-#define BOOT_FROM_SDC sdc_boot    // afterwards this will be called
 
 #elif defined (MISTLE_BOARD)
 
@@ -70,7 +69,6 @@ void mcu_hw_jtag_toggleClk(uint32_t);
 // this board also has the ability to boot the FPGA from SD card
 #include "sdio.h"
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
-#define BOOT_FROM_SDC sdc_boot    // afterwards this will be called
 
 // give file system driver in sdio.c access to the local sdio sd card
 #define SDIO_DIRECT_READ   sdio_sector_read

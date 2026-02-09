@@ -2077,7 +2077,6 @@ __attribute__((weak)) uint32_t get_fattime(void)
 void mcu_hw_upload_core(char *name) {
   debugf("Request to upload core %s", name);
 
-  bool upload_ok = false;
   uint64_t start;
   FATFS fs;
   FRESULT res = FR_NOT_READY;
@@ -2092,7 +2091,7 @@ void mcu_hw_upload_core(char *name) {
       bflb_mtimer_delay_ms(100);
     if (res == FR_OK) {
         sdc_debugf("SD card mounted");
-        upload_ok = sdc_direct_upload_core_bin(name);
+        sdc_direct_upload_core_bin(name);
         f_mount(NULL, "/sd", 1);
       } else {
         sdc_debugf("SD card not found...");
@@ -2108,7 +2107,7 @@ void mcu_hw_upload_core(char *name) {
           debugf("failed to mount USB drive");
       } else {
           debugf("USB drive mounted");
-          upload_ok = sdc_direct_upload_core_bin(name);
+	  sdc_direct_upload_core_bin(name);
           f_mount(NULL, "/usb", 1);
         }
   }

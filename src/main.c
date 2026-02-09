@@ -99,11 +99,6 @@ static void com_task(__attribute__((unused)) void *p ) {
   /* This will only be reached if the FPGA is not ready */
   /* So loop foreever while e.g. USB is still being handled */
   /* e.g. for debugging */
-
-#ifdef BOOT_FROM_SDC
-  BOOT_FROM_SDC();
-#endif
-  
   for(;;) {
     // frequently check for an FPGA to show up and reboot to
     // startup normally if one is detected

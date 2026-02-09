@@ -93,6 +93,7 @@ bool gowin_upload_core_fs(const char *name);
 // bl616 uses custom implementations for the gowin upload.
 
 bool gowin_open(void);
+uint32_t gowin_idcode(void);
 void gowin_fpgaReset(void);
 bool gowin_eraseSRAM(void);
 bool gowin_writeSRAM_prepare(void);
