@@ -1290,7 +1290,7 @@ void mcu_hw_reset(void) {
   hid_keyboard_init(0,  usb_dev->reg_base);
   bflb_mtimer_delay_ms(100);
   debugf("deinit done and system POR reset");
-  HBN_Set_User_Boot_Config(1);
+  HBN_Set_User_Boot_Config(0); //HAL_REBOOT_AS_BOOTPIN
   bl_sys_reset_por();
 #else
   debugf("deinit done and waiting for WDT POR reset");
