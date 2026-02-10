@@ -241,7 +241,7 @@ static inline uint8_t reverse_byte(uint8_t byte) {
 }
 
 GOWIN_STATIC bool gowin_open(void) {
-  uint32_t idcode = jtag_open();  
+  idcode = jtag_open();  // global !
   gowin_debugf("FPGA detected: %08lx", idcode);
 
   return(idcode == IDCODE_GW2AR18  || 

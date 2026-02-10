@@ -14,7 +14,6 @@
 #include "usbd_core.h"
 #include "bflb_name.h"
 #include "../usb_controller_maps.h"
-
 #include "ff.h"
 #include "fatfs_diskio_register.h"
 
@@ -27,7 +26,6 @@
 #include "../inifile.h"
 #include "../menu.h"
 #include "../gowin.h"
-#include "bl616_glb.h"
 
 #include <bl616_hbn.h>
 #include "bl616_glb.h"
@@ -2242,7 +2240,7 @@ __attribute__((weak)) uint32_t get_fattime(void)
 
 void mcu_hw_upload_core(char *name) {
   debugf("Request to upload core %s", name);
-#ifdef JTAG_ENABLE
+#ifdef ENABLE_JTAG
   uint64_t start;
   FATFS fs;
   FRESULT res = FR_NOT_READY;
@@ -2273,11 +2271,11 @@ void mcu_hw_upload_core(char *name) {
           debugf("failed to mount USB drive");
       } else {
           debugf("USB drive mounted");
-	  sdc_direct_upload_core_bin(name);
+	        sdc_direct_upload_core_bin(name);
           f_mount(NULL, "/usb", 1);
         }
   }
-#endif // JTAG_ENABLE
+#endif // ENABLE_JTAG
 }
 
 bool mcu_hw_usb_msc_present(void) {
