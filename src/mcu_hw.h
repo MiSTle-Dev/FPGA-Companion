@@ -52,6 +52,7 @@ void jtag_enter_gpio_out_mode(void);
 void jtag_exit_gpio_out_mode(void);
 
 // this board also has the ability to boot the FPGA from SD card
+#define ENABLE_JTAG
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
 
 #elif defined (MISTLE_BOARD)
@@ -68,6 +69,7 @@ void mcu_hw_jtag_toggleClk(uint32_t);
 
 // this board also has the ability to boot the FPGA from SD card
 #include "sdio.h"
+#define ENABLE_JTAG
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
 
 // give file system driver in sdio.c access to the local sdio sd card

@@ -11,6 +11,7 @@
 #include "../jtag.h"
 #include "../spi.h"     // for freetos includes
 
+#ifdef ENABLE_JTAG
 #include <ff.h>
 
 // idcode is stored globally so the FPGA routines can address the right FPGA
@@ -495,3 +496,4 @@ bool gowin_upload_core_fs(const char *name) {
   f_close(&fil);
   return true;
 }
+#endif // ENABLE_JTAG

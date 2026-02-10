@@ -46,7 +46,6 @@
 #warning "Building for MiSTeryDev20k"
 #include "../jtag.h"
 #include "./sdio.h"
-#define ENABLE_JTAG
 
 // FPGA JTAG pins
 #define PIN_JTAG_TDI  12   // pin 15, gpio 12

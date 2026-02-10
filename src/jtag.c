@@ -11,6 +11,8 @@
 #include <FreeRTOS.h>
 #include <timers.h>
 
+#ifdef ENABLE_JTAG
+
 void jtag_command_u08(uint8_t cmd) {
   // stay in RUN-TEST/IDLE like openFPGAloader
   mcu_hw_jtag_tms(1, 0b000000, 6);
@@ -125,3 +127,5 @@ void jtag_close(void) {
   // e.g. an externally connected JTAG programmer
   mcu_hw_jtag_set_pins(0x00, 0x00);
 }
+
+#endif // ENABLE_JTAG

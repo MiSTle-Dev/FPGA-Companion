@@ -67,6 +67,8 @@ void sdc_direct_release(void) {
 #endif
 }
 
+#ifdef JTAG_ENABLE
+
 static inline uint8_t reverse_byte(uint8_t byte) {
   byte = ((byte & 0x55) << 1) | ((byte & 0xaa) >> 1);
   byte = ((byte & 0x33) << 2) | ((byte & 0xcc) >> 2);
@@ -172,3 +174,5 @@ bool sdc_direct_upload_core_bin(const char *name) {
 
   return true;
 }
+
+#endif // JTAG_ENABLE

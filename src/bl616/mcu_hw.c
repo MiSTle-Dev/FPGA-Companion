@@ -66,7 +66,6 @@
 #warning "Building for TANG_CONSOLE60K internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
-#define ENABLE_JTAG
 #define PIN_JTAGSEL  GPIO_PIN_28
 #define PIN_UART_TX  GPIO_PIN_30
 #define PIN_UART_RX  GPIO_PIN_22
@@ -74,7 +73,6 @@
 #warning "Building for TANG_NANO20K internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
-#define ENABLE_JTAG
 #define PIN_UART_TX  GPIO_PIN_11
 #define PIN_UART_RX  GPIO_PIN_22
 #elif M0S_DOCK
@@ -85,7 +83,6 @@
 #warning "Building for TANG_MEGA138KPRO internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
-#define ENABLE_JTAG
 #define PIN_JTAGSEL  GPIO_PIN_10
 #define PIN_UART_TX  GPIO_PIN_28
 #define PIN_UART_RX  GPIO_PIN_22
@@ -93,7 +90,6 @@
 #warning "Building for TANG_MEGA60K internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
-#define ENABLE_JTAG
 #define PIN_JTAGSEL  GPIO_PIN_28
 #define PIN_UART_TX  GPIO_PIN_30
 #define PIN_UART_RX  GPIO_PIN_22
@@ -101,10 +97,11 @@
 #warning "Building for TANG_PRIMER25K internal BL616"
 #include "../jtag.h"
 #include "./sdc_direct.h"
-#define ENABLE_JTAG
 #define PIN_JTAGSEL  GPIO_PIN_11
 #define PIN_UART_TX  GPIO_PIN_12
 #define PIN_UART_RX  GPIO_PIN_22
+#else
+#error "No valid TANG_BOARD specified!"
 #endif
 
 static struct bflb_device_s *gpio;
@@ -2076,7 +2073,7 @@ __attribute__((weak)) uint32_t get_fattime(void)
 
 void mcu_hw_upload_core(char *name) {
   debugf("Request to upload core %s", name);
-
+#ifdef JTAG_ENABLE
   uint64_t start;
   FATFS fs;
   FRESULT res = FR_NOT_READY;
@@ -2111,6 +2108,7 @@ void mcu_hw_upload_core(char *name) {
           f_mount(NULL, "/usb", 1);
         }
   }
+#endif // JTAG_ENABLE
 }
 
 bool mcu_hw_usb_msc_present(void) {
