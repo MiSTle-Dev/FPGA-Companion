@@ -119,17 +119,21 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
 #define SDC_RESULT DRESULT
 #endif
 
-static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, __attribute__((unused)) UINT count) {
+static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, UINT count) {
   // sdc_debugf("sdc_read(%p,%lu,%u)", buff, (unsigned long)sector, count);  
 
-  // mcu_hw may define a SDC_DIRECT_READ when the MCU can get direct access
+  // mcu_hw may define a SDIO_DIRECT_READ when the MCU can get direct access
   // (not though the FPGA) to the SD card.
-#ifdef SDC_DIRECT_READ
-  if(SDC_DIRECT_READ(sector, buff))
+#ifdef SDIO_DIRECT_READ
+  if(SDIO_DIRECT_READ(sector, buff, count))
     return 0;
 #endif
 
-  sdc_read_sector(sector, buff);
+  while(count--) {
+    sdc_read_sector(sector, buff);
+    buff += 512;
+    sector++;
+  }
   
   return 0;
 }
@@ -137,12 +141,17 @@ static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, __attribute__((unused)) UIN
 static SDC_RESULT sdc_write(const BYTE *buff, LBA_t sector, UINT count) {
   sdc_debugf("sdc_write(%p,%lu,%u)", buff, (unsigned long)sector, count);  
 
-#ifdef SDC_DIRECT_WRITE
-  if(SDC_DIRECT_WRITE(sector, buff))
+#ifdef SDIO_DIRECT_WRITE
+  if(SDIO_DIRECT_WRITE(sector, buff, count))
     return 0;
 #endif
 
-  sdc_write_sector(sector, buff);
+  while(count--) {
+    sdc_write_sector(sector, buff);
+    buff += 512;
+    sector++;
+  }
+    
   return 0;
 }
 
@@ -194,7 +203,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count) {
   // sdc_debugf("disk_read(%d, %lu)", pdrv, sector);  
 
   if(pdrv == 1) {
-    mcu_hw_usb_sector_read(buff, sector);
+    mcu_hw_usb_sector_read(buff, sector, count);
     return RES_OK;
   }
     

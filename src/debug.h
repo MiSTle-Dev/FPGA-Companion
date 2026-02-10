@@ -5,6 +5,16 @@
 
 #define debugf(x, ...)  printf(x "\r\n", ##__VA_ARGS__)
 
+/* ansi color codes: 
+   31m 	Red
+   32m 	Green
+   33m 	Yellow
+   34m 	Blue
+   35m 	Purple
+   36m 	Cyan
+   37m 	White
+*/
+   
 #define ini_debugf(a, ...)  debugf("\033[0;31mINI: " a "\033[0m", ##__VA_ARGS__)  // red
 #define sys_debugf(a, ...)  debugf("\033[0;32mSYS: " a "\033[0m", ##__VA_ARGS__)  // green
 #define sdc_debugf(a, ...)  debugf("\033[0;33mSDC: " a "\033[0m", ##__VA_ARGS__)  // yellow
@@ -15,6 +25,7 @@
 #define menu_debugf(a, ...) debugf("\033[1;33mMNU: " a "\033[0m", ##__VA_ARGS__)  // bold yellow
 #define jtag_debugf(a, ...)  debugf("\033[0;32mJTAG: " a "\033[0m", ##__VA_ARGS__)  // green
 #define jtag_highlight_debugf(a, ...)  debugf("\033[1;32mJTAG: " a "\033[0m", ##__VA_ARGS__)  // bold green
+#define gowin_debugf(a, ...)  debugf("\033[0;34mGOWIN: " a "\033[0m", ##__VA_ARGS__)  // blue
 #define fatal_debugf(a, ...)  debugf("\033[1;31mFATAL: " a "\033[0m", ##__VA_ARGS__)  // bold red
 
 #include <ctype.h>

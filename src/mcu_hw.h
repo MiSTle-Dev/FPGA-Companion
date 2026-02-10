@@ -23,7 +23,7 @@ unsigned char mcu_hw_spi_tx_u08(unsigned char b);
 void mcu_hw_spi_end(void);
 
 bool mcu_hw_hid_present(void);
-void mcu_hw_usb_sector_read(void *buffer, int sector);
+void mcu_hw_usb_sector_read(void *buffer, int sector, int count);
 void mcu_hw_upload_core(char *name);
 bool mcu_hw_usb_msc_present(void);
 
@@ -52,28 +52,29 @@ void jtag_enter_gpio_out_mode(void);
 void jtag_exit_gpio_out_mode(void);
 
 // this board also has the ability to boot the FPGA from SD card
-#include "sdc_direct.h"
+#define ENABLE_JTAG
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
-#define BOOT_FROM_SDC sdc_boot    // afterwards this will be called
 
 #elif defined (MISTLE_BOARD)
 
 #if MISTLE_BOARD == 4
+#include "sdio.h"
 // currently only the Dev20k
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
 uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
 void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 void mcu_hw_fpga_reconfig(bool state);
 bool mcu_hw_jtag_is_active(void);
+void mcu_hw_jtag_toggleClk(uint32_t);
 
 // this board also has the ability to boot the FPGA from SD card
-#include "sdc_direct.h"
+#include "sdio.h"
+#define ENABLE_JTAG
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
-#define BOOT_FROM_SDC sdc_boot    // afterwards this will be called
 
-// give file system driver in sdc.c access to the local sd card
-#define SDC_DIRECT_READ   sdc_direct_read
-#define SDC_DIRECT_WRITE  sdc_direct_write
+// give file system driver in sdio.c access to the local sdio sd card
+#define SDIO_DIRECT_READ   sdio_sector_read
+#define SDIO_DIRECT_WRITE  sdio_sector_write
 #endif
 
 #endif

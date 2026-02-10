@@ -11,6 +11,7 @@
 #include "pico/stdlib.h"
 
 #include <stdio.h>
+#include <strings.h>
 #include "tusb.h"
 #include "pico/multicore.h"
 #include "hardware/clocks.h"
@@ -23,6 +24,7 @@
 #include "../at_wifi.h"
 #include "../inifile.h"
 #include "../menu.h"
+#include "../gowin.h"
 
 #include "../mcu_hw.h"
 
@@ -43,8 +45,7 @@
 #elif MISTLE_BOARD == 4
 #warning "Building for MiSTeryDev20k"
 #include "../jtag.h"
-#include "./sdc_direct.h"
-#define ENABLE_JTAG
+#include "./sdio.h"
 
 // FPGA JTAG pins
 #define PIN_JTAG_TDI  12   // pin 15, gpio 12
@@ -865,17 +866,17 @@ static bool disk_io_complete(uint8_t dev_addr, tuh_msc_complete_data_t const * c
 }
 
 // This should never be called from the USB task itself
-void mcu_hw_usb_sector_read(void *buffer, int sector) {
-  // usb_debugf("mcu_hw_usb_sector_read(%d, %p, %d)", msc_dev_addr, buffer, sector);
+void mcu_hw_usb_sector_read(void *buffer, int sector, int count) {
+  usb_debugf("mcu_hw_usb_sector_read(%d, %p, %d, %d)", msc_dev_addr, buffer, sector, count);
   if(msc_dev_addr < 0 || msc_busy) return;
   
   msc_busy = 1;
-  tuh_msc_read10(msc_dev_addr, 0, buffer, sector, 1, disk_io_complete, 0);
+  tuh_msc_read10(msc_dev_addr, 0, buffer, sector, count, disk_io_complete, 0);
 
   // wait for transfer to be done. If the pio task is not running, then
   // actively call the usb host task handler
   while(msc_busy)
-    // if(!pio_usb_task_handle)
+    if(!pio_usb_task_handle)
       tuh_task();
 }
 
@@ -1243,7 +1244,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
       if(!mask) {
 	mask = 0x01;
 	if(rxd) rxd++;      
-      if(txd) txd++;
+	if(txd) txd++;
       }
       len--;
     }    
@@ -1252,7 +1253,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
   // We aren't really shifting, but instead setting bits
   // via mask. This makes a difference for the last byte
   // when not reading all 8 bits
-  if(dlen) {
+  if(dlen && rxd) {
     // jtag_highlight_debugf("last byte %02x, rshift = %d", *rxd, dlen);
     *rxd <<= 8-dlen;
   }
@@ -1429,6 +1430,14 @@ extern TaskHandle_t menu_handle;
 void mcu_hw_upload_core(char *name) {
   debugf("Request to upload core %s", name);  
 #ifdef ENABLE_JTAG
+
+  // if the core is to be loaded from sd card, then the hw may need
+  // to hand card access over from FPGA to the MCU
+#if MISTLE_BOARD == 4   // DEV20k
+  if(strncasecmp(name, "/sd", 3) == 0)
+    sdio_take_over();
+#endif
+  
   // stop various tasks so they don't interfere with the
   // download. We don't have to care about any consequences
   // as we'll reboot afterwards, anyways
@@ -1446,8 +1455,7 @@ void mcu_hw_upload_core(char *name) {
   // TODO: Check why this locks up ...
   //  vTaskDelete(menu_handle);
   //  menu_handle = NULL;
-
-  sdc_direct_upload_core_bin(name);
+  gowin_upload_core_bin(name);
 
   // restart companion to cope with new core
   mcu_hw_reset();

@@ -76,7 +76,7 @@ static uint8_t const desc_fs_configuration[] = {
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const* tud_descriptor_configuration_cb(uint8_t index) {
-  // (void) index; // for multiple configurations
+  (void) index; // for multiple configurations
   return desc_fs_configuration;
 }
 

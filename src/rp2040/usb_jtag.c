@@ -505,7 +505,7 @@ static uint16_t cmd_shift_parse(struct jtag *jtag, uint8_t *buf, uint16_t len) {
 }
 
 // https://github.com/MiSTle-Dev/PICO-MPSSE/blob/main/pico_mpsse/pico_mpsse.c
-void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize) {
+void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize) {
 #ifdef DEBUG_DATA_TRANSFER
   usb_debugf("tud_vendor_rx_cb(%d, %p, %d)", itf, buffer, bufsize); 
   hexdump(buffer, bufsize);
