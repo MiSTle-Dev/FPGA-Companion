@@ -317,14 +317,6 @@ bool mcu_hw_hid_present(void) {
 
 
 static void xbox_parse(struct xbox_info_S *xbox) {
-#if 0
-  USB_LOG_RAW("XBOX%d: ", xbox->index);
-  
-  // just dump the report
-  for (size_t i = 0; i < 20; i++) 
-    USB_LOG_RAW("0x%02x ", xbox->buffer[i]);
-  USB_LOG_RAW("");
-#endif
 
   // verify length field
   if(xbox->buffer[0] != 0 || xbox->buffer[1] != 20)
@@ -487,23 +479,19 @@ static void usbh_hid_client_thread(void *argument) {
       if (ret == -USB_ERR_NODEV || ret == -USB_ERR_NOTCONN)
         break;
 
-      if (hid->stop)
-      {
-        usb_debugf("HID client #%d: stop signal received - exiting HID loop", hid->index);
-        break;
-      }
-
       if (ret != -USB_ERR_TIMEOUT)
         usb_debugf("HID client #%d: submit failed, %d", hid->index, ret);
 
+      vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
 
     if (xSemaphoreTake(hid->sem, portMAX_DELAY) != pdTRUE) {
       if (hid->stop)
         break;
-      usbh_kill_urb(&hid->class->intin_urb);
-      continue;
+
+    usbh_kill_urb(&hid->class->intin_urb);
+    continue;
     }
 
     if (hid->stop)
@@ -632,22 +620,19 @@ static void usbh_xbox_client_thread(void *argument) {
       if (ret == -USB_ERR_NODEV || ret == -USB_ERR_NOTCONN)
         break;
 
-      if (xbox->stop) {
-        usb_debugf("HID client #%d: stop signal received - exiting HID loop", xbox->index);
-        break;
-      }
-
       if (ret != -USB_ERR_TIMEOUT)
         usb_debugf("HID client #%d: submit failed, %d", xbox->index, ret);
 
+      vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
 
     if (xSemaphoreTake(xbox->sem, portMAX_DELAY) != pdTRUE) {
       if (xbox->stop)
         break;
-      usbh_kill_urb(&xbox->class->intin_urb);
-      continue;
+
+    usbh_kill_urb(&xbox->class->intin_urb);
+    continue;
     }
 
     if (xbox->stop)
@@ -2307,10 +2292,15 @@ bool mcu_hw_usb_msc_present(void) {
 // TANG_MEGA60K
 /* GPIO 27 default UART RX, FPGA U15 TX */
 /* GPIO 28 default UART TX, FPGA V15 RX */
-/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, could be used as UART TX */
+/* GPIO 16 PWR_KEY, no FPGA connection, re-use possible */
+/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, re-use possible */
+/* GPIO 20 I2C INT, no FPGA connection */
+/* GPIO 21 I2C SDA, no FPGA connection */
+/* GPIO 22 I2C CLK, no FPGA connection, re-use possible */
 
 // TANG_PRIMER25K
 /* GPIO 11 default UART TX */
 /* GPIO 10 default UART RX */
-/* GPIO 20 access at LED6, not usable for UART, unknown reason */
 /* GPIO 12 access at button S3, Capacitor C22 need to be removed */
+/* GPIO 20 access at LED6, not usable for UART, unknown reason */
+
