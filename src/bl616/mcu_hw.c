@@ -2073,11 +2073,10 @@ __attribute__((weak)) uint32_t get_fattime(void)
 
 void mcu_hw_upload_core(char *name) {
   debugf("Request to upload core %s", name);
-#ifdef JTAG_ENABLE
+#ifdef ENABLE_JTAG
   uint64_t start;
   FATFS fs;
   FRESULT res = FR_NOT_READY;
-
 
   if (strstr(name, "/sd/") != NULL) {
 #if defined(TANG_CONSOLE60K) || defined(TANG_MEGA60K)
@@ -2108,7 +2107,9 @@ void mcu_hw_upload_core(char *name) {
           f_mount(NULL, "/usb", 1);
         }
   }
-#endif // JTAG_ENABLE
+#else
+  fatal_debugf("JTAG not enabled!");
+#endif // ENABLE_JTAG
 }
 
 bool mcu_hw_usb_msc_present(void) {
