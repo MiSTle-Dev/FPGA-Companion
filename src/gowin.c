@@ -111,7 +111,7 @@ static bool gowin_disableCfg(void) {
 }
 
 // prepare SRAM upload
-GOWIN_STATIC bool gowin_eraseSRAM(void) {
+static bool gowin_eraseSRAM(void) {
   uint32_t status;
   jtag_command_u08_read32(GOWIN_COMMAND_USERCODE);
 
@@ -193,7 +193,7 @@ GOWIN_STATIC bool gowin_eraseSRAM(void) {
   return true;
 }
 
-GOWIN_STATIC bool gowin_writeSRAM_prepare(void) {
+static void gowin_writeSRAM_prepare(void) {
   jtag_command_u08(GOWIN_COMMAND_CONFIG_ENABLE); // config enable
 
   /* UG704 3.4.3 */
@@ -202,15 +202,17 @@ GOWIN_STATIC bool gowin_writeSRAM_prepare(void) {
   /* 2.2.6.4 */
   jtag_command_u08(GOWIN_COMMAND_XFER_WRITE); // transfer configuration data
 
-  return true;
+  /* finally enter shift DR state */
+  jtag_enter_shiftDR();
 }
 
-GOWIN_STATIC bool gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool first, bool last) {
-  jtag_shiftDR_part(data, NULL, 8*len, (first?JTAG_FLAG_BEGIN:0) | (last?JTAG_FLAG_END:0));  
-  return true;
+#ifndef MCU_HW_JTAG_GPIO_OUT_MODE
+static void gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool last) {
+  jtag_shiftDR_part(data, NULL, 8*len, last);
 }
+#endif
 
-GOWIN_STATIC bool gowin_writeSRAM_postproc(__attribute__((unused)) uint32_t checksum) {
+static bool gowin_writeSRAM_postproc(__attribute__((unused)) uint32_t checksum) {
   jtag_command_u08(GOWIN_COMMAND_CONFIG_DISABLE);
   jtag_command_u08(GOWIN_COMMAND_NOOP);
 
@@ -226,7 +228,7 @@ GOWIN_STATIC bool gowin_writeSRAM_postproc(__attribute__((unused)) uint32_t chec
   return true;
 }
 
-GOWIN_STATIC void gowin_fpgaReset(void) {
+void gowin_fpgaReset(void) {
     gowin_debugf("FPGA RECONFIG");
 
     jtag_command_u08(GOWIN_COMMAND_RECONFIG);
@@ -240,8 +242,8 @@ static inline uint8_t reverse_byte(uint8_t byte) {
   return ((byte & 0x0f) << 4) | ((byte & 0xf0) >> 4);
 }
 
-GOWIN_STATIC bool gowin_open(void) {
-  idcode = jtag_open();  // global !
+static bool gowin_open(void) {
+  idcode = jtag_open();
   gowin_debugf("FPGA detected: %08lx", idcode);
 
   return(idcode == IDCODE_GW2AR18  || 
@@ -250,20 +252,20 @@ GOWIN_STATIC bool gowin_open(void) {
          idcode == IDCODE_GW5AST138);
 }
 
-// Make idcode accessible externally. This should be
-// removed one day as all gowin specific code should
-// go here.
-uint32_t gowin_idcode(void) {
-  return idcode;
-}
-
 // try to open "core.bin" on the sd card and try to transfer it via JTAG to
 // the FPGA
-bool gowin_upload_core_bin(const char *name) {
+static bool gowin_upload_core_bin(const char *name) {
+  // get file size
+  FILINFO fno;
+  if (f_stat(name, &fno) != FR_OK) {
+    gowin_debugf("Unable to determine length of %s", name);
+    return false;
+  }
+
   // try to open core.bin
   FIL fil;
   if(f_open(&fil, name, FA_OPEN_EXISTING | FA_READ) != FR_OK) {
-    gowin_debugf("%s not found", name);
+    gowin_debugf("Opening %s failed", name);
     return false;
   }
     
@@ -302,23 +304,31 @@ bool gowin_upload_core_bin(const char *name) {
   uint8_t buffer[512];
   UINT bytesRead;
   uint32_t total = 0;
+
+#ifdef MCU_HW_JTAG_GPIO_OUT_MODE
+  mcu_hw_jtag_enter_gpio_out_mode();
+#endif
   
-  // using the table instead of reversing each payload byte through the
-  // algorithm saves ~0.3 sec for the full download
-  uint8_t rev_table[256];
-  for(int i=0;i<256;i++) rev_table[i] = reverse_byte(i);    
-  
-  // gw2ar-18 core size is 907418 bytes. This is not a multiple of 64, so when
-  // loading in 64 byte chunks, the last chunk is smaller      
   do {
     if((fr = f_read(&fil, buffer, sizeof(buffer), &bytesRead)) == FR_OK) {
-      // the binary data has the wrong endianess
-      for(UINT i=0;i<bytesRead;i++) buffer[i] = rev_table[buffer[i]];
-      gowin_writeSRAM_transfer(buffer, bytesRead, !total, bytesRead != sizeof(buffer));
       total += bytesRead;
+
+#ifndef MCU_HW_JTAG_GPIO_OUT_MODE
+      for(UINT i=0;i<bytesRead;i++) buffer[i] = reverse_byte(buffer[i]);
+      gowin_writeSRAM_transfer(buffer, bytesRead, total >= fno.fsize);
+#else
+      mcu_hw_jtag_writeTDI_msb_first_gpio_out_mode(buffer, bytesRead, total >= fno.fsize);
+#endif
     }
-  } while(fr == FR_OK && bytesRead == sizeof(buffer));
-  
+  } while(fr == FR_OK && total < fno.fsize);
+
+#ifdef MCU_HW_JTAG_GPIO_OUT_MODE
+  mcu_hw_jtag_exit_gpio_out_mode();
+
+  // send TMS 1/0 to return into RUN-TEST/IDLE
+  mcu_hw_jtag_tms(1, 0b01, 2);    // normally this happens in gowin_writeSRAM_transfer/jtag_shiftDR_part
+#endif  
+
   if(fr != FR_OK) {
     fatal_debugf("Binary download failed after %lu bytes", total);
     jtag_close();
@@ -341,7 +351,7 @@ bool gowin_upload_core_bin(const char *name) {
 }
 
 // try to open on the sd card and try to transfer it via JTAG into the FPGA
-bool gowin_upload_core_fs(const char *name) {  
+static bool gowin_upload_core_fs(const char *name) {  
   // try to open core.fs
   FIL fil;
   if(f_open(&fil, name, FA_OPEN_EXISTING | FA_READ) != FR_OK) {
@@ -435,11 +445,21 @@ bool gowin_upload_core_fs(const char *name) {
   uint32_t total_data = 0, line_data = 0;
   uint16_t line = 0;
   
+#ifdef MCU_HW_JTAG_GPIO_OUT_MODE
+  mcu_hw_jtag_enter_gpio_out_mode();
+#endif
+  
   do {
     // collect all 0/1 bits
     for(int i=0;i<used && !parse_error;i++) {
       if(buffer[i] == '0' || buffer[i] == '1') {
+#ifdef MCU_HW_JTAG_GPIO_OUT_MODE
+	// in gpio out mode the bit order is different
+	byte = (byte << 1)|((buffer[i] == '1')?1:0);
+#else
 	byte = (byte >> 1)|((buffer[i] == '1')?0x80:0);
+#endif
+	
 	bit = (bit+1)&7;
 	if(!bit) {
 	  // got a complete byte
@@ -456,8 +476,11 @@ bool gowin_upload_core_fs(const char *name) {
 	  
 	  // gowin_debugf("line %d: %ld (total %ld, used %d)", line, line_data, total_data, used);
 	  // hexdump(data, line_data);
-	  
-	  gowin_writeSRAM_transfer(data, line_data, !line, line>100 && line_data == 2);
+#ifndef MCU_HW_JTAG_GPIO_OUT_MODE  
+	  gowin_writeSRAM_transfer(data, line_data, line>100 && line_data == 2);
+#else
+	  mcu_hw_jtag_writeTDI_msb_first_gpio_out_mode(data, line_data, line>100 && line_data == 2);
+#endif
 	  
 	  line_data = 0;
 	  line++;
@@ -474,6 +497,13 @@ bool gowin_upload_core_fs(const char *name) {
     }
   } while(fr == FR_OK && bytesRead && !parse_error);
   
+#ifdef MCU_HW_JTAG_GPIO_OUT_MODE
+  mcu_hw_jtag_exit_gpio_out_mode();
+
+  // send TMS 1/0 to return into RUN-TEST/IDLE
+  mcu_hw_jtag_tms(1, 0b01, 2);    // normally this happens in gowin_writeSRAM_transfer/jtag_shiftDR_part
+#endif
+  
   if((fr != FR_OK) || parse_error) {
     fatal_debugf("Binary download failed after %lu bytes", total);
     jtag_close();
@@ -482,7 +512,7 @@ bool gowin_upload_core_fs(const char *name) {
   }
   
   gowin_debugf("Total data transferred: %ld bytes", total_data);
-  
+
   // TODO: Figure out where the checksum is supposed to come from. The checksum openFPGAloader
   // downloads is not the one mentioned in the .fs header.
   gowin_writeSRAM_postproc(0xffffffff);
@@ -496,4 +526,16 @@ bool gowin_upload_core_fs(const char *name) {
   f_close(&fil);
   return true;
 }
+
+bool gowin_upload_core(const char *name) {
+  if(strcasecmp(name + strlen(name) - 4, ".bin") == 0)
+    return gowin_upload_core_bin(name);
+
+  if(strcasecmp(name + strlen(name) - 3, ".fs") == 0)
+    return gowin_upload_core_fs(name);
+    
+  gowin_debugf("Unknown file type");
+  return false;
+}
+
 #endif // ENABLE_JTAG

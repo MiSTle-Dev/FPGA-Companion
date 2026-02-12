@@ -143,7 +143,7 @@ volatile uint32_t *reg_gpio0_31 = (volatile uint32_t *)0x20000ae4; // gpio_cfg13
 uint32_t jtag_tms_cfg, jtag_tck_cfg, jtag_tdi_cfg;
 
 // set GPIO0 (TMS), GPIO1 (TCK) and GPIO3 (TDI) as direct output mode
-void jtag_enter_gpio_out_mode(void) {
+void mcu_hw_jtag_enter_gpio_out_mode(void) {
 	jtag_tms_cfg = *reg_gpio_tms;
 	jtag_tck_cfg = *reg_gpio_tck;
 	jtag_tdi_cfg = *reg_gpio_tdi;
@@ -153,7 +153,7 @@ void jtag_enter_gpio_out_mode(void) {
 }
 
 // restore GPIO0 (TMS), GPIO1 (TCK) and GPIO3 (TDI) settings
-void jtag_exit_gpio_out_mode(void) {
+void mcu_hw_jtag_exit_gpio_out_mode(void) {
 	*reg_gpio_tms = jtag_tms_cfg;
 	*reg_gpio_tck = jtag_tck_cfg;
 	*reg_gpio_tdi = jtag_tdi_cfg;
@@ -1954,7 +1954,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
 
   // data transmission always keeps TMS at zero
   bflb_gpio_reset(gpio, PIN_JTAG_TMS);
-
+  
   // special version for txd-only with a multiple of 8 bits
   // as that's the most common case
   if(txd && !rxd && !(len&7)) {
@@ -1963,8 +1963,8 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
       jtag_tap_advance_state(0, txd[i>>3] & (1<<(i&7)));
 #endif
 
-    len >>= 3;
-    while(len--) {
+  len >>= 3;
+  while(len--) {
       // set data bit and clock tck at once
       if (*txd & 0x01) bflb_gpio_set(gpio, PIN_JTAG_TDI); else bflb_gpio_reset(gpio, PIN_JTAG_TDI);
       bflb_gpio_set(gpio, PIN_JTAG_TCK); bflb_gpio_reset(gpio, PIN_JTAG_TCK);
@@ -1980,7 +1980,6 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
       bflb_gpio_set(gpio, PIN_JTAG_TCK); bflb_gpio_reset(gpio, PIN_JTAG_TCK);
       if (*txd & 0x40) bflb_gpio_set(gpio, PIN_JTAG_TDI); else bflb_gpio_reset(gpio, PIN_JTAG_TDI);
       bflb_gpio_set(gpio, PIN_JTAG_TCK); bflb_gpio_reset(gpio, PIN_JTAG_TCK);
-
       if (*txd & 0x80) bflb_gpio_set(gpio, PIN_JTAG_TDI); else bflb_gpio_reset(gpio, PIN_JTAG_TDI);
       bflb_gpio_set(gpio, PIN_JTAG_TCK); bflb_gpio_reset(gpio, PIN_JTAG_TCK);
       txd++;
@@ -2028,60 +2027,33 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
   }
 }
 
-void jtag_writeTDI_msb_first_gpio_out_mode(uint8_t *tx, unsigned int bytes, bool end) {
-	for (int i = 0; i < bytes; i++) {
-		uint8_t byte = tx[i];
 #ifdef TANG_NANO20K
-		// bit 7
-		*reg_gpio0_31 = (byte & 0x80) << 5;                // bit 12 (TDI) = data, bit 10 (TCK) = 0
-		*reg_gpio0_31 = ((byte & 0x80) << 5) | (1 << 10);  // bit 12 (TDI) = data, bit 10 (TCK) = 1
-		// bit 6
-		*reg_gpio0_31 = (byte & 0x40) << 6; 
-		*reg_gpio0_31 = ((byte & 0x40) << 6) | (1 << 10); 
-		// bit 5
-		*reg_gpio0_31 = (byte & 0x20) << 7; 
-		*reg_gpio0_31 = ((byte & 0x20) << 7) | (1 << 10); 
-		// bit 4
-		*reg_gpio0_31 = (byte & 0x10) << 8; 
-		*reg_gpio0_31 = ((byte & 0x10) << 8) | (1 << 10); 
-		// bit 3
-		*reg_gpio0_31 = (byte & 0x8) << 9; 
-		*reg_gpio0_31 = ((byte & 0x8) << 9) | (1 << 10); 
-		// bit 2
-		*reg_gpio0_31 = (byte & 0x4) << 10; 
-		*reg_gpio0_31 = ((byte & 0x4) << 10) | (1 << 10); 
-		// bit 1
-		*reg_gpio0_31 = (byte & 0x2) << 11; 
-		*reg_gpio0_31 = ((byte & 0x2) << 11) | (1 << 10); 
-		// bit 0
-		*reg_gpio0_31 = (byte & 0x1) << 12 | (i == bytes-1 && end ? (1 << 16) : 0); 	// bit 16: TMS
-		*reg_gpio0_31 = ((byte & 0x1) << 12) | (1 << 10) | (i == bytes-1 && end ? (1 << 16) : 0); 
+#define JTAG_TDI_BIT  (12)
+#define JTAG_TCK_BIT  (10)
+#define JTAG_TMS_BIT  (16)
 #else
-		// bit 7
-		*reg_gpio0_31 = (byte & 0x80) >> 4;           // bit 3 (TDI) = data, bit 1 (TCK) = 0
-		*reg_gpio0_31 = ((byte & 0x80) >> 4) | 2;     // bit 3 (TDI) = data, bit 1 (TCK) = 1
-		// bit 6
-		*reg_gpio0_31 = (byte & 0x40) >> 3;     
-		*reg_gpio0_31 = ((byte & 0x40) >> 3) | 2; 
-		// bit 5
-		*reg_gpio0_31 = (byte & 0x20) >> 2;     
-		*reg_gpio0_31 = ((byte & 0x20) >> 2) | 2; 
-		// bit 4
-		*reg_gpio0_31 = (byte & 0x10) >> 1;     
-		*reg_gpio0_31 = ((byte & 0x10) >> 1) | 2; 
-		// bit 3
-		*reg_gpio0_31 = (byte & 0x8);     
-		*reg_gpio0_31 = (byte & 0x8) | 2; 
-		// bit 2
-		*reg_gpio0_31 = (byte & 0x4) << 1;     
-		*reg_gpio0_31 = ((byte & 0x4) << 1) | 2; 
-		// bit 1
-		*reg_gpio0_31 = (byte & 0x2) << 2;     
-		*reg_gpio0_31 = ((byte & 0x2) << 2) | 2; 
-		// bit 0
-		*reg_gpio0_31 = ((byte & 0x1) << 3) | (i == bytes-1 && end);  	// TMS=1 if at the end
-		*reg_gpio0_31 = ((byte & 0x1) << 3) | 2 | (i == bytes-1 && end);	// TMS=1 if at the end
+#define JTAG_TDI_BIT  (3)
+#define JTAG_TCK_BIT  (1)
+#define JTAG_TMS_BIT  (0)
 #endif
+
+// These macros write TDI, TCK and TMS in one step
+#define JTAG_DATA_BIT(byte, bit)  (((bit) > JTAG_TDI_BIT)?(((byte) & (1<<(bit))) >> ((bit)-JTAG_TDI_BIT)):(((byte) & (1<<(bit))) << (JTAG_TDI_BIT-(bit))))
+#define JTAG_WRITE_BIT(byte, bit, tms) {				\
+    *reg_gpio0_31 = JTAG_DATA_BIT((byte),(bit)) | ((tms)?(1<<JTAG_TMS_BIT):0);	\
+    *reg_gpio0_31 = JTAG_DATA_BIT((byte),(bit)) | (1<<JTAG_TCK_BIT) | ((tms)?(1<<JTAG_TMS_BIT):0); }
+
+void mcu_hw_jtag_writeTDI_msb_first_gpio_out_mode(uint8_t *tx, unsigned int bytes, bool end) {
+	for (int i = 0; i < bytes; i++) {
+		uint8_t byte = tx[i];		
+		JTAG_WRITE_BIT(byte, 7, 0);
+		JTAG_WRITE_BIT(byte, 6, 0);
+		JTAG_WRITE_BIT(byte, 5, 0);
+		JTAG_WRITE_BIT(byte, 4, 0);
+		JTAG_WRITE_BIT(byte, 3, 0);
+		JTAG_WRITE_BIT(byte, 2, 0);
+		JTAG_WRITE_BIT(byte, 1, 0);
+		JTAG_WRITE_BIT(byte, 0, i == bytes-1 && end);    // set TMS on last bit
 	}
 }
 
@@ -2132,14 +2104,14 @@ void mcu_hw_fpga_resume_spi(void) {
 
 void mcu_hw_jtag_toggleClk(uint32_t clk_len)
 {
-  jtag_enter_gpio_out_mode();
+  mcu_hw_jtag_enter_gpio_out_mode();
 
   for (uint32_t i = 0; i < clk_len; i++) {
     *reg_gpio0_31 = *reg_gpio0_31 & (0xffffffff ^ (1 << 10)); // TCK=0
     *reg_gpio0_31 = *reg_gpio0_31 | (1 << 10); // TCK=1
   }
 
-  jtag_exit_gpio_out_mode();
+  mcu_hw_jtag_exit_gpio_out_mode();
 }
 
 #endif
@@ -2147,6 +2119,7 @@ void mcu_hw_jtag_toggleClk(uint32_t clk_len)
 // USB host MSC support
 static usb_osal_thread_t usbh_msc_handle = NULL;
 static bool usb_msc_mounted = false;
+extern void fatfs_sdh_driver_register(void);
 
 static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
 {
@@ -2230,7 +2203,6 @@ void mcu_hw_upload_core(char *name) {
   FATFS fs;
   FRESULT res = FR_NOT_READY;
 
-
   if (strstr(name, "/sd/") != NULL) {
 #if defined(TANG_CONSOLE60K) || defined(TANG_MEGA60K)
     f_mount(NULL, "/sd", 1);
@@ -2240,7 +2212,7 @@ void mcu_hw_upload_core(char *name) {
       bflb_mtimer_delay_ms(100);
     if (res == FR_OK) {
         sdc_debugf("SD card mounted");
-        sdc_direct_upload_core_bin(name);
+        gowin_upload_core(name);
         f_mount(NULL, "/sd", 1);
       } else {
         sdc_debugf("SD card not found...");
@@ -2256,10 +2228,12 @@ void mcu_hw_upload_core(char *name) {
           debugf("failed to mount USB drive");
       } else {
           debugf("USB drive mounted");
-	        sdc_direct_upload_core_bin(name);
+	  gowin_upload_core(name);
           f_mount(NULL, "/usb", 1);
         }
   }
+#else
+  fatal_debugf("JTAG not enabled!");
 #endif // ENABLE_JTAG
 }
 

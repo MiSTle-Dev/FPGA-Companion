@@ -19,8 +19,9 @@
 void jtag_command_u08(uint8_t cmd);
 uint32_t jtag_command_u08_read32(uint8_t cmd);
 
+void jtag_enter_shiftDR(void);
 void jtag_shiftDR(uint8_t *tx, uint8_t *rx, uint16_t len);
-void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, uint8_t flags);
+void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, bool last);
 
 // toggle the jtag clock for the given time
 static inline void jtag_clk_us(uint32_t us) { mcu_hw_jtag_toggleClk(15 * us); }
