@@ -83,26 +83,7 @@
 #define IDCODE_GW5AST138  0x1081b
 #define IDCODE_GW5A25     0x1281b
 
-// TODO: combine these two into one as the type can be derived from
-// the filename
-bool gowin_upload_core_bin(const char *name);
-bool gowin_upload_core_fs(const char *name);
-
-#ifdef BL616
-// These functions are being made available externally as long as the
-// bl616 uses custom implementations for the gowin upload.
-
-bool gowin_open(void);
-uint32_t gowin_idcode(void);
+bool gowin_upload_core(const char *name);
 void gowin_fpgaReset(void);
-bool gowin_eraseSRAM(void);
-bool gowin_writeSRAM_prepare(void);
-bool gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool first, bool last);
-bool gowin_writeSRAM_postproc(uint32_t checksum);
-
-#define GOWIN_STATIC
-#else
-#define GOWIN_STATIC  static
-#endif
 
 #endif // GOWIN_H

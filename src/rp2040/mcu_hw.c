@@ -1455,7 +1455,7 @@ void mcu_hw_upload_core(char *name) {
   // TODO: Check why this locks up ...
   //  vTaskDelete(menu_handle);
   //  menu_handle = NULL;
-  gowin_upload_core_bin(name);
+  gowin_upload_core(name);
 
   // restart companion to cope with new core
   mcu_hw_reset();

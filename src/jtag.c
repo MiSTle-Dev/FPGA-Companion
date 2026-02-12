@@ -29,7 +29,7 @@ void jtag_command_u08(uint8_t cmd) {
 }
 
 // go into shift dr state
-static inline void jtag_enter_shiftDR(void) {
+void jtag_enter_shiftDR(void) {
   // stay in RUN-TEST/IDLE like openFPGAloader
   mcu_hw_jtag_tms(1, 0b000000, 6);
   
@@ -57,18 +57,12 @@ void jtag_shiftDR(uint8_t *tx, uint8_t *rx, uint16_t len) {
 }
 
 // Shift data into and out of the JTAG data register (DR). Unlike jtag_shiftDR, this
-// can work on multiple data chunks with the first one being flagged with
-// JTAG_FLAG_BEGIN and the last one JTAG_FLAG_END. If both flags are set, then
-// jtag_shiftDR_part() will behave like jtag_shiftDR()
-
-void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, uint8_t flags) {
+// can work on multiple data chunks
+void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, bool last) {
   // This currently assumes that len is a multiple of 8
   if(len & 7) jtag_highlight_debugf("Warning, shiftDR_part len not a multiple of 8");
   
-  if(flags & JTAG_FLAG_BEGIN)
-    jtag_enter_shiftDR();
-
-  if(flags & JTAG_FLAG_END) {
+  if(last) {
     mcu_hw_jtag_data(tx, rx, len-1);
 
     // send TMS 1/1/0 to return into RUN-TEST/IDLE state, the first
