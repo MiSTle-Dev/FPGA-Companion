@@ -430,15 +430,22 @@ static void usbh_hid_client_thread(void *argument) {
   }
 
   size_t len = hid->report.report_size + (hid->report.report_id_present ? 1 : 0);
-  uint8_t interval = hid->class->intin
-                         ? hid->class->intin->bInterval
-                         : 1;
+
+  uint32_t hid_interval_ms;
+  if (hid->class->hport->speed == USB_SPEED_HIGH) {
+      /* HS */
+      hid_interval_ms = (0x01 << (hid->class->intin->bInterval - 1)) * 125 / 1000;
+  } else {
+      /* LS/FS */
+      hid_interval_ms = hid->class->intin->bInterval;
+  }
+  usb_debugf("USB XBOX hid_interval: %dms", hid->class->intin->bInterval);
 
   usbh_int_urb_fill(&hid->class->intin_urb,
                     hid->class->hport,
                     hid->class->intin,
                     hid->buffer, len,
-                    interval,
+                    hid_interval_ms,
                     usbh_hid_callback, hid);
 
   if (hid->class->hport->device_desc.idVendor == 0x2563 && hid->class->hport->device_desc.idProduct == 0x0575) {
@@ -467,7 +474,7 @@ static void usbh_hid_client_thread(void *argument) {
                       hid->class->hport,
                       hid->class->intin,
                       hid->buffer, len,
-                      interval,
+                      hid_interval_ms,
                       usbh_hid_callback, hid);
 
     int ret = usbh_submit_urb(&hid->class->intin_urb);
@@ -592,10 +599,15 @@ static void usbh_xbox_client_thread(void *argument) {
     xbox->report.map_checked = 1;
   }
 
-  // todo interval
-  uint8_t interval = xbox->class->intin
-                         ? xbox->class->intin->bInterval
-                         : 1;
+  uint32_t hid_interval_ms;
+  if (xbox->class->hport->speed == USB_SPEED_HIGH) {
+      /* HS */
+      hid_interval_ms = (0x01 << (xbox->class->intin->bInterval - 1)) * 125 / 1000;
+  } else {
+      /* LS/FS */
+      hid_interval_ms = xbox->class->intin->bInterval;
+  }
+  usb_debugf("USB XBOX hid_interval: %dms", xbox->class->intin->bInterval);
 
   while(1) {
     if (xbox->stop)
@@ -608,7 +620,7 @@ static void usbh_xbox_client_thread(void *argument) {
                     xbox->class->hport, 
                     xbox->class->intin, 
                     xbox->buffer, XBOX_REPORT_SIZE,
-                    interval,
+                    hid_interval_ms,
                     usbh_xbox_callback, xbox);
 
     int ret = usbh_submit_urb(&xbox->class->intin_urb);
