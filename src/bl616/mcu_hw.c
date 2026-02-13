@@ -9,6 +9,7 @@
 
 #include "usbh_core.h"
 #include "usbh_hid.h"
+#include "usbh_hub.h"
 #include "usbh_xbox.h"
 #include "usbh_msc.h"
 #include "usbd_core.h"
@@ -439,7 +440,7 @@ static void usbh_hid_client_thread(void *argument) {
       /* LS/FS */
       hid_interval_ms = hid->class->intin->bInterval;
   }
-  usb_debugf("USB XBOX hid_interval: %dms", hid->class->intin->bInterval);
+  usb_debugf("USB hid_interval: %dms", hid->class->intin->bInterval);
 
   usbh_int_urb_fill(&hid->class->intin_urb,
                     hid->class->hport,
@@ -1169,6 +1170,14 @@ static void mn_board_init(void) {
     debugf("===========================");
 }
 
+void shell_task_runner(void *param)
+{
+  vTaskDelay(pdMS_TO_TICKS(5000));
+  shell_exe_cmd("lsusb -v\r\n", strlen("lsusb -v\r\n"));
+  vTaskDelay(pdMS_TO_TICKS(100));
+  vTaskDelete( NULL );
+}
+
 void mcu_hw_init(void) {
   mn_board_init();
 
@@ -1231,6 +1240,8 @@ void mcu_hw_init(void) {
   mcu_hw_jtag_init();
 #endif
   usb_host();
+
+  xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
 }
 
 void stop_hid(void) {
