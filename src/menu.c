@@ -1234,6 +1234,7 @@ static char *core_exts[] = { "fs", "bin", NULL };
 #error "Setup at least 2 cores in config.h"
 #endif
 
+#ifdef DIRECT_SDC_SUPPORTED
 static const config_fsel_t sdc_core_fsel = {
   .index = MAX_DRIVES+MAX_IMAGES+1,
   .label = "Load Core from SD",
@@ -1246,6 +1247,7 @@ static const config_menu_entry_t system_menu_sdc_core_fsel = {
   .type = CONFIG_MENU_ENTRY_FILESELECTOR,
   .fsel = (config_fsel_t*)&sdc_core_fsel
 };
+#endif
 
 static const config_fsel_t usb_core_fsel = {
   .index = MAX_DRIVES+MAX_IMAGES+0,
@@ -1258,9 +1260,10 @@ static const config_fsel_t usb_core_fsel = {
 static const config_menu_entry_t system_menu_usb_core_fsel = {
   .type = CONFIG_MENU_ENTRY_FILESELECTOR,
   .fsel = (config_fsel_t*)&usb_core_fsel,
+#ifdef DIRECT_SDC_SUPPORTED
   .next = (config_menu_entry_t*)&system_menu_sdc_core_fsel
+#endif
 };
-
 
 // the main system menu
 static const config_menu_t system_menu_main = {

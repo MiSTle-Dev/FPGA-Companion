@@ -39,6 +39,7 @@ bool mcu_hw_tcp_data(unsigned char byte);
 // some boards provide a connection to the FPGAs JTAG interface
 #ifdef TANG_CONSOLE60K
 #define PIN_TF_SDIO_SEL GPIO_PIN_16
+#define DIRECT_SDC_SUPPORTED
 #endif
 #if defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
@@ -75,6 +76,7 @@ void mcu_hw_jtag_toggleClk(uint32_t);
 
 // this board also has the ability to boot the FPGA from SD card
 #include "sdio.h"
+#define DIRECT_SDC_SUPPORTED
 #define ENABLE_JTAG
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
 
