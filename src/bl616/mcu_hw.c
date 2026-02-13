@@ -517,6 +517,9 @@ static void usbh_hid_client_thread(void *argument) {
       usb_debugf("Rate = %f events/sec", 1000 * hid->rate_events / ms_since_start);
     }
 #endif
+
+  /* wait for next interval */
+  vTaskDelay(pdMS_TO_TICKS(hid_interval_ms));
   }
 
   usb_debugf("HID client #%d: stopping", hid->index);
@@ -662,6 +665,8 @@ static void usbh_xbox_client_thread(void *argument) {
      usb_debugf("Rate = %f events/sec",  1000 * xbox->rate_events /  ms_since_start);
     }    
 #endif
+  /* wait for next interval */
+  vTaskDelay(pdMS_TO_TICKS(hid_interval_ms));
   }
 
   usb_debugf("XBOX client #%d: stopping", xbox->index);
