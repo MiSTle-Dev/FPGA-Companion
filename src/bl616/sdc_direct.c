@@ -10,6 +10,7 @@
 #include "bflb_gpio.h"
 #include "board.h"
 #include "sdc_direct.h"
+#include "../mcu_hw.h"
 
 static struct bflb_device_s *gpio;
 static bool sdc_direct_active = false;
