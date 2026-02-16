@@ -449,6 +449,11 @@ static void usbh_hid_client_thread(void *argument) {
                     hid_interval_ms,
                     usbh_hid_callback, hid);
 
+  if (hid->class->hport->device_desc.idVendor == 0x2dc8 && hid->class->hport->device_desc.idProduct == 0x3105) {
+    usb_debugf("8BitDo Retro Mechanical Keyboard detected");
+
+  }
+
   if (hid->class->hport->device_desc.idVendor == 0x2563 && hid->class->hport->device_desc.idProduct == 0x0575) {
     usb_debugf("SHANWAN gamepad detected in bootstrap mode - triggering switch to HID mode");
 
@@ -1281,7 +1286,7 @@ void mcu_hw_reset(void) {
   bflb_wdg_reset_countervalue(wdg);
 
   stop_hid();
-  vTaskDelay(pdMS_TO_TICKS(250));
+  vTaskDelay(pdMS_TO_TICKS(50));
 
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
@@ -1295,16 +1300,10 @@ void mcu_hw_reset(void) {
   bflb_spi_deinit(spi_dev);
 
   usbh_deinitialize(0);
-#ifdef TANG_PRIMER25K
-  bflb_mtimer_delay_ms(10);
-  hid_keyboard_init(0,  usb_dev->reg_base);
-  bflb_mtimer_delay_ms(100);
-  debugf("deinit done and system POR reset");
+
   HBN_Set_User_Boot_Config(0); //HAL_REBOOT_AS_BOOTPIN
-  bl_sys_reset_por();
-#else
   debugf("deinit done and waiting for WDT POR reset");
-#endif
+
   while (1) {
     /*empty dead loop*/
   }
@@ -1380,9 +1379,6 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
     debugf("[APP] [EVT] Unknown code %u ", code);
   }
 }
-
-#define WIFI_STACK_SIZE  (1536)
-#define TASK_PRIORITY_FW (16)
 
 void wifi_start_firmware_task(void *param)
 {
