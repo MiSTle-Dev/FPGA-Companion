@@ -8,7 +8,6 @@ All configuration items must be included in the file */
 /*---------------------------------------------------------------------------/
 / Function Configurations
 /---------------------------------------------------------------------------*/
-
 #define FF_FS_CONTINUOUS 1
 /* Read and write as much data as possible at one time, regardless of the cluster size */
 

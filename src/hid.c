@@ -1,5 +1,5 @@
 // hid.c
-
+ 
 #include "hid.h"
 #include "debug.h"
 #include "sysctrl.h"
@@ -37,7 +37,7 @@ static void kbd_tx(uint8_t byte) {
   mcu_hw_spi_end();
 }
 
-void get_keyboard_change(unsigned char* a, unsigned char* b, int start ,int length, unsigned char* res) {
+void get_keyboard_change(const unsigned char* a, const unsigned char* b, int start ,int length, unsigned char* res) {
   int i1, i2;
   int res_len = 0;
 
@@ -784,7 +784,7 @@ void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* da
     if(report->type == REPORT_TYPE_MOUSE)
       mouse_parse(report, &state->mouse, data, len);
     
-    if(report->type == REPORT_TYPE_JOYSTICK)
+    if(report->type == REPORT_TYPE_JOYSTICK) {
       if (report->map_found && report->map) {
         // use SDL
         parse_with_sdl_mapping(report, &state->joystick, data, len, report->map);
@@ -793,6 +793,7 @@ void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* da
         // fallback
       joystick_parse(report, &state->joystick, data, len);
       }
+    }
   }
 }
 

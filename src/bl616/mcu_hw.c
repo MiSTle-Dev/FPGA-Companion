@@ -35,6 +35,7 @@
 #include "bflb_dma.h"
 #include "bflb_gpio.h"
 #include "bflb_wdg.h"
+#include "bflb_sdh.h"
 #ifdef CONFIG_CONSOLE_WO
 #include "bflb_wo.h"
 #else
@@ -52,6 +53,7 @@
 #include <lwip/netdb.h>
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
+#include <lwip/dns.h>
 #include "fhost_api.h"
 #include "wifi_mgmr_ext.h"
 #include "wifi_mgmr.h"
@@ -69,6 +71,8 @@
 
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
+
+extern void bl_show_chipinfo(void);
 
 #ifdef TANG_CONSOLE60K
 #warning "Building for TANG_CONSOLE60K internal BL616"
@@ -234,7 +238,7 @@ static struct usb_config {
   struct xbox_info_S {
     int index;
     int state;
-    struct usbh_hid *class;
+    struct usbh_xbox *class;
     uint8_t *buffer;
     int nbytes;
     hid_report_t report;
@@ -705,7 +709,6 @@ void usbh_hid_run(struct usbh_hid *hid_class)
     usb->hid_info[i].class = hid_class;
 
     usb_debugf("NEW HID %d", i);
-    uint8_t ifnt = usb->hid_info[i].class->intf;
     memset(&usb->hid_info[i].report, 0, sizeof(usb->hid_info[i].report));
 
     uint16_t rep_desc = usbh_hid_get_report_descriptor(hid_class, report_desc[i], 1024);
@@ -721,10 +724,6 @@ void usbh_hid_run(struct usbh_hid *hid_class)
       usb->hid_info[i].state = STATE_FAILED;
       return;
     }
-
-    uint8_t ifn = usb->hid_info[i].class->intf;
-    const struct usb_interface_descriptor *id =
-        &usb->hid_info[i].class->hport->config.intf[ifn].altsetting[0].intf_desc;
 
     usb->hid_info[i].stop = 0;
     usb->hid_info[i].state = STATE_DETECTED;
@@ -759,27 +758,23 @@ void usbh_xbox_run(struct usbh_xbox *xbox_class) {
     usb->xbox_info[i].class = xbox_class;
 
     usb_debugf("NEW XBOX HID %d", i);
-    uint8_t ifnt = usb->xbox_info[i].class->intf;
     memset(&usb->xbox_info[i].report, 0, sizeof(usb->xbox_info[i].report));
 
+#if 0   // don't try to read HID report descriptor as it's not used/parsed, anyway
     uint16_t rep_desc = usbh_hid_get_report_descriptor(xbox_class, report_desc[i], 1024);
-    if (rep_desc < 0)
-    {
+    if (rep_desc < 0) {
       usb_debugf("usbh_hid_get_report_descriptor issue");
       usb->xbox_info[i].state = STATE_FAILED;
       return;
     }
-
-    uint8_t ifn = usb->xbox_info[i].class->intf;
-    const struct usb_interface_descriptor *id =
-        &usb->xbox_info[i].class->hport->config.intf[ifn].altsetting[0].intf_desc;
-
+#endif
+    
     usb->xbox_info[i].stop = 0;
     usb->xbox_info[i].state = STATE_DETECTED;
   }
 
-	xTaskCreate(usbh_xbox_client_thread, (char *)"xbox_task", 2048,
-		    &usb->xbox_info[i], configMAX_PRIORITIES-3, &usb->xbox_info[i].task_handle );
+  xTaskCreate(usbh_xbox_client_thread, (char *)"xbox_task", 2048,
+	      &usb->xbox_info[i], configMAX_PRIORITIES-3, &usb->xbox_info[i].task_handle );
 }
 
 void usbh_xbox_stop(struct usbh_xbox *xbox_class) {
@@ -796,7 +791,7 @@ void usb_host(void) {
   usb_dev = bflb_device_get_by_name(BFLB_NAME_USB_V2);
   if (!usb_dev) {
       usb_debugf("usb device not found");
-      return -1;
+      return;
   }
 
   // initialize all HID info entries
@@ -822,7 +817,7 @@ void usb_host(void) {
 
 uint8_t usbh_get_hport_active_config_index(struct usbh_hubport *hport)
 {
-    struct usb_device_descriptor *dev_desc = &(hport->device_desc);
+    (void)hport;
     return 0;
 }
 
@@ -834,25 +829,25 @@ extern TaskHandle_t com_task_handle;
 static SemaphoreHandle_t spi_sem;
 static struct bflb_device_s *spi_dev;
 
-#ifdef M0S_DOCK
+#if defined(M0S_DOCK)
   #define SPI_PIN_CSN   GPIO_PIN_12
   #define SPI_PIN_SCK   GPIO_PIN_13
   #define SPI_PIN_MISO  GPIO_PIN_10
   #define SPI_PIN_MOSI  GPIO_PIN_11
   #define SPI_PIN_IRQ   GPIO_PIN_14
-#elif TANG_NANO20K
+#elif defined(TANG_NANO20K)
   #define SPI_PIN_CSN   GPIO_PIN_0  /* out SPI_CSn */
   #define SPI_PIN_SCK   GPIO_PIN_1  /* out SPI_SCLK */
   #define SPI_PIN_MISO  GPIO_PIN_2  /* in  SPI_DIR, CHIP_EN, 10K PD*/
   #define SPI_PIN_MOSI  GPIO_PIN_3  /* out SPI_DAT */
   #define SPI_PIN_IRQ   GPIO_PIN_13 /* in  UART RX, crossed */
-#elif TANG_CONSOLE60K
+#elif defined(TANG_CONSOLE60K)
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK 4K7 PD SOM */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN 3K3 PD */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
-#elif TANG_MEGA138KPRO
+#elif defined(TANG_MEGA138KPRO)
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN 4K7 PD */
@@ -861,13 +856,13 @@ static struct bflb_device_s *spi_dev;
   // requesting 20Mhz on the Tang Mega actually results in 26.67MHz
   // which doesn't seem to work together with the 4k7 pulldown
   #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz*/
-#elif TANG_MEGA60K
+#elif defined(TANG_MEGA60K)
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
-#elif TANG_PRIMER25K
+#elif defined(TANG_PRIMER25K)
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
@@ -1178,7 +1173,7 @@ static void mn_board_init(void) {
 void shell_task_runner(void *param)
 {
   vTaskDelay(pdMS_TO_TICKS(5000));
-  shell_exe_cmd("lsusb -v\r\n", strlen("lsusb -v\r\n"));
+  shell_exe_cmd((unsigned char*)"lsusb -v\r\n", strlen("lsusb -v\r\n"));
   vTaskDelay(pdMS_TO_TICKS(100));
   vTaskDelete( NULL );
 }
@@ -1190,23 +1185,23 @@ void mcu_hw_init(void) {
 
   gpio = bflb_device_get_by_name("gpio");
 
-#ifdef M0S_DOCK
+#if defined(M0S_DOCK)
   // init on-board LEDs
   bflb_gpio_init(gpio, GPIO_PIN_27, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0);
   bflb_gpio_init(gpio, GPIO_PIN_28, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0);
   // both leds off
   bflb_gpio_set(gpio, GPIO_PIN_27);
   bflb_gpio_set(gpio, GPIO_PIN_28);
-#elif TANG_NANO20K
+#elif defined(TANG_NANO20K)
   /* configure JTAGSEL_n */
-#elif TANG_MEGA138KPRO
+#elif defined(TANG_MEGA138KPRO)
   /* LED6 enable */
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
   /* configure JTAGSEL */
   bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
-#elif TANG_PRIMER25K
+#elif defined(TANG_PRIMER25K)
   /* LED5 enable 
   bflb_gpio_init(gpio, GPIO_PIN_20, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, GPIO_PIN_20);
@@ -1214,14 +1209,14 @@ void mcu_hw_init(void) {
   /* configure JTAGSEL_n */
   bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
-#elif TANG_CONSOLE60K
+#elif defined(TANG_CONSOLE60K)
   /* configure JTAGSEL_n */
   bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
   /* configure PIN_TF_SDIO_SEL to FPGA */
   bflb_gpio_init(gpio, PIN_TF_SDIO_SEL, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_TF_SDIO_SEL);
-#elif TANG_MEGA60K
+#elif defined(TANG_MEGA60K)
   /* configure JTAGSEL_n */
   bflb_gpio_init(gpio, PIN_JTAGSEL, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
@@ -1329,6 +1324,10 @@ static char *wifi_key = NULL;
 static int s_retry_num = 0;
 static wifi_conf_t conf = { .country_code = "EU" }; // "CN","US","JP","EU"
 static QueueHandle_t wifi_event_queue = NULL;
+
+// there are multiple wifi_mgmr_ext.h in bouffalo sdk and the one including
+// these prototypes is not being use byte the #include
+extern int wifi_mgmr_init(wifi_conf_t *conf);
 
 void wifi_event_handler(async_input_event_t ev, void *priv)
 {
@@ -1863,6 +1862,8 @@ bool mcu_hw_jtag_is_active(void) {
   return jtag_is_active;
 }
 
+void mcu_hw_fpga_resume_spi(void);
+
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   gpio = bflb_device_get_by_name("gpio");
   spi_dev = bflb_device_get_by_name("spi0");
@@ -2143,7 +2144,9 @@ void mcu_hw_jtag_toggleClk(uint32_t clk_len)
 // USB host MSC support
 static usb_osal_thread_t usbh_msc_handle = NULL;
 static bool usb_msc_mounted = false;
-extern void fatfs_sdh_driver_register(void);
+
+// bouffalo sdk does not expect sd card _and_ usbh msc to be enabled at the same time
+extern void fatfs_usbh_driver_register(struct usbh_msc *msc_class);
 
 static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
 {
