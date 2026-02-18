@@ -12,7 +12,7 @@
 #include "usbh_hub.h"
 #include "usbh_xbox.h"
 #include "usbh_msc.h"
-#include "usbd_core.h"
+#include "usb_def.h"
 #include "bflb_name.h"
 #include "../usb_controller_maps.h"
 #include "ff.h"
@@ -541,17 +541,11 @@ static void usbh_hid_client_thread(void *argument) {
   vTaskDelete(NULL);
 }
 
-// from fixcontroler.py: https://gist.github.com/adnanh/f60f069fc9185a48b73db9987b9e9108
-struct usb_setup_packet xbox_init_packets[5] = {
-  {0x80, 0x06, 0x0302, 0x0409, 2},        // get string descriptor (SN30pro needs this)
-  {0x80, 0x06, 0x0302, 0x0409, 32},       // get string descriptor
-  {0xC1, 0x01, 0x0100, 0x0000, 20},       // control transfer 1 (a lot of pads need this)
-  {0xC1, 0x01, 0x0000, 0x0000, 8},        // control transfer 2
-  /* {0xC0, 0x01, 0x0100, 0x0000, 4}*/};  // skipped as 8bitdo wireless adapter hangs on this
-
-// four data packets to EP2
-uint8_t xbox_ep2_packets[4][3] = {{0x01, 0x03, 0x02}, {0x02, 0x08, 0x03}, 
-                                  {0x01, 0x03, 0x02}, {0x01, 0x03, 0x06}};
+// four xbox data packets
+uint8_t xbox_ep2_packets[4][3] = {{0x01, 0x03, 0x02}, // Set LEDs to mode 0x02 (player indicator 1)
+                                  {0x02, 0x08, 0x03}, // Accessory / security handshake step (flag 0x03)
+                                  {0x01, 0x03, 0x02}, // Set LEDs to mode 0x02 (player indicator 1)
+                                  {0x01, 0x03, 0x06}};// Set LEDs to mode 0x06 (rotating pattern)
 
 static void xbox_init(struct xbox_info_S *xbox) {
   for (int i = 0; i < 4; i++) {
@@ -566,6 +560,73 @@ static void xbox_init(struct xbox_info_S *xbox) {
       else
           xSemaphoreTake(xbox->sem, 0xffffffffUL);    // wait for callback to finish
   }
+}
+
+/**
+ * @brief Retrieves a USB string descriptor
+ * This function is responsible for retrieving the USB string descriptor
+ * @param hport Pointer to the USB hub port structure.
+ * @param index Index of the string descriptor to retrieve.
+ * @param output Pointer to the buffer where the retrieved descriptor will be stored.
+ * @param length Length of the string to receive.
+ * @return On success will return 0, and others indicate fail.
+*/
+int usbh_get_string_desc_mod(struct usbh_hubport *hport, uint8_t index, uint8_t *output, uint16_t length)
+{
+    struct usb_setup_packet *setup = hport->setup;
+    int ret;
+
+    setup->bmRequestType = USB_REQUEST_DIR_IN | USB_REQUEST_STANDARD | USB_REQUEST_RECIPIENT_DEVICE;
+    setup->bRequest = USB_REQUEST_GET_DESCRIPTOR;
+    setup->wValue = (uint16_t)((USB_DESCRIPTOR_TYPE_STRING << 8) | index);
+    setup->wIndex = 0x0409;
+    setup->wLength = length;
+
+    ret = usbh_control_transfer(hport, setup, output);
+    if (ret < 0) {
+        return ret;
+    }
+    return 0;
+}
+
+int xpad_start_xbox_360(struct usbh_hubport *hport, uint8_t *buffer) {
+  struct usb_setup_packet *setup;
+  int ret;
+
+  if ((ret = usbh_get_string_desc_mod(hport, 2, buffer,2)) < 0)
+    usb_debugf("XBOX: init get_string_desc #1 failed", ret);
+
+  if ((ret = usbh_get_string_desc_mod(hport, 2, buffer,32)) < 0)
+    usb_debugf("XBOX: init get_string_desc #2 failed", ret);
+
+  setup = hport->setup;
+
+  //QUIRK_360_START_PKT_1
+  setup->bmRequestType = USB_REQUEST_DIR_IN | USB_REQUEST_CLASS | USB_REQUEST_RECIPIENT_INTERFACE;
+  setup->bRequest = 0x01;
+  setup->wValue = 0x0100;
+  setup->wIndex = 0x0000;
+  setup->wLength = 0x20;
+  if ((ret = usbh_control_transfer(hport, setup, buffer)) < 0)
+      usb_debugf("XBOX: init packet #1 failed", ret);
+
+  //QUIRK_360_START_PKT_2
+  setup->bmRequestType = USB_REQUEST_DIR_IN | USB_REQUEST_CLASS | USB_REQUEST_RECIPIENT_INTERFACE;
+  setup->bRequest = 0x01;
+  setup->wValue = 0x0000;
+  setup->wIndex = 0x0000;
+  setup->wLength = 0x08;
+  if ((ret = usbh_control_transfer(hport, setup, buffer)) < 0)
+      usb_debugf("XBOX: init packet #2 failed", ret);
+
+  //QUIRK_360_START_PKT_3
+  setup->bmRequestType = USB_REQUEST_DIR_IN | USB_REQUEST_CLASS | USB_REQUEST_RECIPIENT_DEVICE;
+  setup->bRequest = 0x01;
+  setup->wValue = 0x0000;
+  setup->wIndex = 0x0000;
+  setup->wLength = 0x04;
+  if ((ret = usbh_control_transfer(hport, setup, buffer)) < 0)
+      usb_debugf("XBOX: init packet #3 failed", ret);
 }
 
 // ... and XBOX clients as well
@@ -587,10 +648,19 @@ static void usbh_xbox_client_thread(void *argument) {
 
   // Send initialization packets
   for (int i = 0; i < CONFIG_USBHOST_MAX_XBOX_CLASS; i++) {
-    if ((ret = usbh_control_transfer(xbox->class->hport, &xbox_init_packets[i], xbox->buffer)) < 0) {
+  if ((ret = xpad_start_xbox_360(xbox->class->hport, xbox->buffer)) < 0) {
       usb_debugf("XBOX: init packet %d failed: %d", i, ret);
      }
    }
+
+  // Some third-party controllers Xbox 360-style controllers require this message to finish initialization.
+  uint8_t dummy_report[20];
+  ret = usbh_hid_get_report(xbox->class,
+                            1, // INPUT report
+                            0, // Report ID = 0
+                            dummy_report,
+                            20); // report size
+
   xbox_init(xbox);
   usb_debugf("XBOX client #%d: all init packets sent", xbox->index);
 
@@ -1261,9 +1331,6 @@ void stop_hid(void) {
     }
   }
  }
-
-extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
-extern int bl_sys_reset_por(void);
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
