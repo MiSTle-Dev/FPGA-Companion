@@ -3,8 +3,6 @@
 
 bool sdc_direct_init(void);
 void sdc_direct_release(void);
-
-// called by main if accessing the FPGA times out
-void sdc_boot(void);
+bool sdc_direct_upload_core_bin(const char *name);
 
 #endif // SDC_DIRECT_H

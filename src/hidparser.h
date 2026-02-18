@@ -1,3 +1,5 @@
+#include "usb_controller_maps.h"
+
 #ifndef HIDPARSER_H
 #define HIDPARSER_H
 
@@ -8,7 +10,7 @@
 #define REPORT_TYPE_KEYBOARD 2
 #define REPORT_TYPE_JOYSTICK 3
 
-#define MAX_AXES 4
+#define MAX_AXES 8
 
 // currently only joysticks are supported
 typedef struct {
@@ -31,7 +33,7 @@ typedef struct {
       struct {
 	uint8_t byte_offset;
 	uint8_t bitmask;
-      } button[12];             // 12 buttons max
+       } button[32]; // 12 buttons max
       
       struct {
 	uint16_t offset;
@@ -47,6 +49,13 @@ typedef struct {
       } hat;                   // 1 hat (joystick only)
     } joystick_mouse;
   };
+
+	/* --- SDL map base --- */
+	const UsbGamepadMap *map; // NULL if no match; points to .rodata (flash)
+	uint8_t map_found : 1;	  // 1=ok, 0=no
+	uint8_t map_checked : 1;  // 1=already checked
+	uint8_t _reserved_flags : 6;
+
 } hid_report_t;
 
 bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t *conf, uint16_t *rbytes);
