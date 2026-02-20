@@ -1332,6 +1332,9 @@ void stop_hid(void) {
   }
  }
 
+extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
+extern int bl_sys_reset_por(void);
+
 void mcu_hw_reset(void) {
   debugf("HW reset");
 
@@ -1339,16 +1342,16 @@ void mcu_hw_reset(void) {
   struct bflb_wdg_config_s wdg_cfg;
   wdg_cfg.clock_source = WDG_CLKSRC_32K;
   wdg_cfg.clock_div = 31;
-  wdg_cfg.comp_val = 1000;
+  wdg_cfg.comp_val = 1500;
   wdg_cfg.mode = WDG_MODE_RESET;
 
   wdg = bflb_device_get_by_name("watchdog0");
+  bflb_wdg_stop(wdg);
   bflb_wdg_init(wdg, &wdg_cfg);
   bflb_wdg_start(wdg);
-  bflb_wdg_reset_countervalue(wdg);
 
   stop_hid();
-  vTaskDelay(pdMS_TO_TICKS(50));
+  bflb_mtimer_delay_ms(500);
 
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
@@ -1363,8 +1366,18 @@ void mcu_hw_reset(void) {
 
   usbh_deinitialize(0);
 
+  bflb_mtimer_delay_ms(20);
+  hid_keyboard_init(0,  usb_dev->reg_base);
+
   HBN_Set_User_Boot_Config(0); //HAL_REBOOT_AS_BOOTPIN
   debugf("deinit done and waiting for WDT POR reset");
+#ifdef TANG_PRIMER25K
+  bflb_mtimer_delay_ms(100);
+  bflb_gpio_deinit(gpio, GPIO_PIN_10);
+  bflb_gpio_deinit(gpio, GPIO_PIN_11);
+  bflb_gpio_deinit(gpio, GPIO_PIN_12);
+  bflb_gpio_deinit(gpio, GPIO_PIN_20);
+#endif
 
   while (1) {
     /*empty dead loop*/

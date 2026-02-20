@@ -15,7 +15,8 @@ set(CONFIG_CHERRYUSB_HOST 1)
 set(CONFIG_CHERRYUSB_HOST_HID 1)
 set(CONFIG_CHERRYUSB_HOST_MSC 1)
 set(CONFIG_CHERRYUSB_HOST_XBOX 1)
-#set(CONFIG_CHERRYUSB_DEVICE 1)
+set(CONFIG_CHERRYUSB_DEVICE 1)
+set(CONFIG_CHERRYUSB_DEVICE_HID 1)
 #set(CONFIG_CHERRYUSB_DEVICE_CDC_ACM 1)
 set(CONFIG_BSP_SDH_SD 1)
 set(CONFIG_BSP_SDH_SDCARD 1)
@@ -135,6 +136,7 @@ target_sources(app PRIVATE
     ../at_wifi.c
     ../puff.c
     ../jtag.c
+    hid_keyboard_template.c
     ../gowin.c
     sdc_direct.c
 )
