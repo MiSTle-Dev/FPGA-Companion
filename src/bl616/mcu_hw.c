@@ -1356,13 +1356,8 @@ void mcu_hw_reset(void) {
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
 
-  bflb_gpio_deinit(gpio, GPIO_PIN_0);
-  bflb_gpio_deinit(gpio, GPIO_PIN_1);
-  bflb_gpio_deinit(gpio, GPIO_PIN_2);
-  bflb_gpio_deinit(gpio, GPIO_PIN_3);
 
-  bflb_gpio_irq_detach(SPI_PIN_IRQ);
-  bflb_spi_deinit(spi_dev);
+  bflb_gpio_deinit(gpio, GPIO_PIN_2); // BL616 CHIP_EN
 
   usbh_deinitialize(0);
 
@@ -1372,11 +1367,29 @@ void mcu_hw_reset(void) {
   HBN_Set_User_Boot_Config(0); //HAL_REBOOT_AS_BOOTPIN
   debugf("deinit done and waiting for WDT POR reset");
 #ifdef TANG_PRIMER25K
-  bflb_mtimer_delay_ms(100);
+  bflb_mtimer_delay_ms(250);
+  bflb_gpio_deinit(gpio, GPIO_PIN_0);
+  bflb_gpio_deinit(gpio, GPIO_PIN_1);
+  bflb_gpio_deinit(gpio, GPIO_PIN_2);
+  bflb_gpio_deinit(gpio, GPIO_PIN_3);
+
   bflb_gpio_deinit(gpio, GPIO_PIN_10);
   bflb_gpio_deinit(gpio, GPIO_PIN_11);
   bflb_gpio_deinit(gpio, GPIO_PIN_12);
+  bflb_gpio_deinit(gpio, GPIO_PIN_13);
+  bflb_gpio_deinit(gpio, GPIO_PIN_14);
+  bflb_gpio_deinit(gpio, GPIO_PIN_15);
+  bflb_gpio_deinit(gpio, GPIO_PIN_16);
+  bflb_gpio_deinit(gpio, GPIO_PIN_17);
+
   bflb_gpio_deinit(gpio, GPIO_PIN_20);
+  bflb_gpio_deinit(gpio, GPIO_PIN_21);
+  bflb_gpio_deinit(gpio, GPIO_PIN_22);
+
+  bflb_gpio_deinit(gpio, GPIO_PIN_27);
+  bflb_gpio_deinit(gpio, GPIO_PIN_28);
+  bflb_gpio_deinit(gpio, GPIO_PIN_29);
+  bflb_gpio_deinit(gpio, GPIO_PIN_30);
 #endif
 
   while (1) {
@@ -1964,7 +1977,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
     bflb_gpio_deinit(gpio, SPI_PIN_SCK);
     bflb_gpio_deinit(gpio, SPI_PIN_CSN);
 #endif
-    bflb_gpio_irq_detach(SPI_PIN_IRQ);
+    bflb_irq_disable(gpio->irq_num);
 
     bflb_gpio_deinit(gpio, PIN_JTAG_TCK);
     bflb_gpio_deinit(gpio, PIN_JTAG_TDI);
@@ -2204,7 +2217,7 @@ void mcu_hw_fpga_resume_spi(void) {
   GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
 #endif
   jtag_is_active = false;
-  bflb_gpio_irq_attach(SPI_PIN_IRQ, spi_isr);
+  bflb_irq_enable(gpio->irq_num);
 }
 
 void mcu_hw_jtag_toggleClk(uint32_t clk_len)
