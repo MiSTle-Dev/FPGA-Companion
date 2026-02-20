@@ -917,6 +917,7 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN 3K3 PD */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
+  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz*/
 #elif defined(TANG_MEGA138KPRO)
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
@@ -932,6 +933,7 @@ static struct bflb_device_s *spi_dev;
   #define SPI_PIN_MISO  GPIO_PIN_2 /* in  TDO, CHIP_EN */
   #define SPI_PIN_MOSI  GPIO_PIN_3 /* out TDI */
   #define SPI_PIN_IRQ   GPIO_PIN_27/* in  UART RX, crossed */
+  #define SPI_FREQUENCY 12000000   /* actually results in 13.3333MHz*/
 #elif defined(TANG_PRIMER25K)
   #define SPI_PIN_CSN   GPIO_PIN_0 /* out TMS */
   #define SPI_PIN_SCK   GPIO_PIN_1 /* out TCK */
@@ -1332,6 +1334,9 @@ void stop_hid(void) {
   }
  }
 
+extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
+extern int bl_sys_reset_por(void);
+
 void mcu_hw_reset(void) {
   debugf("HW reset");
 
@@ -1339,32 +1344,55 @@ void mcu_hw_reset(void) {
   struct bflb_wdg_config_s wdg_cfg;
   wdg_cfg.clock_source = WDG_CLKSRC_32K;
   wdg_cfg.clock_div = 31;
-  wdg_cfg.comp_val = 1000;
+  wdg_cfg.comp_val = 1500;
   wdg_cfg.mode = WDG_MODE_RESET;
 
   wdg = bflb_device_get_by_name("watchdog0");
+  bflb_wdg_stop(wdg);
   bflb_wdg_init(wdg, &wdg_cfg);
   bflb_wdg_start(wdg);
-  bflb_wdg_reset_countervalue(wdg);
 
   stop_hid();
-  vTaskDelay(pdMS_TO_TICKS(50));
+  bflb_mtimer_delay_ms(500);
 
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
 
+
+  bflb_gpio_deinit(gpio, GPIO_PIN_2); // BL616 CHIP_EN
+
+  usbh_deinitialize(0);
+
+  bflb_mtimer_delay_ms(20);
+  hid_keyboard_init(0,  usb_dev->reg_base);
+
+  HBN_Set_User_Boot_Config(0); //HAL_REBOOT_AS_BOOTPIN
+  debugf("deinit done and waiting for WDT POR reset");
+#ifdef TANG_PRIMER25K
+  bflb_mtimer_delay_ms(250);
   bflb_gpio_deinit(gpio, GPIO_PIN_0);
   bflb_gpio_deinit(gpio, GPIO_PIN_1);
   bflb_gpio_deinit(gpio, GPIO_PIN_2);
   bflb_gpio_deinit(gpio, GPIO_PIN_3);
 
-  bflb_gpio_irq_detach(SPI_PIN_IRQ);
-  bflb_spi_deinit(spi_dev);
+  bflb_gpio_deinit(gpio, GPIO_PIN_10);
+  bflb_gpio_deinit(gpio, GPIO_PIN_11);
+  bflb_gpio_deinit(gpio, GPIO_PIN_12);
+  bflb_gpio_deinit(gpio, GPIO_PIN_13);
+  bflb_gpio_deinit(gpio, GPIO_PIN_14);
+  bflb_gpio_deinit(gpio, GPIO_PIN_15);
+  bflb_gpio_deinit(gpio, GPIO_PIN_16);
+  bflb_gpio_deinit(gpio, GPIO_PIN_17);
 
-  usbh_deinitialize(0);
+  bflb_gpio_deinit(gpio, GPIO_PIN_20);
+  bflb_gpio_deinit(gpio, GPIO_PIN_21);
+  bflb_gpio_deinit(gpio, GPIO_PIN_22);
 
-  HBN_Set_User_Boot_Config(0); //HAL_REBOOT_AS_BOOTPIN
-  debugf("deinit done and waiting for WDT POR reset");
+  bflb_gpio_deinit(gpio, GPIO_PIN_27);
+  bflb_gpio_deinit(gpio, GPIO_PIN_28);
+  bflb_gpio_deinit(gpio, GPIO_PIN_29);
+  bflb_gpio_deinit(gpio, GPIO_PIN_30);
+#endif
 
   while (1) {
     /*empty dead loop*/
@@ -1951,7 +1979,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
     bflb_gpio_deinit(gpio, SPI_PIN_SCK);
     bflb_gpio_deinit(gpio, SPI_PIN_CSN);
 #endif
-    bflb_gpio_irq_detach(SPI_PIN_IRQ);
+    bflb_irq_disable(gpio->irq_num);
 
     bflb_gpio_deinit(gpio, PIN_JTAG_TCK);
     bflb_gpio_deinit(gpio, PIN_JTAG_TDI);
@@ -2191,7 +2219,7 @@ void mcu_hw_fpga_resume_spi(void) {
   GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
 #endif
   jtag_is_active = false;
-  bflb_gpio_irq_attach(SPI_PIN_IRQ, spi_isr);
+  bflb_irq_enable(gpio->irq_num);
 }
 
 void mcu_hw_jtag_toggleClk(uint32_t clk_len)
