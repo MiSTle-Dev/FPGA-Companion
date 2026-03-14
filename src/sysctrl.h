@@ -28,6 +28,7 @@ unsigned char sys_irq_ctrl(unsigned char);
 void sys_handle_interrupts(unsigned char, bool);
 bool sys_wait4fpga(void);
 char *sys_get_config(void);
+void sys_jtagsel(char);
 
 void sys_run_action(config_action_t *);
 void sys_run_action_by_name(char *);
