@@ -18,6 +18,7 @@
 #define SPI_SYS_IRQ_SRC   6
 #define SPI_SYS_PORT      7
 #define SPI_SYS_READ_CFG  8
+#define SPI_SYS_JTAGSEL   9
 
 // port subcommands
 #define SPI_SYS_PORT_STATUS 0

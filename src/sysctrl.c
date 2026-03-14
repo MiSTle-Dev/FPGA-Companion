@@ -504,3 +504,9 @@ char *sys_get_config(void) {
   
   return NULL;
 }
+
+void sys_jtagsel(char on) {
+  sys_begin(SPI_SYS_JTAGSEL);
+  mcu_hw_spi_tx_u08(on?1:0);
+  mcu_hw_spi_end();
+}

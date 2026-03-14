@@ -1973,7 +1973,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
    stop_hid();
    vTaskDelay(pdMS_TO_TICKS(250));
 
-  #ifndef TANG_NANO20K
+#ifndef TANG_NANO20K
     bflb_gpio_deinit(gpio, SPI_PIN_MISO);
     bflb_gpio_deinit(gpio, SPI_PIN_MOSI);
     bflb_gpio_deinit(gpio, SPI_PIN_SCK);
@@ -1992,6 +1992,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
     bflb_gpio_init(gpio, PIN_JTAG_TMS, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
 #ifndef TANG_NANO20K
     bflb_gpio_set(gpio, PIN_JTAGSEL); // select JTAG mode
+    sys_jtagsel(true);    
 #endif
     
 #ifdef DEBUG_JTAG
@@ -2209,6 +2210,7 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_gpio_set(gpio, SPI_PIN_CSN);
 
   bflb_gpio_reset(gpio, PIN_JTAGSEL);
+  sys_jtagsel(false);    
 #endif
 
 #ifdef TANG_CONSOLE60K

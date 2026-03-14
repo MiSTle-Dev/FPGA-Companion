@@ -116,6 +116,8 @@ elseif(TANG_BOARD STREQUAL "nano20k")
     add_definitions(-DTANG_NANO20K)
 elseif(TANG_BOARD STREQUAL "m0sdock")
     add_definitions(-DM0S_DOCK)
+else()
+   message(FATAL_ERROR "TANG_BOARD must be mega60k, mega138kpro, console60k, primer25k, nano20k or m0sdock")
 endif()
 
 find_package(bouffalo_sdk REQUIRED HINTS $ENV{BL_SDK_BASE})
