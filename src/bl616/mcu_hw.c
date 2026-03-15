@@ -654,12 +654,15 @@ static void usbh_xbox_client_thread(void *argument) {
    }
 
   // Some third-party controllers Xbox 360-style controllers require this message to finish initialization.
-  uint8_t dummy_report[20];
-  ret = usbh_hid_get_report((struct usbh_hid *) xbox->class,
-                            1, // INPUT report
-                            0, // Report ID = 0
-                            dummy_report,
-                            20); // report size
+  USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
+  struct usb_setup_packet setup;
+
+  setup.bmRequestType = USB_REQUEST_DIR_IN | USB_REQUEST_VENDOR | USB_REQUEST_RECIPIENT_INTERFACE;
+  setup.bRequest      = 0x01;  // similar to HID_REQUEST_GET_REPORT
+  setup.wValue        = 0x0100;
+  setup.wIndex        = 0x0000;
+  setup.wLength       = sizeof(dummy_report);
+  ret = usbh_control_transfer(xbox->class->hport, &setup, dummy_report);
 
   xbox_init(xbox);
   usb_debugf("XBOX client #%d: all init packets sent", xbox->index);
