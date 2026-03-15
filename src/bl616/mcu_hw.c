@@ -654,12 +654,15 @@ static void usbh_xbox_client_thread(void *argument) {
    }
 
   // Some third-party controllers Xbox 360-style controllers require this message to finish initialization.
-  uint8_t dummy_report[20];
-  ret = usbh_hid_get_report(xbox->class,
-                            1, // INPUT report
-                            0, // Report ID = 0
-                            dummy_report,
-                            20); // report size
+  USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
+  struct usb_setup_packet setup;
+
+  setup.bmRequestType = USB_REQUEST_DIR_IN | USB_REQUEST_VENDOR | USB_REQUEST_RECIPIENT_INTERFACE;
+  setup.bRequest      = 0x01;  // similar to HID_REQUEST_GET_REPORT
+  setup.wValue        = 0x0100;
+  setup.wIndex        = 0x0000;
+  setup.wLength       = sizeof(dummy_report);
+  ret = usbh_control_transfer(xbox->class->hport, &setup, dummy_report);
 
   xbox_init(xbox);
   usb_debugf("XBOX client #%d: all init packets sent", xbox->index);
@@ -763,11 +766,9 @@ void usbh_hid_run(struct usbh_hid *hid_class)
   const char *driver_name = hid_class->hport->config.intf[hid_class->intf].class_driver->driver_name;
   debugf("New Path - connected - Driver name: %s intf: %d minor: %u rep_size: %u", hid_class->hport->config.intf[hid_class->intf].class_driver->driver_name, i, hid_class->minor, hid_class->report_size);
 
-  if (driver_name && strcmp(driver_name, "hid") == 0) {
     // request status (currently only dummy data, will return 0x5c, 0x42)
     // in the long term the core is supposed to return its HID demands
     // (keyboard matrix type, joystick type and number, ...)
-    
     mcu_hw_spi_begin();
     mcu_hw_spi_tx_u08(SPI_TARGET_HID);
     mcu_hw_spi_tx_u08(SPI_HID_STATUS);
@@ -776,6 +777,7 @@ void usbh_hid_run(struct usbh_hid *hid_class)
     usb_debugf("HID status #1: %02x", mcu_hw_spi_tx_u08(0x00));
     mcu_hw_spi_end();
 
+  if (driver_name && strcmp(driver_name, "hid") == 0) {
     usb->hid_info[i].class = hid_class;
 
     usb_debugf("NEW HID %d", i);
@@ -1970,16 +1972,17 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   if((dir & 0x0f) == 0x0b) {
     debugf("SPI deinit and JTAG activation");
 
+   jtag_is_active = true;
    stop_hid();
    vTaskDelay(pdMS_TO_TICKS(250));
 
+   bflb_irq_disable(gpio->irq_num);
 #ifndef TANG_NANO20K
     bflb_gpio_deinit(gpio, SPI_PIN_MISO);
     bflb_gpio_deinit(gpio, SPI_PIN_MOSI);
     bflb_gpio_deinit(gpio, SPI_PIN_SCK);
     bflb_gpio_deinit(gpio, SPI_PIN_CSN);
 #endif
-    bflb_irq_disable(gpio->irq_num);
 
     bflb_gpio_deinit(gpio, PIN_JTAG_TCK);
     bflb_gpio_deinit(gpio, PIN_JTAG_TDI);
@@ -2023,7 +2026,6 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
       mcu_hw_fpga_reconfig(false);
       return;
     }
-    jtag_is_active = true;
   } else
     jtag_is_active = false;
 }
@@ -2220,10 +2222,10 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_sdh_sta_int_en(sdh, 0xffffffff, false);
   GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
 #endif
-  jtag_is_active = false;
+  bflb_gpio_int_clear(gpio, SPI_PIN_IRQ);
   bflb_irq_enable(gpio->irq_num);
+  jtag_is_active = false;
 }
-
 void mcu_hw_jtag_toggleClk(uint32_t clk_len)
 {
   mcu_hw_jtag_enter_gpio_out_mode();
