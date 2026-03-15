@@ -54,7 +54,9 @@
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
 #include <lwip/dns.h>
+#if IS_ENABLED(CONFIG_FHOST)
 #include "fhost_api.h"
+#endif
 #include "wifi_mgmr_ext.h"
 #include "wifi_mgmr.h"
 #include "rfparam_adapter.h"
@@ -282,6 +284,7 @@ static struct usb_config {
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t hid_buffer[CONFIG_USBHOST_MAX_HID_CLASS][MAX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XBOX_CLASS][XBOX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[CONFIG_USBHOST_MAX_HID_CLASS][128];
+USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
 
 uint8_t byteScaleAnalog(int16_t xbox_val)
 {
@@ -654,7 +657,6 @@ static void usbh_xbox_client_thread(void *argument) {
    }
 
   // Some third-party controllers Xbox 360-style controllers require this message to finish initialization.
-  USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
   struct usb_setup_packet setup;
 
   setup.bmRequestType = USB_REQUEST_DIR_IN | USB_REQUEST_VENDOR | USB_REQUEST_RECIPIENT_INTERFACE;
@@ -1424,7 +1426,7 @@ static QueueHandle_t wifi_event_queue = NULL;
 
 // there are multiple wifi_mgmr_ext.h in bouffalo sdk and the one including
 // these prototypes is not being use byte the #include
-extern int wifi_mgmr_init(wifi_conf_t *conf);
+//extern int wifi_mgmr_init(wifi_conf_t *conf);
 
 void wifi_event_handler(async_input_event_t ev, void *priv)
 {
@@ -1433,7 +1435,8 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   switch (code) {
   case CODE_WIFI_ON_INIT_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_INIT_DONE", __func__);
-    wifi_mgmr_init(&conf);
+//    wifi_mgmr_init(&conf);
+    wifi_mgmr_init();
   } break;
   case CODE_WIFI_ON_MGMR_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_MGMR_DONE", __func__);
