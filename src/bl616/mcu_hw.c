@@ -54,9 +54,7 @@
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
 #include <lwip/dns.h>
-#if IS_ENABLED(CONFIG_FHOST)
 #include "fhost_api.h"
-#endif
 #include "wifi_mgmr_ext.h"
 #include "wifi_mgmr.h"
 #include "rfparam_adapter.h"
@@ -1426,7 +1424,7 @@ static QueueHandle_t wifi_event_queue = NULL;
 
 // there are multiple wifi_mgmr_ext.h in bouffalo sdk and the one including
 // these prototypes is not being use byte the #include
-//extern int wifi_mgmr_init(wifi_conf_t *conf);
+extern int wifi_mgmr_init(wifi_conf_t *conf);
 
 void wifi_event_handler(async_input_event_t ev, void *priv)
 {
@@ -1435,8 +1433,7 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   switch (code) {
   case CODE_WIFI_ON_INIT_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_INIT_DONE", __func__);
-//    wifi_mgmr_init(&conf);
-    wifi_mgmr_init();
+    wifi_mgmr_init(&conf);
   } break;
   case CODE_WIFI_ON_MGMR_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_MGMR_DONE", __func__);
