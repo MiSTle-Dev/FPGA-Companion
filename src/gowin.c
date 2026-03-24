@@ -125,8 +125,8 @@ static bool gowin_eraseSRAM(void) {
       jtag_clk_us(10000);
     }
   }
-  // mandatory for GW5A-60 and helpful for GW5AST-138k too avoid SRAM clear errors
-  if ((idcode == IDCODE_GW5AT60) || (idcode == IDCODE_GW5AST138)) {
+  // mandatory for GW5A to avoid SRAM clear errors
+  if ((idcode == IDCODE_GW5AT60) || (idcode == IDCODE_GW5AST138) || (idcode == IDCODE_GW5A25)) {
       gowin_debugf("FPGA REINIT");
       jtag_command_u08(GOWIN_COMMAND_REINIT);
       jtag_clk_us(10000);

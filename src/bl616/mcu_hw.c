@@ -1405,6 +1405,11 @@ void mcu_hw_port_byte(unsigned char byte) {
   debugf("port byte %d", byte);
 }
 
+extern int wifi_mgmr_task_start(void);
+extern int fhost_init(void);
+extern int wifi_mgmr_sta_scanlist(void);
+extern int wifi_mgmr_sta_quickconnect(const char *ssid, const char *key, uint16_t freq1, uint16_t freq2);
+
 #define WIFI_STACK_SIZE  (1536)
 #define TASK_PRIORITY_FW (16)
 
@@ -1419,12 +1424,7 @@ static int wifi_state = WIFI_STATE_UNKNOWN;
 static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
 static int s_retry_num = 0;
-static wifi_conf_t conf = { .country_code = "EU" }; // "CN","US","JP","EU"
 static QueueHandle_t wifi_event_queue = NULL;
-
-// there are multiple wifi_mgmr_ext.h in bouffalo sdk and the one including
-// these prototypes is not being use byte the #include
-//extern int wifi_mgmr_init(wifi_conf_t *conf);
 
 void wifi_event_handler(async_input_event_t ev, void *priv)
 {
@@ -1433,8 +1433,7 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   switch (code) {
   case CODE_WIFI_ON_INIT_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_INIT_DONE", __func__);
-//    wifi_mgmr_init(&conf);
-    wifi_mgmr_init();
+    wifi_mgmr_task_start();
   } break;
   case CODE_WIFI_ON_MGMR_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_MGMR_DONE", __func__);

@@ -3,8 +3,8 @@
 COMX?=/dev/m0s_debugger
 BAUDRATE?=2000000
 
-SDK_DEMO_PATH ?= .
-BL_SDK_BASE ?= $(SDK_DEMO_PATH)/../../..
+SDK_DEMO_PATH ?= $(abspath .)
+BL_SDK_BASE ?= $(abspath  ./../../../..)
 
 CHIP ?= bl616
 BOARD ?= bl616dk
