@@ -395,6 +395,8 @@ static void image_send_chunk(int image, uint32_t len) {
 
   // sdc_debugf("IMG %d: sending %d", image, len);
 
+  sdc_lock();
+
   // read data from image file
   unsigned char buffer[len];
   UINT bytesread;
@@ -410,6 +412,8 @@ static void image_send_chunk(int image, uint32_t len) {
   mcu_hw_spi_end();
   
   image_bytes2send[image] -= len;
+
+  sdc_unlock();
 }
     
 static int sdc_rom_image_get_buffer(char image) {
@@ -569,6 +573,9 @@ static int sdc_image_inserted(char drive, FSIZE_t size) {
 }
 
 static void sdc_rom_image_selected(char image, FSIZE_t size) {
+  // ignore de-selection of a deselected image
+  if(!fil[MAX_DRIVES+image].flag && !size) return;  
+  
   if(size) sdc_debugf("IMG %d: selected. Size = %llu", image, (unsigned long long)size);
   else     sdc_debugf("IMG %d: deselected", image);
 
@@ -594,7 +601,7 @@ int sdc_image_open(int drive, char *name) {
     // tell core that the "disk" has been removed
     sdc_image_inserted(drive, 0);
   } else if(drive < MAX_DRIVES+MAX_IMAGES) {
-    // TODO: report image de-selection
+    // report image de-selection
     sdc_rom_image_selected(drive-MAX_DRIVES, 0);
   }
 
@@ -709,11 +716,10 @@ int sdc_image_open(int drive, char *name) {
 
     // get number of bytes to send
     image_bytes2send[(int)image] = fil[drive].obj.objsize;
-
-    image_send_chunk(image, sdc_rom_image_get_buffer(image));
-    
-    // remember current image name
-    image_name[drive] = StrDup(name);    
+    if(sdc_rom_image_get_buffer(image) < 0) 
+      sdc_debugf("IMG %d: Core has rejected image", image);
+      
+    sdc_unlock();
   } else
     mcu_hw_upload_core(fname);
     

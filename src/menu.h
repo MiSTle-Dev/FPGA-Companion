@@ -42,7 +42,4 @@ void menu_notify(unsigned long msg);
 void menu_joystick_state(unsigned char state);
 void menu_button_state(unsigned char state);
 
-// functions dealing with the internal system
-void menu_system_enable(char on);
-
 #endif // MENU_H
