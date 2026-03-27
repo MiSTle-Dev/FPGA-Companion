@@ -141,6 +141,7 @@ target_sources(app PRIVATE
     hid_keyboard_template.c
     ../gowin.c
     sdc_direct.c
+    ../ps2helper.c
 )
 
 file(GLOB COMPONENT_SRCS ../u8g2/csrc/*.c  ../u8g2/sys/bitmap/common/*.c)

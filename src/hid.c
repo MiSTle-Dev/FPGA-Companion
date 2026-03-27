@@ -11,6 +11,7 @@
 
 #include <string.h>  // for memcpy
 #include "usb_controller_maps.h"
+#include "ps2helper.h"
 
 // keep a map of joysticks to be able to report
 // them individually
@@ -29,7 +30,7 @@ void hid_release_joystick(uint8_t idx) {
   usb_debugf("Releasing joystick %d (map = %02x)", idx, joystick_map);
 }
   
-static void kbd_tx(uint8_t byte) {
+void kbd_tx(uint8_t byte) {
   mcu_hw_spi_begin();
   mcu_hw_spi_tx_u08(SPI_TARGET_HID);
   mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
@@ -174,12 +175,16 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       // modifier keys map to key codes 0x68+
       
       // modifier released?
-      if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
-	kbd_tx(0x80 | (i+0x68));
+      if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i))) {
+        kbd_tx(0x80 | (i+0x68));
+        ps2_break_sc(hid_modbit_to_ps2[i]);
+      }
       // modifier pressed?
-      if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
-	kbd_tx(i+0x68);
-    }
+      if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i))) {
+        kbd_tx(i+0x68);
+        ps2_make_sc(hid_modbit_to_ps2[i]);
+      }
+  }
   } 
   
   // check if regular keys have changed
@@ -190,9 +195,11 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
 	if(!osd_is_visible() ) {
 	  // check if the reported key is the OSD activation hotkey
 	  // and suppress reporting it to the core
-	  if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY))
+	  if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY)) {
 	    kbd_tx(0x80 | state->last_report[2+i]);
-	} else
+	    ps2_break_sc(hid_to_ps2_set2(state->last_report[2+i]));
+	   }
+	  } else
 	  menu_notify(MENU_EVENT_KEY_RELEASE);
       }
       
@@ -215,9 +222,11 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
 	} else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
  	  msg = MENU_EVENT_BACK;
 	else {
-	  if(!osd_is_visible())
+	  if(!osd_is_visible()) {
 	    kbd_tx(buffer[2+i]);
-	  else {
+	    ps2_make_sc(hid_to_ps2_set2(buffer[2+i]));
+	   }
+      else {
 	    // check if cursor up/down or space has been pressed
 	    if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;      
 	    if(buffer[2+i] == 0x52) msg = MENU_EVENT_UP;
