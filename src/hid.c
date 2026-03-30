@@ -167,7 +167,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
 	       const unsigned char *buffer, int nbytes) {
   // we expect boot mode packets which are exactly 8 bytes long
   if(nbytes != 8) return;
-  
+
   // check if modifier have changed
   if((buffer[0] != state->last_report[0]) && !osd_is_visible()) {
     for(int i=0;i<8;i++) {
@@ -183,54 +183,70 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
   } 
   
   // check if regular keys have changed
+  // key released?
   for(int i=0;i<6;i++) {
-    if(buffer[2+i] != state->last_report[2+i]) {
-      // key released?
-      if(state->last_report[2+i]) {
-	if(!osd_is_visible() ) {
-	  // check if the reported key is the OSD activation hotkey
-	  // and suppress reporting it to the core
-	  if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY))
-	    kbd_tx(0x80 | state->last_report[2+i]);
-	} else
-	  menu_notify(MENU_EVENT_KEY_RELEASE);
-      }
-      
-      // key pressed?
-      if(buffer[2+i])  {
-	static unsigned long msg;
-	msg = 0;
-	
-	// F12 toggles the OSD state. Therefore F12 must never be forwarded
-	// to the core and thus must have an empty entry in the keymap. ESC
-	// can only close the OSD. This is now configurable via INIFILE_OPTION_HOTKEY
+    // process all slots that were used in the last report
+    if(!(state->last_report[2+i])) continue;
 
-	// Caution: Since the OSD closes on the press event, the following
-	// release event will be sent into the core. The core should thus
-	// cope with release events that did not have a press event before
-	if(buffer[2+i] == inifile_option_get(INIFILE_OPTION_HOTKEY)) {
-	  // for now, shift-F12 activates the system menu
-	  if(buffer[0] & 0x22) msg = MENU_EVENT_SYSTEM;
-	  else	  msg = osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW;
-	} else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
- 	  msg = MENU_EVENT_BACK;
-	else {
-	  if(!osd_is_visible())
-	    kbd_tx(buffer[2+i]);
-	  else {
-	    // check if cursor up/down or space has been pressed
-	    if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;      
-	    if(buffer[2+i] == 0x52) msg = MENU_EVENT_UP;
-	    if(buffer[2+i] == 0x4e) msg = MENU_EVENT_PGDOWN;      
-	    if(buffer[2+i] == 0x4b) msg = MENU_EVENT_PGUP;
-	    if((buffer[2+i] == 0x2c) || (buffer[2+i] == 0x28))
-	      msg = MENU_EVENT_SELECT;
-	  }
+    // search for previously reported key in current report
+    bool key_released = true;
+    for(int j=0;j<6;j++)
+      if(state->last_report[2+i] == buffer[2+j]) { key_released = false; break; }
+
+    if (key_released) {
+      if(!osd_is_visible() ) {
+        // check if the reported key is the OSD activation hotkey
+        // and suppress reporting it to the core
+        if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY)) {
+	  printf("send release for %x\n", 0x80 | state->last_report[2+i]);
+          kbd_tx(0x80 | state->last_report[2+i]);
 	}
+      } else
+        menu_notify(MENU_EVENT_KEY_RELEASE);
+    }
+  }
 
-	// send message to menu task
-	if(msg) menu_notify(msg);
-      }   
+  // key pressed?
+  for(int i=0;i<6;i++) {
+    if(!(buffer[2+i])) break;
+    bool key_pressed = true;
+    for(int j=0;j<6;j++) {
+      if(!(state->last_report[2+j])) break;
+      if(buffer[2+i] == state->last_report[2+j]) { key_pressed = false; break; }
+    }
+    if (key_pressed) {
+      static unsigned long msg;
+      msg = 0;
+	
+      // F12 toggles the OSD state. Therefore F12 must never be forwarded
+      // to the core and thus must have an empty entry in the keymap. ESC
+      // can only close the OSD. This is now configurable via INIFILE_OPTION_HOTKEY
+
+      // Caution: Since the OSD closes on the press event, the following
+      // release event will be sent into the core. The core should thus
+      // cope with release events that did not have a press event before
+      if(buffer[2+i] == inifile_option_get(INIFILE_OPTION_HOTKEY)) {
+        // for now, shift-F12 activates the system menu
+        if(buffer[0] & 0x22) msg = MENU_EVENT_SYSTEM;
+        else	  msg = osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW;
+      } else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
+        msg = MENU_EVENT_BACK;
+      else {
+        if(!osd_is_visible())
+          kbd_tx(buffer[2+i]);
+        else {
+          // check if cursor up/down or space has been pressed
+          if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;
+          if(buffer[2+i] == 0x52) msg = MENU_EVENT_UP;
+          if(buffer[2+i] == 0x4e) msg = MENU_EVENT_PGDOWN;
+          if(buffer[2+i] == 0x4b) msg = MENU_EVENT_PGUP;
+          if((buffer[2+i] == 0x2c) || (buffer[2+i] == 0x28))
+            msg = MENU_EVENT_SELECT;
+        }
+      }
+
+      // send message to menu task
+      if(msg) menu_notify(msg);
     }
   }
   memcpy(state->last_report, buffer, 8);
