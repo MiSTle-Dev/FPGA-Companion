@@ -197,10 +197,8 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       if(!osd_is_visible() ) {
         // check if the reported key is the OSD activation hotkey
         // and suppress reporting it to the core
-        if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY)) {
-	  printf("send release for %x\n", 0x80 | state->last_report[2+i]);
+        if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY))
           kbd_tx(0x80 | state->last_report[2+i]);
-	}
       } else
         menu_notify(MENU_EVENT_KEY_RELEASE);
     }
