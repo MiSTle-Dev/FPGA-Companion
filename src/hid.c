@@ -165,6 +165,17 @@ void newkbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid
 
 void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kbd_state_S *state,
 	       const unsigned char *buffer, int nbytes) {
+
+  // check if the given code is in the report
+  bool is_in_report(unsigned char code, const unsigned char *report) {
+    for(int j=0;j<6;j++)
+      if(report[j] == code)
+	return true;
+
+    return false;
+  }
+
+  
   // we expect boot mode packets which are exactly 8 bytes long
   if(nbytes != 8) return;
 
@@ -188,12 +199,8 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
     // process all slots that were used in the last report
     if(!(state->last_report[2+i])) continue;
 
-    // search for previously reported key in current report
-    bool key_released = true;
-    for(int j=0;j<6;j++)
-      if(state->last_report[2+i] == buffer[2+j]) { key_released = false; break; }
-
-    if (key_released) {
+    // check if key reported in last report is still in current report 
+    if (!is_in_report(state->last_report[2+i], buffer+2)) {
       if(!osd_is_visible() ) {
         // check if the reported key is the OSD activation hotkey
         // and suppress reporting it to the core
@@ -206,13 +213,11 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
 
   // key pressed?
   for(int i=0;i<6;i++) {
-    if(!(buffer[2+i])) break;
-    bool key_pressed = true;
-    for(int j=0;j<6;j++) {
-      if(!(state->last_report[2+j])) break;
-      if(buffer[2+i] == state->last_report[2+j]) { key_pressed = false; break; }
-    }
-    if (key_pressed) {
+    // process all slots that are used in current report
+    if(!(buffer[2+i])) continue;
+
+    // check if key currently reported was not present in last report
+    if (!is_in_report(buffer[2+i], state->last_report+2)) {
       static unsigned long msg;
       msg = 0;
 	
