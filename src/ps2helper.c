@@ -1,51 +1,98 @@
 #include "ps2helper.h"
 #include <stdint.h>
 #include <string.h>
+#include "spi.h"
+#include "mcu_hw.h"
 
-extern void kbd_tx(uint8_t byte);
-
-void ps2_make_sc(uint16_t sc)
+void ps2_make_sc(uint8_t byte, uint8_t mod)
 {
-    if(sc == PS2_NONE) return;
+    uint16_t sc;
+
+    mcu_hw_spi_begin();
+    mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+    mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
+    if (mod != 0) { 
+        mcu_hw_spi_tx_u08(byte+0x68);
+        sc = hid_to_ps2_set2(hid_modbit_to_ps2[byte]);
+      }
+    else {
+        mcu_hw_spi_tx_u08(byte);
+        sc = hid_to_ps2_set2(byte);
+      }
+
+    if(sc == PS2_NONE) { 
+        mcu_hw_spi_end(); 
+        return; 
+    }
 
     if(sc == PS2_SPECIAL_PRINT) {
         /* PrintScreen make: E0 12 E0 7C */
-        kbd_tx(0xE0); kbd_tx(0x12);
-        kbd_tx(0xE0); kbd_tx(0x7C);
+        mcu_hw_spi_tx_u08(0xE0);
+        mcu_hw_spi_tx_u08(0x12);
+        mcu_hw_spi_tx_u08(0xE0);
+        mcu_hw_spi_tx_u08(0x7C);
+        mcu_hw_spi_end();
         return;
     }
 
     if(sc == PS2_SPECIAL_PAUSE) {
         /* Pause make */
-        kbd_tx(0xE1); kbd_tx(0x14); kbd_tx(0x77);
-        kbd_tx(0xE1); kbd_tx(0xF0); kbd_tx(0x14);
-        kbd_tx(0xF0); kbd_tx(0x77);
+        mcu_hw_spi_tx_u08(0xE1); 
+        mcu_hw_spi_tx_u08(0x14); 
+        mcu_hw_spi_tx_u08(0x77);
+        mcu_hw_spi_tx_u08(0xE1); 
+        mcu_hw_spi_tx_u08(0xF0); 
+        mcu_hw_spi_tx_u08(0x14);
+        mcu_hw_spi_tx_u08(0xF0); 
+        mcu_hw_spi_tx_u08(0x77);
+        mcu_hw_spi_end();
         return;
     }
 
-    if(sc & PS2_E0) kbd_tx(0xE0);
-    kbd_tx((uint8_t)(sc & 0xFF));
+    if(sc & PS2_E0) mcu_hw_spi_tx_u08(0xE0);
+
+    mcu_hw_spi_tx_u08((uint8_t)(sc & 0xFF));
+    mcu_hw_spi_end();
 }
 
-void ps2_break_sc(uint16_t sc)
+void ps2_break_sc(uint8_t byte, uint8_t mod)
 {
-    if(sc == PS2_NONE) return;
+    mcu_hw_spi_begin();
+    mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+    mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
+    if (mod != 0) mcu_hw_spi_tx_u08(0x80 | byte+0x68);
+        else mcu_hw_spi_tx_u08(0x80 | byte);
+
+    uint16_t sc = hid_to_ps2_set2(byte);
+
+    if(sc == PS2_NONE) { 
+        mcu_hw_spi_end(); 
+        return; 
+    }
 
     if(sc == PS2_SPECIAL_PRINT) {
         /* PrintScreen break */
-        kbd_tx(0xE0); kbd_tx(0xF0); kbd_tx(0x7C);
-        kbd_tx(0xE0); kbd_tx(0xF0); kbd_tx(0x12);
+        mcu_hw_spi_tx_u08(0xE0); 
+        mcu_hw_spi_tx_u08(0xF0); 
+        mcu_hw_spi_tx_u08(0x7C);
+        mcu_hw_spi_tx_u08(0xE0); 
+        mcu_hw_spi_tx_u08(0xF0); 
+        mcu_hw_spi_tx_u08(0x12);
+        mcu_hw_spi_end();
         return;
     }
 
     if(sc == PS2_SPECIAL_PAUSE) {
         /* Pause has no break */
+        mcu_hw_spi_end();
         return;
     }
 
-    if(sc & PS2_E0) kbd_tx(0xE0);
-    kbd_tx(0xF0);
-    kbd_tx((uint8_t)(sc & 0xFF));
+    if(sc & PS2_E0) mcu_hw_spi_tx_u08(0xE0);
+
+    mcu_hw_spi_tx_u08(0xF0);
+    mcu_hw_spi_tx_u08((uint8_t)(sc & 0xFF));
+    mcu_hw_spi_end();
 }
 
 
