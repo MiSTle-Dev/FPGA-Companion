@@ -60,7 +60,7 @@ void ps2_break_sc(uint8_t byte, uint8_t mod)
     mcu_hw_spi_begin();
     mcu_hw_spi_tx_u08(SPI_TARGET_HID);
     mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
-    if (mod != 0) mcu_hw_spi_tx_u08(0x80 | byte+0x68);
+    if (mod != 0) mcu_hw_spi_tx_u08(0x80 | (byte+0x68));
         else mcu_hw_spi_tx_u08(0x80 | byte);
 
     uint16_t sc = hid_to_ps2_set2(byte);
