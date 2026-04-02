@@ -4,6 +4,8 @@
 #include "spi.h"
 #include "mcu_hw.h"
 
+static uint16_t hid_to_ps2_set2(uint8_t hid);
+
 void ps2_make_sc(uint8_t byte, uint8_t mod)
 {
     uint16_t sc;
@@ -13,7 +15,7 @@ void ps2_make_sc(uint8_t byte, uint8_t mod)
     mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
     if (mod != 0) { 
         mcu_hw_spi_tx_u08(byte+0x68);
-        sc = hid_to_ps2_set2(hid_modbit_to_ps2[byte]);
+        sc = hid_modbit_to_ps2[byte];
       }
     else {
         mcu_hw_spi_tx_u08(byte);
@@ -57,13 +59,19 @@ void ps2_make_sc(uint8_t byte, uint8_t mod)
 
 void ps2_break_sc(uint8_t byte, uint8_t mod)
 {
+    uint16_t sc;
+
     mcu_hw_spi_begin();
     mcu_hw_spi_tx_u08(SPI_TARGET_HID);
     mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
-    if (mod != 0) mcu_hw_spi_tx_u08(0x80 | (byte+0x68));
-        else mcu_hw_spi_tx_u08(0x80 | byte);
-
-    uint16_t sc = hid_to_ps2_set2(byte);
+    if (mod != 0) {
+        mcu_hw_spi_tx_u08(0x80 | (byte+0x68));
+        sc = hid_modbit_to_ps2[byte];
+    }
+    else {
+        mcu_hw_spi_tx_u08(0x80 | byte);
+        sc = hid_to_ps2_set2(byte);
+    }
 
     if(sc == PS2_NONE) { 
         mcu_hw_spi_end(); 
@@ -101,7 +109,7 @@ void ps2_break_sc(uint8_t byte, uint8_t mod)
      0      : unmapped/unsupported
      PS2_E0 | xx : extended
      PS2_SPECIAL_* for PrintScreen/Pause */
-uint16_t hid_to_ps2_set2(uint8_t hid)
+static uint16_t hid_to_ps2_set2(uint8_t hid)
 {
   switch(hid) {
     /* Letters */

@@ -5,7 +5,6 @@
 
 #include <stdint.h>
 #include <string.h>
-#include "mcu_hw.h"
 
 #define PS2_E0 0x0100
 #define PS2_NONE 0x0000
@@ -26,6 +25,5 @@ static const uint16_t hid_modbit_to_ps2[8] = {
 
 void ps2_make_sc(uint8_t byte, uint8_t mod);
 void ps2_break_sc(uint8_t byte, uint8_t mod);
-uint16_t hid_to_ps2_set2(uint8_t hid);
 
 #endif // PS2HELPER_H
