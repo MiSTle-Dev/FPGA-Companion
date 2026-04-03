@@ -38,11 +38,9 @@ void kbd_tx_hid_ps2_make(uint8_t byte, uint8_t mod)
         mcu_hw_spi_tx_u08(byte);
         sc = hid_to_ps2_set2(byte);
       }
-      usb_debugf("PS/2 make: 0x%04x", sc);
 
     if(sc == PS2_NONE) { 
         mcu_hw_spi_end(); 
-        usb_debugf("PS2_NONE");
         return; 
     }
 
@@ -53,7 +51,6 @@ void kbd_tx_hid_ps2_make(uint8_t byte, uint8_t mod)
         mcu_hw_spi_tx_u08(0xE0);
         mcu_hw_spi_tx_u08(0x7C);
         mcu_hw_spi_end();
-        usb_debugf("PS2_SPECIAL_PRINT");
         return;
     }
 
@@ -68,18 +65,15 @@ void kbd_tx_hid_ps2_make(uint8_t byte, uint8_t mod)
         mcu_hw_spi_tx_u08(0xF0); 
         mcu_hw_spi_tx_u08(0x77);
         mcu_hw_spi_end();
-        usb_debugf("PS2_SPECIAL_PAUSE");
         return;
     }
 
     if(sc & PS2_E0) { 
         mcu_hw_spi_tx_u08(0xE0);
-        usb_debugf("0xE0");
         }
 
     mcu_hw_spi_tx_u08((uint8_t)(sc & 0xFF));
     mcu_hw_spi_end();
-    usb_debugf("0x%02x",(uint8_t)(sc & 0xFF));
 }
 
 /**
@@ -116,11 +110,9 @@ void kbd_tx_hid_ps2_break(uint8_t byte, uint8_t mod)
         mcu_hw_spi_tx_u08(0x80 | byte);
         sc = hid_to_ps2_set2(byte);
     }
-    usb_debugf("PS/2 break: 0x%04x", sc);
 
     if(sc == PS2_NONE) { 
         mcu_hw_spi_end();
-        usb_debugf("PS2_NONE");
         return; 
     }
 
@@ -139,20 +131,16 @@ void kbd_tx_hid_ps2_break(uint8_t byte, uint8_t mod)
     if(sc == PS2_SPECIAL_PAUSE) {
         /* Pause has no break */
         mcu_hw_spi_end();
-        usb_debugf("PS2_SPECIAL_PAUSE");
         return;
     }
 
     if(sc & PS2_E0) {
         mcu_hw_spi_tx_u08(0xE0);
-        usb_debugf("0xE0");
         }
 
     mcu_hw_spi_tx_u08(0xF0);
-    usb_debugf("0xF0");
     mcu_hw_spi_tx_u08((uint8_t)(sc & 0xFF));
     mcu_hw_spi_end();
-    usb_debugf("0x%02x", (uint8_t)sc & 0xFF);
 }
 
 
