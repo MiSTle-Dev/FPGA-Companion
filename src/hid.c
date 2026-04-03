@@ -188,12 +188,12 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       // modifier released?
       if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i))) {
         //kbd_tx(0x80 | (i+0x68));
-        ps2_break_sc(i, 1);
+        kbd_tx_hid_ps2_break(i, 1);
       }
       // modifier pressed?
       if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i))) {
         //kbd_tx(i+0x68);
-        ps2_make_sc(i, 1);
+        kbd_tx_hid_ps2_make(i, 1);
       }
     }
   } 
@@ -211,7 +211,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
         // and suppress reporting it to the core
         if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY)) {
           //kbd_tx(0x80 | state->last_report[2+i]);
-          ps2_break_sc(state->last_report[2+i], 0);
+          kbd_tx_hid_ps2_break(state->last_report[2+i], 0);
        }
       } else
         menu_notify(MENU_EVENT_KEY_RELEASE);
@@ -244,7 +244,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       else {
         if(!osd_is_visible()) {
            //kbd_tx(buffer[2+i]);
-           ps2_make_sc(buffer[2+i], 0);
+           kbd_tx_hid_ps2_make(buffer[2+i], 0);
           }
           else {
           // check if cursor up/down or space has been pressed

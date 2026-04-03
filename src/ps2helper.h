@@ -23,7 +23,7 @@ static const uint16_t hid_modbit_to_ps2[8] = {
   PS2_E0 | 0x27    /* bit7: RGUI */
 };
 
-void ps2_make_sc(uint8_t byte, uint8_t mod);
-void ps2_break_sc(uint8_t byte, uint8_t mod);
+void kbd_tx_hid_ps2_make(uint8_t byte, uint8_t mod);
+void kbd_tx_hid_ps2_break(uint8_t byte, uint8_t mod);
 
 #endif // PS2HELPER_H

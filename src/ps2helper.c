@@ -7,7 +7,23 @@
 
 static uint16_t hid_to_ps2_set2(uint8_t hid);
 
-void ps2_make_sc(uint8_t byte, uint8_t mod)
+/**
+ * Send a PS/2 Set‑2 MAKE (key‑press) sequence for a given HID usage code.
+ *
+ * This function translates a USB HID keyboard usage code into the
+ * corresponding PS/2 Set‑2 make sequence and transmits it over SPI to the
+ * FPGA.
+ *
+ * Rules:
+ *  - If `mod` is non‑zero, the key is treated as a modifier:
+ *        • HID code is offset by +0x68 for the SPI FPGA companion protocol
+ *        • PS/2 code is taken from hid_modbit_to_ps2[]
+ *  - Otherwise, hid_to_ps2_set2() is used for lookup.
+ *
+ * @param byte  HID usage code (0–255)
+ * @param mod   Non‑zero if this is a modifier key, zero otherwise
+ */
+void kbd_tx_hid_ps2_make(uint8_t byte, uint8_t mod)
 {
     uint16_t sc;
 
@@ -66,7 +82,26 @@ void ps2_make_sc(uint8_t byte, uint8_t mod)
     usb_debugf("0x%02x",(uint8_t)(sc & 0xFF));
 }
 
-void ps2_break_sc(uint8_t byte, uint8_t mod)
+/**
+ * Send a PS/2 Set‑2 BREAK (key‑release) sequence for a given HID usage code.
+ *
+ * This function translates a USB HID keyboard usage code into the
+ * corresponding PS/2 Set‑2 break sequence and transmits it over SPI to the
+ * FPGA.
+ *
+ * Rules:
+ *  - If `mod` is non‑zero, the key is treated as a modifier:
+ *        • HID code is offset by +0x68 for the SPI companion protocol
+ *        • The transmitted SPI byte is (0x80 | (byte + 0x68))
+ *        • PS/2 code is taken from hid_modbit_to_ps2[]
+ *  - Otherwise:
+ *        • The transmitted SPI byte is (0x80 | byte)
+ *        • PS/2 code is obtained via hid_to_ps2_set2()
+ *
+ * @param byte  HID usage code (0–255)
+ * @param mod   Non‑zero if this is a modifier key, zero otherwise
+ */
+void kbd_tx_hid_ps2_break(uint8_t byte, uint8_t mod)
 {
     uint16_t sc;
 
