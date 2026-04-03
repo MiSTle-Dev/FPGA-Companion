@@ -18,7 +18,7 @@ for %%b in (%boards%) do (
     REM Set board environment variable and build
     set "TANG_BOARD=%%b"
     REM make for new SDK
-    make ninja
+    make
     if !errorlevel! equ 0 (
         echo Build successful for %%b
         
