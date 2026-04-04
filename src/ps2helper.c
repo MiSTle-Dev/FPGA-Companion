@@ -106,7 +106,7 @@ void kbd_tx_hid_ps2_break(uint8_t byte, uint8_t mod)
     mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
     if (mod != 0) {
         mcu_hw_spi_tx_u08(0x80 | (byte+0x68));
-        mcu_hw_spi_tx_u08(0); // dummy fill byte
+        mcu_hw_spi_tx_u08(byte); // dummy fill byte
         sc = hid_modbit_to_ps2[byte];
     }
     else {
