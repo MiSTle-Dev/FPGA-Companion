@@ -11,6 +11,7 @@
 
 #include <string.h>  // for memcpy
 #include "usb_controller_maps.h"
+#include "ps2helper.h"
 
 // keep a map of joysticks to be able to report
 // them individually
@@ -170,7 +171,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
   bool is_in_report(unsigned char code, const unsigned char *report) {
     for(int j=0;j<6;j++)
       if(report[j] == code)
-	return true;
+	      return true;
 
     return false;
   }
@@ -186,10 +187,13 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       
       // modifier released?
       if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
-	kbd_tx(0x80 | (i+0x68));
+        //kbd_tx(0x80 | (i+0x68));
+        kbd_tx_hid_ps2_break(i, 1);
+
       // modifier pressed?
       if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
-	kbd_tx(i+0x68);
+        //kbd_tx(i+0x68);
+        kbd_tx_hid_ps2_make(i, 1);
     }
   } 
   
@@ -205,7 +209,8 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
         // check if the reported key is the OSD activation hotkey
         // and suppress reporting it to the core
         if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY))
-          kbd_tx(0x80 | state->last_report[2+i]);
+          //kbd_tx(0x80 | state->last_report[2+i]);
+          kbd_tx_hid_ps2_break(state->last_report[2+i], 0);
       } else
         menu_notify(MENU_EVENT_KEY_RELEASE);
     }
@@ -236,7 +241,8 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
         msg = MENU_EVENT_BACK;
       else {
         if(!osd_is_visible())
-          kbd_tx(buffer[2+i]);
+           //kbd_tx(buffer[2+i]);
+           kbd_tx_hid_ps2_make(buffer[2+i], 0);
         else {
           // check if cursor up/down or space has been pressed
           if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;
