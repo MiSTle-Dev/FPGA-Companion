@@ -167,10 +167,7 @@ On the regular Pico, the FPGA Companion uses the following pins:
 | GP17 | CSn | SPI chip select to FPGA |
 | GP18 | SCK | SPI clock to FPGA |
 | GP19 | MOSI | SPI data to FPGA |
-| GP21 [^b] | RECONFIGn | FPGA reload |
 | GP22 | IRQn | SPI interrupt from FPGA |
-| GP26 [^b] | MODE0 | FPGA mode 0 |
-| GP27 [^b] | MODE1 | FPGA mode 1 |
 
 If PiPico is used as JTAG loader the TANG20k onboard BL616 need to be disabled by connecting CHIP_EN to GND.
 
