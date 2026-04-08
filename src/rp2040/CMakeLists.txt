@@ -28,9 +28,9 @@ set(PICO_BOARD pico_w CACHE STRING "Board type")
 
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
-set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
+set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE, DEV20K, MSP20K")
 
-set(BOARDS PICO PICO2 WS2040ZERO SH20KLITE DEV20K)
+set(BOARDS PICO PICO2 WS2040ZERO SH20KLITE DEV20K MSP20K)
 if( NOT BOARD IN_LIST BOARDS)
     message(FATAL_ERROR "BOARD must be one of ${BOARDS}")
 endif()
@@ -116,8 +116,14 @@ elseif(${BOARD} STREQUAL DEV20K)
    target_sources(${PROJECT} PRIVATE sdio.c ../jtag.c ../gowin.c usb_jtag.c)
    target_sources(${PROJECT} PRIVATE usb_descriptors.c)
    target_link_libraries(${PROJECT} PRIVATE tinyusb_device)
+elseif(${BOARD} STREQUAL MSP20K)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=5)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for MiSTeryShieldPicoTN20k.")
+   target_sources(${PROJECT} PRIVATE ../jtag.c ../gowin.c usb_jtag.c)
+   target_sources(${PROJECT} PRIVATE usb_descriptors.c)
+   target_link_libraries(${PROJECT} PRIVATE tinyusb_device)
 else()
-   message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
+   message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040ZERO, SH20KLITE, DEV20K or MSP20K")
 endif()
 
 target_include_directories(${PROJECT} PRIVATE
