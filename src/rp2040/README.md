@@ -169,8 +169,6 @@ On the regular Pico, the FPGA Companion uses the following pins:
 | GP19 | MOSI | SPI data to FPGA |
 | GP22 | IRQn | SPI interrupt from FPGA |
 
-If PiPico is used as JTAG loader the TANG20k onboard BL616 need to be disabled by connecting CHIP_EN to GND.
-
 
 [^a]: JTAG FPGA loader
 [^b]: JTAG FPGA loader, only for FLASH programming needed
