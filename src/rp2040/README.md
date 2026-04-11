@@ -169,9 +169,11 @@ On the regular Pico, the FPGA Companion uses the following pins:
 | GP19 | MOSI | SPI data to FPGA |
 | GP22 | IRQn | SPI interrupt from FPGA |
 
-
 [^a]: JTAG FPGA loader
-[^b]: JTAG FPGA loader, only for FLASH programming needed
+
+Location JTAG connection TN20k PCBA top side.
+
+![Tang Nano 20k JTAG](jtag_tn20k.png)
 
 ## Using the internal micro USB connector
 
