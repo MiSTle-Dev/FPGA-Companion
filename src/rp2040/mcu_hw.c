@@ -244,6 +244,11 @@ static void usb_check_devices(void) {
 #ifdef LED_JOYSTICK_PIN
   gpio_put(LED_JOYSTICK_PIN, joysticks);
 #endif  
+
+  // Redraw OSD whenever the USB LEDs are being updated
+  // as the presence of a keyboard may have chaned which in
+  // turn is reflected by the 'X' icon on the main OSD title
+  menu_notify(MENU_EVENT_NONE);
 }
 
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len) {
