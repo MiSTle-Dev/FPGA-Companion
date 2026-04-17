@@ -50,7 +50,10 @@
 #warning "Building for MiSTeryShieldPicoTN20k"
 #define ENABLE_WIFI
 #include "../jtag.h"
+#else
+#error "Not a supported MiSTle board!"
 #endif
+
 #if MISTLE_BOARD == 4
 // FPGA JTAG pins
 #define PIN_JTAG_TDI  12   // pin 15, gpio 12
@@ -73,8 +76,6 @@
 #define PIN_nCFG      21   // pin 32, PIO21
 #define PIN_MODE0     26   // pin 31, PIO26
 #define PIN_MODE1     27   /* pin 32, PIO27 */
-#else
-#error "Not a supported MiSTle board!"
 #endif
 
 #if MISTLE_BOARD == 2
