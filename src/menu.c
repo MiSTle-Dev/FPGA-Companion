@@ -1146,6 +1146,7 @@ void menu_joystick_state(unsigned char state) {
     if(state & 0x04) msg = MENU_EVENT_DOWN;      
     if(state & 0x02) msg = MENU_EVENT_BACK;      
     if(state & 0x10) msg = MENU_EVENT_SELECT;
+    if(state & 0x20) msg = MENU_EVENT_BACK;
     if(!msg) msg = MENU_EVENT_KEY_RELEASE;
     menu_notify(msg);
 
