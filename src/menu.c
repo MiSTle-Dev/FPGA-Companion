@@ -101,6 +101,16 @@ static int menu_variable_get(char id) {
   return 0;  
 }
 
+static bool menu_variable_exists(char id) {
+  menu_variable_t *v = variables;
+
+  while(v) {
+    if(v->id == id) return true;
+    v = v->next;
+  }
+  return false;  
+}
+
 static void menu_variable_set(char id, int value) {
   menu_variable_t *v = variables;
   
@@ -162,23 +172,8 @@ static void menu_setup_variables(void) {
   // in the set command used in actions
   // in menu items (currently only in lists as buttons use actions)
 
-  // actually variables should always show up in the init action,
-  // otherwise they'd be uninitialited (actually set to zero ...)
-  
-  // search for variables in all actions
-  config_action_t *action = cfg->actions;
-  while(action) {
-    // search for set commands
-    config_action_command_t *command = action->commands;
-    while(command) {
-      if(command->code == CONFIG_ACTION_COMMAND_SET)
-	menu_setup_variable(command->set.id, 0);
-
-      command = command->next;
-    }
-    
-    action = action->next;
-  }
+  // Only the variables from menu items are actually stored permanently.
+  // Action variables are sent into the core and processed there.
   
   // search through menu tree for lists
   menu_setup_menu_variables(cfg->menu);  
@@ -186,7 +181,16 @@ static void menu_setup_variables(void) {
 
 
 void menu_set_value(unsigned char id, unsigned char value) {
-  menu_variable_set(id, value);
+  // this is called when reading the ini file
+  // We allow values in the ini file while are actually not in the
+  // menu at all. This can be used for "static" changes which are made
+  // once by manually manipulating the ini file e.g. with a text
+  // editor
+
+  if(!menu_variable_exists(id)) 
+    menu_setup_variable(id, value);
+  else
+    menu_variable_set(id, value);
 }
 
 // various 8x8 icons
@@ -1015,7 +1019,7 @@ static void menu_timer(__attribute__((unused)) TimerHandle_t pxTimer) {
 
 static const config_menu_t system_menu_main;
 
-// check if menu is the system menu or a submenu of it xyz
+// check if menu is the system menu or a submenu of it
 static bool menu_is_systemmenu(void) {
   menu_state_t *ms = menu_state;
   
