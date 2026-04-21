@@ -142,6 +142,9 @@ static void menu_setup_variable(char id, int value) {
     while(v->next) v = v->next;
     v->next = variable;
   }
+
+  // also set the value in the core
+  sys_set_val(id, value);
 }
 
 static void menu_setup_menu_variables(const config_menu_t *menu) {
@@ -153,15 +156,11 @@ static void menu_setup_menu_variables(const config_menu_t *menu) {
     if(me->type == CONFIG_MENU_ENTRY_LIST) {
       // setup variable ...
       menu_setup_variable(me->list->id, me->list->def);
-      // ... and set in core
-      sys_set_val(me->list->id, me->list->def);
     }
     
     if(me->type == CONFIG_MENU_ENTRY_TOGGLE) {
       // setup variable ...
       menu_setup_variable(me->toggle->id, me->toggle->def);
-      // ... and set in core
-      sys_set_val(me->toggle->id, me->toggle->def);
     }
     me = me->next;
   }
@@ -182,7 +181,7 @@ static void menu_setup_variables(void) {
 
 void menu_set_value(unsigned char id, unsigned char value) {
   // this is called when reading the ini file
-  // We allow values in the ini file while are actually not in the
+  // We allow values in the ini file which are actually not in the
   // menu at all. This can be used for "static" changes which are made
   // once by manually manipulating the ini file e.g. with a text
   // editor
