@@ -11,6 +11,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include "sdc.h"
+#include "menu.h"
 #include "sysctrl.h"
 
 #ifdef ESP_PLATFORM
@@ -393,7 +394,7 @@ static void image_send_chunk(int image, uint32_t len) {
   // don't send more bytes then left in file
   if(len > image_bytes2send[image]) len = image_bytes2send[image];
 
-  // sdc_debugf("IMG %d: sending %d", image, len);
+  sdc_debugf("IMG %d: sending %lu of %lu", image, len, image_bytes2send[image]);
 
   sdc_lock();
 
@@ -401,6 +402,7 @@ static void image_send_chunk(int image, uint32_t len) {
   unsigned char buffer[len];
   UINT bytesread;
   f_read(&fil[MAX_DRIVES+image], buffer, len, &bytesread);
+  image_bytes2send[image] -= len;
   
   // send image payload
   sdc_spi_begin();
@@ -411,9 +413,13 @@ static void image_send_chunk(int image, uint32_t len) {
   while(len--) mcu_hw_spi_tx_u08(*p++);
   mcu_hw_spi_end();
   
-  image_bytes2send[image] -= len;
-
   sdc_unlock();
+
+  // check if last block has been sent
+  if(!image_bytes2send[image]) {
+    sdc_debugf("IMG %d: download done", image);
+    menu_run_current_image_action();
+  }
 }
     
 static int sdc_rom_image_get_buffer(char image) {
@@ -427,14 +433,14 @@ static int sdc_rom_image_get_buffer(char image) {
   // read 16 bit buffer value
   uint16_t buffer = mcu_hw_spi_tx_u08(0);
   buffer = (buffer << 8) + mcu_hw_spi_tx_u08(0);
-  
-  mcu_hw_spi_end();
 
+  mcu_hw_spi_end();
+  
   // return -1 if core has not accepted the image, e.g. since
   // the size is not what it supports
   if(!(status & 0x80))
     return -1;
-  
+
   return buffer;
 }
 
@@ -497,13 +503,14 @@ int sdc_handle_event(void) {
     handled = true;
   } else {
     // No SD RD/WR request bit set, check for image 
-
     for(int i=0;i<8;i++) {
-      // Check if there's a running IMAGE transfer
-      int buffer = sdc_rom_image_get_buffer(i);
-      if(buffer > 0) {
-	image_send_chunk(i, buffer);
-	handled = true;
+      if(fil[MAX_DRIVES+i].flag) {
+	// Check if there's a running IMAGE transfer
+	int buffer = sdc_rom_image_get_buffer(i);
+	if(buffer > 0) {
+	  image_send_chunk(i, buffer);
+	  handled = true;
+	}
       }
     }
   }
@@ -699,7 +706,7 @@ int sdc_image_open(int drive, char *name) {
   } else if(drive < MAX_DRIVES+MAX_IMAGES) {
     char image = drive-MAX_DRIVES;
     
-    sdc_debugf("IMG %d: Mounting %s", image, fname);
+    sdc_debugf("IMG %d: Uploading %s", image, fname);
     
     sdc_lock();
     if(f_open(&fil[drive], fname, FA_OPEN_EXISTING | FA_READ) != 0) {
@@ -707,6 +714,9 @@ int sdc_image_open(int drive, char *name) {
       sdc_unlock();
       return -1;
     }
+
+    // remember current image name
+    image_name[drive] = StrDup(name);
 
     sdc_rom_image_selected(image, fil[drive].obj.objsize);
 

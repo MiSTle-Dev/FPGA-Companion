@@ -41,5 +41,6 @@ void menu_do(int);
 void menu_notify(unsigned long msg);
 void menu_joystick_state(unsigned char state);
 void menu_button_state(unsigned char state);
+void menu_run_current_image_action(void);
 
 #endif // MENU_H

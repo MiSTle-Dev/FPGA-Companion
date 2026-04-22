@@ -806,12 +806,29 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
     config_menu_entry_t *menu_entry = menu_state->menu->entries;
     for(int i=0;i<menu_state->selected - 1;i++) menu_entry = menu_entry->next;
     
-    if(menu_entry->type == CONFIG_MENU_ENTRY_IMAGE && menu_entry->image->action)
-      sys_run_action(menu_entry->image->action);
-      
     if(menu_entry->type == CONFIG_MENU_ENTRY_FILESELECTOR && menu_entry->fsel->action)
       sys_run_action(menu_entry->fsel->action);
   }
+}
+
+void menu_run_current_image_action(void) {
+  // Note: The download may also have been triggered when loading config from
+  // ini file. We may need to find the right action in that case as well.
+  // The same is true for mounted disk images
+
+  if(!menu_state ||  menu_state->type != CONFIG_MENU_ENTRY_MENU) {
+    menu_debugf("no valid menu state to run image action");
+    return;
+  }
+  
+  // check if we just finished using an IMAGE or file selector
+  config_menu_entry_t *menu_entry = menu_state->menu->entries;
+  for(int i=0;i<menu_state->selected - 1;i++) menu_entry = menu_entry->next;
+
+  // menu_debugf("active menu entry: %d, action. %p", menu_entry->type, menu_entry->image->action);
+  
+  if(menu_entry->type == CONFIG_MENU_ENTRY_IMAGE && menu_entry->image->action)
+    sys_run_action(menu_entry->image->action);
 }
 
 // user has pressed esc to go back one level
