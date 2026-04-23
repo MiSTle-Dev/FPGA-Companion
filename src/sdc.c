@@ -237,9 +237,10 @@ static DSTATUS Translate_Result_Code(int result) { return result; }
 static int fs_init() {
   FRESULT res_msc;
 
-  for(int i=0;i<MAX_DRIVES;i++)
-    lktbl[i] = NULL;
-
+  // clear all the file structures (especially the flag should be zero)
+  memset(fil, 0, sizeof(FIL)*MAX_DRIVES+MAX_IMAGES+MAX_CORES);
+  memset(lktbl, 0, sizeof(DWORD*)*MAX_DRIVES);
+  
 #ifdef DEV_SD
   FATFS_DiskioDriverTypeDef MSC_DiskioDriver = { NULL };
   MSC_DiskioDriver.disk_status = sdc_status;
@@ -418,6 +419,15 @@ static void image_send_chunk(int image, uint32_t len) {
   // check if last block has been sent
   if(!image_bytes2send[image]) {
     sdc_debugf("IMG %d: download done", image);
+    
+    // inform core that the image has "been removed"
+    sdc_spi_begin();
+    mcu_hw_spi_tx_u08(SPI_SDC_IMAGE);
+    mcu_hw_spi_tx_u08(SPI_SDC_IMAGE_SELECT);  
+    mcu_hw_spi_tx_u08(image);    
+    for(int i=0;i<4;i++) mcu_hw_spi_tx_u08(0);    // send size of 0
+    mcu_hw_spi_end();
+    
     menu_run_current_image_action();
   }
 }
@@ -604,6 +614,15 @@ static void sdc_rom_image_selected(char image, FSIZE_t size) {
 int sdc_image_open(int drive, char *name) {
   unsigned long start_sector = 0;
 
+  // close any file that may be open for this drive
+  if(fil[drive].flag) {
+    sdc_debugf("%s %d: closing file '%s'", (drive < MAX_DRIVES)?"DRV":"IMG",
+	       (drive < MAX_DRIVES)?drive:(drive-MAX_DRIVES),
+	       image_name[drive]?image_name[drive]:"<unknown>");
+    f_close(&fil[drive]);
+    memset(&fil[drive], 0, sizeof(FIL));
+  }
+  
   if(drive < MAX_DRIVES) {
     // tell core that the "disk" has been removed
     sdc_image_inserted(drive, 0);
@@ -692,9 +711,9 @@ int sdc_image_open(int drive, char *name) {
 	  start_sector = clst2sect(lktbl[drive][2]);
       }
     }
-    
-    sdc_unlock();
 
+    sdc_unlock();
+    
     // remember current image name
     image_name[drive] = StrDup(name);
 
