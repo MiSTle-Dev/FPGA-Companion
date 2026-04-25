@@ -71,19 +71,25 @@ static void com_task(__attribute__((unused)) void *p ) {
     // does.
     hid_handle_event();
 
-    if(!cfg) {
-      // finally release FPGA from reset
-      sys_set_val('R', 0);
-    }
-      
     // initialize on-screen-display and menu system
     osd_init();    
     menu_init();
 
     // open disk images, either defaults set in sdc_init or
-    // user configure ones from the ini file
+    // user configure ones from the ini file. This will also
+    // start rom image transfers if specified in the ini file
     sdc_mount_defaults();
 
+    // finally run the ready action. This will usually get the core out of reset
+    // On setups not using core configs, just release FPGA from reset
+    // But this should actually never be the case nowadays.
+    // TODO: An image upload may still be in progress ...
+    if(!sdc_image_upload_in_progress()) {
+      if(!cfg) sys_set_val('R', 0);
+      else     sys_run_action_by_name("ready");
+    } else
+      debugf("Image upload in progress, delaying ready action");
+    
     // finally prepare for wifi communication
     at_wifi_init();
 

@@ -1,6 +1,7 @@
 #ifndef SDC_H
 #define SDC_H
 
+#include <stdbool.h>
 #include "config.h"
 #include <ff.h>
 
@@ -25,5 +26,7 @@ char *sdc_get_cwd(int drive);
 void sdc_set_cwd(int drive, char *path);
 void sdc_set_default(int drive, const char *name);
 void sdc_mount_defaults(void);
+bool sdc_image_upload_in_progress(void);
+bool sdc_check_for_pending_image_uploads(void);
 
 #endif // SDC_H

@@ -61,7 +61,7 @@ typedef struct menu_state {
   int scroll;
   union {
     const config_menu_t *menu;  
-    config_fsel_t *fsel;
+    const char *label;             // used for file/image selector, only
   };
   
   // file selector related
@@ -73,6 +73,7 @@ typedef struct menu_state {
 typedef struct {
   char index;
   char **ext;
+  config_action_t *action;  // action to be run afterwards
 
   // string and icon to be used if nothing is selected
   // by default this is "[X] No Disk"
@@ -186,9 +187,17 @@ void menu_set_value(unsigned char id, unsigned char value) {
   // once by manually manipulating the ini file e.g. with a text
   // editor
 
-  if(!menu_variable_exists(id)) 
+  if(!menu_variable_exists(id)) {
+    // previous companion versions were writing the action related variables
+    // into the ini file as well. This mainly affected the 'R' variable often
+    // used for reset. We ignore this particular variable by now as this was
+    // not intentinal. This should be removed one day.
+    if(id == 'R') {
+      menu_debugf("suppressing 'R' reset variable");
+      return;
+    }
     menu_setup_variable(id, value);
-  else
+  } else
     menu_variable_set(id, value);
 }
 
@@ -631,13 +640,13 @@ static void menu_draw(const config_menu_t *menu, int selected, int scroll) {
   u8g2_SendBuffer(&u8g2);
 }
 
-static void menu_fsel_draw(config_fsel_t *fsel, sdc_dir_entry_t *dir, int selected, int scroll) {
+static void menu_fsel_draw(const char *label, sdc_dir_entry_t *dir, int selected, int scroll) {
   u8g2_ClearBuffer(&u8g2);
 
   // =============== draw a fileselector =================    
-  menu_debugf("drawing '%s'", fsel->label);
+  menu_debugf("drawing '%s'", label);
   
-  menu_draw_title(fsel->label, true, selected == 0);
+  menu_draw_title(label, true, selected == 0);
   menu_timer_enable(false);
   fs_scroll_cur = -1;
 
@@ -665,15 +674,19 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
   // the file selector can either be opened from disk image file
   // selectors or from rom image selectors  
   if(entry->type == CONFIG_MENU_ENTRY_IMAGE) {
+    menu_debugf("opening rom image selector");
     fsel_state.ext = entry->image->ext;
     fsel_state.index = entry->image->index + MAX_DRIVES;  // the images are stored after the drives
     fsel_state.none_str = entry->image->none_str;
     fsel_state.none_icn = entry->image->none_icn;
+    fsel_state.action = entry->image->action;
   } else {
+    menu_debugf("opening drive image selector");
     fsel_state.ext = entry->fsel->ext;
     fsel_state.index = entry->fsel->index;
     fsel_state.none_str = NULL;
     fsel_state.none_icn = NULL;
+    fsel_state.action = entry->fsel->action;
   }
     
   // The file selector usually works on the sd card as that is what
@@ -693,9 +706,10 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
 
     sdc_set_cwd(fsel_state.index, is_usb?"/usb":"/sd");
   }
-    
+
+  // IMAGE and file selectors are both drawn by the fileselector routines
   menu_push();
-  menu_state->fsel = entry->fsel;
+  menu_state->label = (entry->type == CONFIG_MENU_ENTRY_IMAGE)?entry->image->label:entry->fsel->label;
   menu_state->selected = 1;
   menu_state->scroll = 0;
   menu_state->type = CONFIG_MENU_ENTRY_FILESELECTOR;
@@ -751,7 +765,8 @@ static void menu_pop(void) {
 
 static void menu_fileselector_select(sdc_dir_entry_t *entry) {
   int drive = fsel_state.index;
-  menu_debugf("drive %d, file selected '%s'", drive, entry->name);
+  menu_debugf("%s %d: file selected '%s'", drive>=MAX_DRIVES?"IMG":"DRV",
+	      drive>=MAX_DRIVES?drive-MAX_DRIVES:drive, entry->name);
     
   // stop any scroll timer that might be running
   menu_timer_enable(false);
@@ -802,12 +817,11 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
     // return to parent form
     menu_pop();
 
-    // check if we just finished using an IMAGE or file selector
-    config_menu_entry_t *menu_entry = menu_state->menu->entries;
-    for(int i=0;i<menu_state->selected - 1;i++) menu_entry = menu_entry->next;
-    
-    if(menu_entry->type == CONFIG_MENU_ENTRY_FILESELECTOR && menu_entry->fsel->action)
-      sys_run_action(menu_entry->fsel->action);
+    // check if this is a drive image selection and run action if yes. Image selectors
+    // work differently and do an IRQ driven transfer in the background. The action is there executed
+    // ocne the transfer itself is done.
+    if(drive<MAX_DRIVES && fsel_state.action)
+      sys_run_action(fsel_state.action);
   }
 }
 
@@ -815,20 +829,31 @@ void menu_run_current_image_action(void) {
   // Note: The download may also have been triggered when loading config from
   // ini file. We may need to find the right action in that case as well.
   // The same is true for mounted disk images
+  
+  if(!menu_state) return;
 
-  if(!menu_state ||  menu_state->type != CONFIG_MENU_ENTRY_MENU) {
-    menu_debugf("no valid menu state to run image action");
+  // the current menu state will be a open file selector if the image transfer
+  // has been started through the OSD by the user
+  if(menu_state->type != CONFIG_MENU_ENTRY_FILESELECTOR) {
+    menu_debugf("finished download was ini file triggered during boot");
+
+    if(!sdc_check_for_pending_image_uploads()) {
+      menu_debugf("no more image uploads pending");
+
+      sys_run_action_by_name("ready");
+    }
+      
     return;
   }
-  
-  // check if we just finished using an IMAGE or file selector
-  config_menu_entry_t *menu_entry = menu_state->menu->entries;
-  for(int i=0;i<menu_state->selected - 1;i++) menu_entry = menu_entry->next;
 
-  // menu_debugf("active menu entry: %d, action. %p", menu_entry->type, menu_entry->image->action);
-  
-  if(menu_entry->type == CONFIG_MENU_ENTRY_IMAGE && menu_entry->image->action)
-    sys_run_action(menu_entry->image->action);
+  // fsel index should be >= MAX_DRIVES and < MAX_DRIVES+MAX_IMAGES as it
+  // should point to an image selector
+  if(fsel_state.index < MAX_DRIVES || fsel_state.index >= MAX_DRIVES+MAX_IMAGES) return;
+
+  // run the file selector action if one is present
+  if(fsel_state.action)
+    sys_run_action(fsel_state.action);
+
 }
 
 // user has pressed esc to go back one level
@@ -936,7 +961,7 @@ static void menu_key_repeat(__attribute__((unused)) TimerHandle_t arg) {
     if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
       menu_draw(menu_state->menu, menu_state->selected, menu_state->scroll);
     else
-      menu_fsel_draw(menu_state->fsel, menu_state->dir, menu_state->selected, menu_state->scroll);
+      menu_fsel_draw(menu_state->label, menu_state->dir, menu_state->selected, menu_state->scroll);
   
     xTimerChangePeriod( menu_key_repeat_timer, pdMS_TO_TICKS(100), 0);
     xTimerStart( menu_key_repeat_timer, 0 );
@@ -1013,7 +1038,7 @@ void menu_do(int event) {
     if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
       menu_draw(menu_state->menu, menu_state->selected, menu_state->scroll);
     else
-      menu_fsel_draw(menu_state->fsel, menu_state->dir, menu_state->selected, menu_state->scroll);  
+      menu_fsel_draw(menu_state->label, menu_state->dir, menu_state->selected, menu_state->scroll);  
   }
 }
 
@@ -1116,9 +1141,6 @@ void menu_init(void) {
   sys_run_action_by_name("init");
 
   menu_goto(cfg->menu);    
-
-  // ready to run core
-  sys_run_action_by_name("ready");
 
   // create a one shot timer for key repeat
   menu_key_repeat_timer = xTimerCreate( "Key repeat timer", pdMS_TO_TICKS(500), pdFALSE,

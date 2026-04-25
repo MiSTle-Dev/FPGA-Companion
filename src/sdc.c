@@ -373,6 +373,17 @@ static DWORD clmt_clust(FIL *fp, FSIZE_t ofs) {
 }
 #endif
 
+bool sdc_image_upload_in_progress(void) {
+  // check if a image upload is currently in progress. This is used during
+  // boot to delay the ready action (which usually releases reset) until
+  // all rom images have been uploaded
+  for(int image=0;image<MAX_IMAGES;image++)
+    if(fil[MAX_DRIVES+image].flag && image_bytes2send[image])
+      return true;
+
+  return false;
+}
+
 static void image_send_chunk(int image, uint32_t len) {  
   
   // send as many bytes as buffer space is available
@@ -418,8 +429,11 @@ static void image_send_chunk(int image, uint32_t len) {
 
   // check if last block has been sent
   if(!image_bytes2send[image]) {
-    sdc_debugf("IMG %d: download done", image);
-    
+    sdc_debugf("IMG %d: download done, closing file", image);
+
+    f_close(&fil[MAX_DRIVES+image]);
+    memset(&fil[MAX_DRIVES+image], 0, sizeof(FIL));
+
     // inform core that the image has "been removed"
     sdc_spi_begin();
     mcu_hw_spi_tx_u08(SPI_SDC_IMAGE);
@@ -427,7 +441,10 @@ static void image_send_chunk(int image, uint32_t len) {
     mcu_hw_spi_tx_u08(image);    
     for(int i=0;i<4;i++) mcu_hw_spi_tx_u08(0);    // send size of 0
     mcu_hw_spi_end();
-    
+
+    // the image download have either been triggered by the ini file at
+    // boot time or by the user. run image action will take care of both
+    // cases.    
     menu_run_current_image_action();
   }
 }
@@ -512,8 +529,10 @@ int sdc_handle_event(void) {
 
     handled = true;
   } else {
-    // No SD RD/WR request bit set, check for image 
-    for(int i=0;i<8;i++) {
+    // No SD RD/WR request bit set, check for image transfer in progress.
+    // Only serve the first one active as we only have one fifo on
+    // the fpga side. ROM transfers are done sequentialy
+    for(int i=0;i<8 && !handled;i++) {
       if(fil[MAX_DRIVES+i].flag) {
 	// Check if there's a running IMAGE transfer
 	int buffer = sdc_rom_image_get_buffer(i);
@@ -608,6 +627,39 @@ static void sdc_rom_image_selected(char image, FSIZE_t size) {
   mcu_hw_spi_tx_u08(size & 0xff);
 
   mcu_hw_spi_end();
+}
+
+static bool sdc_image_start_transfer(int image) {
+  sdc_rom_image_selected(image, fil[MAX_DRIVES+image].obj.objsize);
+    
+  // get number of bytes to send
+  image_bytes2send[(int)image] = fil[image+MAX_DRIVES].obj.objsize;
+  if(sdc_rom_image_get_buffer(image) < 0) {
+    sdc_debugf("IMG %d: Core has rejected image", image);
+    
+    // close the transfer immediately
+    f_close(&fil[image+MAX_DRIVES]);
+    memset(&fil[image+MAX_DRIVES], 0, sizeof(FIL));
+    image_bytes2send[(int)image] = 0;
+
+    return false;
+  }
+
+  return true;
+}
+
+bool sdc_check_for_pending_image_uploads(void) {
+  // check if more image uploads are needed to complete the
+  // boot process. The previous one has already been closed
+  // and won't show up, anymore.
+  for(int image=0;image<MAX_IMAGES;image++) {
+    if(fil[MAX_DRIVES+image].flag) {
+      sdc_debugf("IMG %d: starting download", image);
+      if(sdc_image_start_transfer(image))
+	return true;
+    }
+  }
+  return false;
 }
 
 // open a drive or rom image
@@ -737,17 +789,19 @@ int sdc_image_open(int drive, char *name) {
     // remember current image name
     image_name[drive] = StrDup(name);
 
-    sdc_rom_image_selected(image, fil[drive].obj.objsize);
-
-    // Upload rom. For now we do this blocking. But in the long term
-    // we should do this in the background to be able to use the
+    // Upload rom. This happens in the background to be able to use the
     // system while e.g. a slow tape upload is running
 
-    // get number of bytes to send
-    image_bytes2send[(int)image] = fil[drive].obj.objsize;
-    if(sdc_rom_image_get_buffer(image) < 0) 
-      sdc_debugf("IMG %d: Core has rejected image", image);
-      
+    bool active = false;
+    for(int i=0;i<MAX_IMAGES;i++)
+      if(fil[i+MAX_DRIVES].flag && image_bytes2send[i])
+	active = true;
+
+    // We transfer one image at a time. So if one is already
+    // and being active, the we won't activate a second one, yet 
+    if(!active) sdc_image_start_transfer(image);
+    else        sdc_debugf("IMG %d: Delaying additional rom download", image);
+    
     sdc_unlock();
   } else
     mcu_hw_upload_core(fname);
