@@ -831,10 +831,12 @@ void hid_handle_event(void) {
   uint8_t db9 = mcu_hw_spi_tx_u08(0x00);
   mcu_hw_spi_end();
 
-  // forward the DB9 event to the menu system
+  // Forward the DB9 event to the menu system
   // if the OSD is visible. It's up to the core
   // to suppress internal joystick handling while
-  // the OSD is open.
+  // the OSD is open. Mask out the second fire button
+  // as the wirless cx40+ sends it wrongly while
+  // no other db9 joystick seems to send it at all.
   if(osd_is_visible())
-    menu_joystick_state(db9);
+    menu_joystick_state(db9 & 0x1f);
 }
