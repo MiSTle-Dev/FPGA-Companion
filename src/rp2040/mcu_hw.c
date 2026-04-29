@@ -40,6 +40,7 @@
 #define ENABLE_WIFI
 #elif MISTLE_BOARD == 2
 #warning "Building for Waveshare RP2040-Zero"
+#include "../jtag.h"
 #elif MISTLE_BOARD == 3
 #warning "Building for MiSTeryShield20k-Lite"
 #elif MISTLE_BOARD == 4
@@ -72,10 +73,6 @@
 #define PIN_JTAG_TDO  14   // pin 17, gpio 14
 #define PIN_JTAG_TCK  15   // pin 18, gpio 15
 
-// special FPGA configuration pins
-#define PIN_nCFG      21   // pin 32, PIO21
-#define PIN_MODE0     26   // pin 31, PIO26
-#define PIN_MODE1     27   /* pin 32, PIO27 */
 #endif
 
 #if MISTLE_BOARD == 2
@@ -87,6 +84,10 @@
 #define SPI_CSN_PIN    5
 #define SPI_IRQ_PIN    8
 #define SPI_BUS     spi0
+#define PIN_JTAG_TDI   9
+#define PIN_JTAG_TMS  10
+#define PIN_JTAG_TDO  11
+#define PIN_JTAG_TCK  12
 #define WS2812_PIN    16
 #else
 // the regular pi pico uses spi0 by default
@@ -168,7 +169,7 @@ static void pio_usb_task(__attribute__((unused)) void *parms) {
   while(1) {
     for(int i=0;i<100;i++) {
       tuh_task();
-#if MISTLE_BOARD == 4 || MISTLE_BOARD == 5
+#if (MISTLE_BOARD == 2) || (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5)
       tud_task();
       usb_jtag_poll();
 #endif
@@ -1290,6 +1291,7 @@ void mcu_hw_jtag_toggleClk(uint32_t clk_len) {
 static void mcu_hw_jtag_init(void) {
   // -------- init FPGA control pins ---------
 
+#if (MISTLE_BOARD == 4)
   // FPGA mode pins. Init as inputs, so the buttons work
   gpio_init(PIN_MODE0); // gpio_put(PIN_MODE0, 0);
   gpio_set_dir(PIN_MODE0, GPIO_IN);
@@ -1299,7 +1301,7 @@ static void mcu_hw_jtag_init(void) {
   // FPGA reconfig pin, active low
   gpio_init(PIN_nCFG); gpio_put(PIN_nCFG, 1);
   gpio_set_dir(PIN_nCFG, GPIO_OUT);
-  
+#endif
   // -------- init FPGA JTAG pins ---------
   gpio_init(PIN_JTAG_TCK); gpio_init(PIN_JTAG_TDI);
   gpio_init(PIN_JTAG_TMS); gpio_init(PIN_JTAG_TDO);
@@ -1311,6 +1313,7 @@ static void mcu_hw_jtag_init(void) {
 void mcu_hw_fpga_reconfig(bool run) {
   // alternally the FPGA may be put into a mode != 00 to
   // suppress MSPI loading
+#if (MISTLE_BOARD == 4)
   if(!run) {
     gpio_put(PIN_MODE0, 1); gpio_set_dir(PIN_MODE0, GPIO_OUT);
     gpio_put(PIN_MODE1, 0); gpio_set_dir(PIN_MODE1, GPIO_OUT);
@@ -1323,6 +1326,7 @@ void mcu_hw_fpga_reconfig(bool run) {
   // make mode pins input, so the buttons S1/S2 connected to them work
   gpio_set_dir(PIN_MODE0, GPIO_IN);
   gpio_set_dir(PIN_MODE1, GPIO_IN);  
+#endif
 }
 #endif
 
@@ -1390,7 +1394,7 @@ void mcu_hw_init(void) {
   };
   tusb_init(BOARD_TUH_RHPORT, &host_init);
   
-#if (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5)
+#if (MISTLE_BOARD == 2) ||(MISTLE_BOARD == 4) || (MISTLE_BOARD == 5)
   tusb_rhport_init_t dev_init = {
     .role = TUSB_ROLE_DEVICE,
     .speed = TUSB_SPEED_AUTO
