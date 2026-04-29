@@ -151,25 +151,31 @@ set(BOARD WS2040ZERO CACHE STRING "Board type WS2040ZERO")
 
 On the regular Pico, the FPGA Companion uses the following pins:
 
-| Pin | Signal | Description |
-|---|---|---|
-| GP0  | UART_TX  | Serial debug output |
+| Pin  | Signal | Description        |
+|------|--------|--------------------|
+| GP0  | UART_TX| Serial debug output|
+| GP1  | UART_RX| Serial debug input |
 | GP2  | USB D+ | USB PIO host D+ |
 | GP3  | USB D- | USB PIO host D- |
 | GP4  | LED 1 | indicator mouse |
 | GP5  | LED 2 | indicator keyboard |
 | GP6  | LED 3 | indicator joystick |
-| GP12 [^a]  | TDI | JTAG TDI |
-| GP13 [^a]  | TMS | JTAG TMS |
-| GP14 [^a]  | TDO | JTAG TDO |
-| GP15 [^a]  | TCK | JTAG TCK |
+| GP12 [^a]| TDI | JTAG TDI |
+| GP13 [^a]| TMS | JTAG TMS |
+| GP14 [^a]| TDO | JTAG TDO |
+| GP15 [^a]| TCK | JTAG TCK |
 | GP16 | MISO | SPI data from FPGA |
 | GP17 | CSn | SPI chip select to FPGA |
 | GP18 | SCK | SPI clock to FPGA |
 | GP19 | MOSI | SPI data to FPGA |
+| GP20 | tbd | spare <-> FPGA |
+| GP21 [^b]| CFGn | RECONFIGn to FPGA |
 | GP22 | IRQn | SPI interrupt from FPGA |
+| GP23 [^b]| MODE0 | Boot MOD0 to FPGA |
+| GP24 [^b]| MODE1 | Boot MOD1 to FPGA |
 
 [^a]: JTAG FPGA loader
+[^b]: specific for DEV20k GW2A board
 
 Location JTAG connection TN20k PCBA top side.
 
@@ -254,14 +260,20 @@ Firmware has been built for Waveshare RP2040-Zero.
 The SPI pins used on the RP2040-Zero differ from the ones used on the
 regular pico:
 
-| Pin | Signal | Description |
-|---|---|---|
-| GP0  | UART_TX  | Serial debug output |
-| GP4 | MISO | SPI data from FPGA |
-| GP5 | CSn | SPI chip select to FPGA |
-| GP6 | SCK | SPI clock to FPGA |
-| GP7 | MOSI | SPI data to FPGA |
-| GP8 | IRQn | SPI interrupt from FPGA |
+| Pin       | Signal  | Description         |
+|-----------|---------|---------------------|
+| GP0       | UART_TX | Serial debug output |
+| GP1       | UART_RX | Serial debug input |
+| GP4       | MISO    | SPI data from FPGA |
+| GP5       | CSn     | SPI chip select to FPGA |
+| GP6       | SCK     | SPI clock to FPGA |
+| GP7       | MOSI    | SPI data to FPGA |
+| GP8       | IRQn    | SPI interrupt from FPGA |
+| GP9  [^a] | TDI     | JTAG TDI |
+| GP10 [^a] | TMS     | JTAG TMS |
+| GP11 [^a] | TDO     | JTAG TDO |
+| GP12 [^a] | TCK     | JTAG TCK |
+| GP14      | tbd     | spare <-> FPGA |
 
 Also the RP2040-Zero comes with a WS2812 RGB led instead of a regular
 LED. Driving the RGB LED requies a PIO unit and thus cannot be used at

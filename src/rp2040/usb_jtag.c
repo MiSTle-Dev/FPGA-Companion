@@ -10,8 +10,8 @@
 #include "../mcu_hw.h"
 #include "../debug.h"
 
-#if MISTLE_BOARD != 4 && MISTLE_BOARD != 5
-#error "USB JTAG is only available for the Dev20k"
+#if MISTLE_BOARD != 2 && MISTLE_BOARD != 4 && MISTLE_BOARD != 5
+#error "USB JTAG is only available for the PiZero, Dev20k, MSP20k"
 #else
 #warning "Enabling USB JTAG bridge"
 #endif

@@ -63,6 +63,17 @@ void mcu_hw_jtag_writeTDI_msb_first_gpio_out_mode(uint8_t *tx, unsigned int byte
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
 
 #elif defined (MISTLE_BOARD)
+#if MISTLE_BOARD == 2
+// WS2040ZERO
+void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
+uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
+void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
+void mcu_hw_fpga_reconfig(bool state);
+bool mcu_hw_jtag_is_active(void);
+void mcu_hw_jtag_toggleClk(uint32_t);
+#define ENABLE_JTAG
+#define FPGA_BOOT_TIMEOUT 5000    /* give FPGA 5 seconds to boot */
+#endif
 
 #if MISTLE_BOARD == 4
 #include "sdio.h"
@@ -84,7 +95,7 @@ void mcu_hw_jtag_toggleClk(uint32_t);
 #define SDIO_DIRECT_READ   sdio_sector_read
 #define SDIO_DIRECT_WRITE  sdio_sector_write
 #elif MISTLE_BOARD == 5
-// MiSTeryShield PiPico + TN20k + Rework (JTAG + RECONFIGn)
+// MiSTeryShield PiPico + TN20k + Rework JTAG
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
 uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
 void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
