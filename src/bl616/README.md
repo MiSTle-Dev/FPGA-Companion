@@ -1,6 +1,6 @@
 # MiSTeryNano FPGA companion BL616 variant
 
-The is the variant of the MiSTeryNano FPGA companion firmware
+This is the variant of the MiSTeryNano FPGA companion firmware
 for the BL616 MCU (M0S Dock).
 
 ## Example wiring M0S Dock
