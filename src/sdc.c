@@ -238,7 +238,7 @@ static int fs_init() {
   FRESULT res_msc;
 
   // clear all the file structures (especially the flag should be zero)
-  memset(fil, 0, sizeof(FIL)*MAX_DRIVES+MAX_IMAGES+MAX_CORES);
+  memset(fil, 0, sizeof(FIL)*(MAX_DRIVES+MAX_IMAGES+MAX_CORES));
   memset(lktbl, 0, sizeof(DWORD*)*MAX_DRIVES);
   
 #ifdef DEV_SD

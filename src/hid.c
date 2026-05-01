@@ -681,7 +681,7 @@ void parse_with_sdl_mapping(const hid_report_t *report,
 
   if (dpad == 0)
   {
-    uint8_t lx_raw = 0x80, ly_raw = 0x80;
+    uint8_t lx_raw, ly_raw;
     READ_AXIS_U8(map->axis_lx, lx_raw);
     READ_AXIS_U8(map->axis_ly, ly_raw);
 

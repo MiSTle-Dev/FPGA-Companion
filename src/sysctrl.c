@@ -213,7 +213,7 @@ static uint8_t sys_port_rx_available(unsigned char port) {
   
 // read status and byte from port out
 static int16_t sys_port_get(unsigned char port) {
-  uint8_t rx_avail = sys_port_rx_available(0);
+  uint8_t rx_avail = sys_port_rx_available(port);
   if(!rx_avail) return -1;           // no such port or no data available
 
   // TODO: we can actually read more than one byte at a time with this
@@ -497,7 +497,7 @@ char *sys_get_config(void) {
     mcu_hw_spi_end();
 
     // terminate the config string
-    dst[dstlen-1] = '\0';
+    dst[dstlen] = '\0';
     
     return (char*)dst;
   }
