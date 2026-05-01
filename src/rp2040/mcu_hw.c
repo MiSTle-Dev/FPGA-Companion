@@ -16,6 +16,7 @@
 #include "pico/multicore.h"
 #include "hardware/clocks.h"
 #include "hardware/flash.h"
+#include "../usb_controller_maps.h"
 
 #include "../debug.h"
 #include "../config.h"
@@ -156,6 +157,12 @@ static struct {
   uint8_t state_btn_extra;
 } xbox_state[MAX_XBOX_DEVICES];
 
+CFG_TUH_MEM_SECTION struct {
+  TUH_EPBUF_TYPE_DEF(tusb_desc_device_t, device);
+  TUH_EPBUF_DEF(serial, 64*sizeof(uint16_t));
+  TUH_EPBUF_DEF(buf, 128*sizeof(uint16_t));
+} desc;
+
 TaskHandle_t pio_usb_task_handle = NULL;
 extern void usb_jtag_poll(void);
 static void pio_usb_task(__attribute__((unused)) void *parms) {
@@ -252,6 +259,37 @@ static void usb_check_devices(void) {
   menu_notify(MENU_EVENT_NONE);
 }
 
+// Lookup if there is a map for current gamepad
+const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
+                                          uint16_t pid,
+                                          int version_optional)
+{
+  const UsbGamepadMap *fallback = NULL;
+
+  for (size_t i = 0; i < kUsbGamepadMapsCount; i++)
+  {
+    const UsbGamepadMap *m = &kUsbGamepadMaps[i];
+
+    if (m->vid == vid && m->pid == pid)
+    {
+      if (version_optional >= 0)
+      {
+        if (m->version == (uint16_t)version_optional)
+        {
+          return m;
+        }
+      }
+      else
+      {
+        if (!fallback)
+          fallback = m;
+      }
+    }
+  }
+
+  return fallback;
+}
+
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len) {
   // Interface protocol (hid_interface_protocol_enum_t)
   const char* protocol_str[] = { "None", "Keyboard", "Mouse" };
@@ -261,6 +299,24 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   tuh_vid_pid_get(dev_addr, &vid, &pid);
   usb_debugf("[%04x:%04x][%u] HID Interface%u, Protocol = %s",
 	     vid, pid, dev_addr, instance, protocol_str[itf_protocol]);
+
+  uint8_t xfer_result = tuh_descriptor_get_device_sync(dev_addr, &desc.device, 18);
+  if (XFER_RESULT_SUCCESS != xfer_result) {
+    usb_debugf("Failed to get device descriptor");
+  }
+  usb_debugf("Device %u: ID %04x:%04x SN ", dev_addr, desc.device.idVendor, desc.device.idProduct);
+
+  usb_debugf("Device Descriptor:");
+  usb_debugf("  bLength             %u", desc.device.bLength);
+  usb_debugf("  bDescriptorType     %u", desc.device.bDescriptorType);
+  usb_debugf("  bcdUSB              %04x", desc.device.bcdUSB);
+  usb_debugf("  bDeviceClass        %u", desc.device.bDeviceClass);
+  usb_debugf("  bDeviceSubClass     %u", desc.device.bDeviceSubClass);
+  usb_debugf("  bDeviceProtocol     %u", desc.device.bDeviceProtocol);
+  usb_debugf("  bMaxPacketSize0     %u", desc.device.bMaxPacketSize0);
+  usb_debugf("  idVendor            0x%04x", desc.device.idVendor);
+  usb_debugf("  idProduct           0x%04x", desc.device.idProduct);
+  usb_debugf("  bcdDevice           %04x", desc.device.bcdDevice);
 
   // search for a free hid entry
   int idx;
@@ -278,6 +334,29 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   } else
     usb_debugf("Error, no more free HID entries");
   
+  const UsbGamepadMap *map;
+  if(hid_device[idx].rep.type == REPORT_TYPE_JOYSTICK)
+  {
+    // lookup for VID/PID/Version
+    map = find_usb_gamepad_map(desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
+
+    if (map)
+    {
+      usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
+                 map->name, map->vid, map->pid, map->version);
+      hid_device[idx].rep.map = map;
+      hid_device[idx].rep.map_found = 1;
+      hid_device[idx].rep.map_checked = 1;
+    }
+    else
+    {
+      usb_debugf("No map for VID=%04x PID=%04x, VERSION=%04x",desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
+        hid_device[idx].rep.map = NULL;
+        hid_device[idx].rep.map_found = 0;
+        hid_device[idx].rep.map_checked = 1;
+    }
+  }
+
   // tuh_hid_report_received_cb() will be invoked when report is available
   if (!tuh_hid_receive_report(dev_addr, instance) ) 
     usb_debugf("Error: cannot request report");
