@@ -259,6 +259,58 @@ static void usb_check_devices(void) {
   menu_notify(MENU_EVENT_NONE);
 }
 
+//--------------------------------------------------------------------+
+// String Descriptor Helper
+//--------------------------------------------------------------------+
+static void _convert_utf16le_to_utf8(const uint16_t* utf16, size_t utf16_len, uint8_t* utf8, size_t utf8_len) {
+  // TODO: Check for runover.
+  (void) utf8_len;
+  // Get the UTF-16 length out of the data itself.
+
+  for (size_t i = 0; i < utf16_len; i++) {
+    uint16_t chr = utf16[i];
+    if (chr < 0x80) {
+      *utf8++ = chr & 0xffu;
+    } else if (chr < 0x800) {
+      *utf8++ = (uint8_t) (0xC0 | (chr >> 6 & 0x1F));
+      *utf8++ = (uint8_t) (0x80 | (chr >> 0 & 0x3F));
+    } else {
+      // TODO: Verify surrogate.
+      *utf8++ = (uint8_t) (0xE0 | (chr >> 12 & 0x0F));
+      *utf8++ = (uint8_t) (0x80 | (chr >> 6 & 0x3F));
+      *utf8++ = (uint8_t) (0x80 | (chr >> 0 & 0x3F));
+    }
+    // TODO: Handle UTF-16 code points that take two entries.
+  }
+}
+
+// Count how many bytes a utf-16-le encoded string will take in utf-8.
+static int _count_utf8_bytes(const uint16_t* buf, size_t len) {
+  size_t total_bytes = 0;
+  for (size_t i = 0; i < len; i++) {
+    uint16_t chr = buf[i];
+    if (chr < 0x80) {
+      total_bytes += 1;
+    } else if (chr < 0x800) {
+      total_bytes += 2;
+    } else {
+      total_bytes += 3;
+    }
+    // TODO: Handle UTF-16 code points that take two entries.
+  }
+  return (int) total_bytes;
+}
+
+static void print_utf16(uint16_t* temp_buf, size_t buf_len) {
+  if ((temp_buf[0] & 0xff) == 0) return;  // empty
+  size_t utf16_len = ((temp_buf[0] & 0xff) - 2) / sizeof(uint16_t);
+  size_t utf8_len = (size_t) _count_utf8_bytes(temp_buf + 1, utf16_len);
+  _convert_utf16le_to_utf8(temp_buf + 1, utf16_len, (uint8_t*) temp_buf, sizeof(uint16_t) * buf_len);
+  ((uint8_t*) temp_buf)[utf8_len] = '\0';
+
+  usb_debugf("%s", (char*) temp_buf);
+}
+
 // Lookup if there is a map for current gamepad
 const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
                                           uint16_t pid,
@@ -290,22 +342,20 @@ const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
   return fallback;
 }
 
+// English
+#define LANGUAGE_ID 0x0409
+
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len) {
   // Interface protocol (hid_interface_protocol_enum_t)
   const char* protocol_str[] = { "None", "Keyboard", "Mouse" };
   uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
 
-  uint16_t vid, pid;
-  tuh_vid_pid_get(dev_addr, &vid, &pid);
-  usb_debugf("[%04x:%04x][%u] HID Interface%u, Protocol = %s",
-	     vid, pid, dev_addr, instance, protocol_str[itf_protocol]);
-
   uint8_t xfer_result = tuh_descriptor_get_device_sync(dev_addr, &desc.device, 18);
   if (XFER_RESULT_SUCCESS != xfer_result) {
     usb_debugf("Failed to get device descriptor");
   }
-  usb_debugf("Device %u: ID %04x:%04x SN ", dev_addr, desc.device.idVendor, desc.device.idProduct);
 
+  usb_debugf("ID[%04x:%04x] [%u] HID Interface%u, Protocol = %s", desc.device.idVendor, desc.device.idProduct, dev_addr, instance, protocol_str[itf_protocol]);
   usb_debugf("Device Descriptor:");
   usb_debugf("  bLength             %u", desc.device.bLength);
   usb_debugf("  bDescriptorType     %u", desc.device.bDescriptorType);
@@ -317,6 +367,58 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   usb_debugf("  idVendor            0x%04x", desc.device.idVendor);
   usb_debugf("  idProduct           0x%04x", desc.device.idProduct);
   usb_debugf("  bcdDevice           %04x", desc.device.bcdDevice);
+
+  xfer_result = XFER_RESULT_FAILED;
+  if (desc.device.iSerialNumber != 0) {
+    xfer_result = tuh_descriptor_get_serial_string_sync(dev_addr, LANGUAGE_ID, desc.serial, sizeof(desc.serial));
+  }
+  if (XFER_RESULT_SUCCESS != xfer_result) {
+    uint16_t* serial = (uint16_t*)(uintptr_t) desc.serial;
+
+    serial[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * 1 + 2));
+    serial[1] = '0'; // simply 0
+    serial[2] = 0;
+  }
+  print_utf16((uint16_t*)(uintptr_t) desc.serial, sizeof(desc.serial)/2);
+
+  usb_debugf("  iManufacturer       %u     ", desc.device.iManufacturer);
+  if (desc.device.iManufacturer != 0) {
+    xfer_result = tuh_descriptor_get_manufacturer_string_sync(dev_addr, LANGUAGE_ID, desc.buf, sizeof(desc.buf));
+    if (XFER_RESULT_SUCCESS == xfer_result) {
+      print_utf16((uint16_t*)(uintptr_t) desc.buf, sizeof(desc.buf)/2);
+    }
+  }
+
+  usb_debugf("  iProduct            %u     ", desc.device.iProduct);
+  if (desc.device.iProduct != 0) {
+    xfer_result = tuh_descriptor_get_product_string_sync(dev_addr, LANGUAGE_ID, desc.buf, sizeof(desc.buf));
+    if (XFER_RESULT_SUCCESS == xfer_result) {
+      print_utf16((uint16_t*)(uintptr_t) desc.buf, sizeof(desc.buf)/2);
+    }
+  }
+  usb_debugf("  iSerialNumber       %u     ", desc.device.iSerialNumber);
+  usb_debugf("%s", (char*)desc.serial); // serial is already to UTF-8
+  usb_debugf("  bNumConfigurations  %u", desc.device.bNumConfigurations);
+
+  // check for Sony PS3 controller (054c:0268)
+  if (desc.device.idVendor == 0x054c && desc.device.idProduct == 0x0268) { 
+    /*
+    https://github.com/raspberrypi/linux/blob/rpi-5.1.y/drivers/hid/hid-sony.c
+    https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4a1a4d8b87389e35c3af04c0d0a95f6a0391b964
+    HID_QUIRK_SONY_PS3_CONTROLLER. This sends an HID_REQ_GET_REPORT to the the PS3 controller to put the device into ‘operational mode’.
+    */
+    static uint8_t ps3_feature_buf[17];
+
+    tuh_hid_get_report(
+      dev_addr,
+      instance,
+      0xF2,
+      HID_REPORT_TYPE_FEATURE,
+      ps3_feature_buf,
+      17
+    );
+    usb_debugf("PS3-Mode controller activated!\n"); 
+  }
 
   // search for a free hid entry
   int idx;
