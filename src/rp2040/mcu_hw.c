@@ -409,7 +409,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
     */
     static uint8_t ps3_feature_buf[17];
 
-    tuh_hid_get_report(
+     bool ok = tuh_hid_get_report(
       dev_addr,
       instance,
       0xF2,
@@ -417,7 +417,12 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
       ps3_feature_buf,
       17
     );
-    usb_debugf("PS3-Mode controller activated!\n"); 
+    if (ok) {
+        usb_debugf("Get Report Request Pending");
+    } else {
+        usb_debugf("Get Report Request Failed");
+    }
+    usb_debugf("PS3-Mode controller activated!\n");
   }
 
   // search for a free hid entry
