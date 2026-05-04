@@ -506,9 +506,13 @@ static uint16_t cmd_shift_parse(struct jtag *jtag, uint8_t *buf, uint16_t len) {
 
 // https://github.com/MiSTle-Dev/PICO-MPSSE/blob/main/pico_mpsse/pico_mpsse.c
 void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize) {
+  uint8_t lbuf[bufsize]; // use a local buffer as jtag_send may want to reverse the byte order
+  uint8_t *lbuffer = lbuf;
+  memcpy(lbuffer, buffer, bufsize);
+  
 #ifdef DEBUG_DATA_TRANSFER
-  usb_debugf("tud_vendor_rx_cb(%d, %p, %d)", itf, buffer, bufsize); 
-  hexdump(buffer, bufsize);
+  usb_debugf("tud_vendor_rx_cb(%d, %p, %d)", itf, lbuffer, bufsize); 
+  hexdump(lbuffer, bufsize);
 #endif
   
   struct jtag *jtag = &jtag_engine[itf];
@@ -522,14 +526,14 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize) {
       usb_debugf("Continue pending write %d of %d", bytes2shift, jtag->pending_writes);
 #endif
       
-      jtag_data((jtag->pending_write_cmd&8)?1:0, (uint8_t*)buffer,
+      jtag_data((jtag->pending_write_cmd&8)?1:0, (uint8_t*)lbuffer,
 		(jtag->pending_write_cmd & 0x20)?(jtag->reply_buffer + jtag->reply_len + 2):NULL,
 		(uint32_t)bytes2shift*8);
       if(jtag->pending_write_cmd & 0x20) jtag->reply_len += bytes2shift;
       
       jtag->pending_writes -= bytes2shift;      
       bufsize -= bytes2shift;
-      buffer += bytes2shift;
+      lbuffer += bytes2shift;
 
       // has all data been used up? Prepare for next reply
       if(!bufsize) {
@@ -542,7 +546,7 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize) {
     while(bufsize) {
       // move next byte into command buffer
       // printf("BUF %d -> %02x to %d\n", bufsize, *buffer, jtag->cmd_buf.len);
-      jtag->cmd_buf.data.bytes[jtag->cmd_buf.len++] = *buffer++;
+      jtag->cmd_buf.data.bytes[jtag->cmd_buf.len++] = *lbuffer++;
       bufsize--;
       
       if(jtag->cmd_buf.len &&
@@ -550,8 +554,8 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize) {
 	if(jtag->cmd_buf.data.cmd.code & 0x80) {
 	  cmd_parse(jtag);
 	} else  {
-	  int skip = cmd_shift_parse(jtag, (uint8_t*)buffer, bufsize);
-	  buffer += skip;
+	  int skip = cmd_shift_parse(jtag, (uint8_t*)lbuffer, bufsize);
+	  lbuffer += skip;
 	  bufsize -= skip;
 	}
 	
@@ -593,6 +597,11 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
   struct jtag *jtag = NULL;
   if(request->wIndex >= 1 && request->wIndex <= 2)
     jtag = &jtag_engine[request->wIndex-1];
+
+  if(!jtag) {
+    usb_debugf("wIndex 0x%02x out of range", request->wIndex);
+    return false;
+  }
 #else
   struct jtag *jtag = jtag_engine;
 #endif
