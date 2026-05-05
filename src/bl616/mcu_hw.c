@@ -628,6 +628,8 @@ int xpad_start_xbox_360(struct usbh_hubport *hport, uint8_t *buffer) {
   setup->wLength = 0x04;
   if ((ret = usbh_control_transfer(hport, setup, buffer)) < 0)
       usb_debugf("XBOX: init packet #3 failed", ret);
+
+  return 0;
 }
 
 // ... and XBOX clients as well
@@ -783,7 +785,7 @@ void usbh_hid_run(struct usbh_hid *hid_class)
     usb_debugf("NEW HID %d", i);
     memset(&usb->hid_info[i].report, 0, sizeof(usb->hid_info[i].report));
 
-    uint16_t rep_desc = usbh_hid_get_report_descriptor(hid_class, report_desc[i], 1024);
+    int rep_desc = usbh_hid_get_report_descriptor(hid_class, report_desc[i], 1024);
     if (rep_desc < 0)
     {
       usb_debugf("usbh_hid_get_report_descriptor issue");
@@ -1566,7 +1568,7 @@ static const char *auth_mode_str(int authmode) {
 
   int i;
   for(i=0;mode_str[i].mode != -1;i++)
-    if(mode_str[i].mode == authmode || mode_str[i].mode == -1)
+    if(mode_str[i].mode == authmode)
       return mode_str[i].str;
 
   return mode_str[i].str;
@@ -1586,10 +1588,11 @@ void mcu_hw_wifi_scan(void) {
   debugf("WiFi: Performing scan");
 
   static wifi_mgmr_scan_params_t config;
+  memset(&config, 0, sizeof(wifi_mgmr_scan_params_t));
+
   /* duration in microseconds for which channel is scanned, default 220000 */
   config.duration = 220000;
 
-  memset(&config, 0, sizeof(wifi_mgmr_scan_params_t));
   if (0 != wifi_mgmr_sta_scan(&config)) {
     at_wifi_puts("Scan failed\r\n");
     return;
