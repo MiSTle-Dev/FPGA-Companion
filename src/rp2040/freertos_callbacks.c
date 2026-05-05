@@ -3,11 +3,6 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-void *pvPortRealloc( void *pv, size_t size ){
-	  vPortFree ( pv );
-	  return pvPortMalloc( size );
-}
-
 /* configSUPPORT_STATIC_ALLOCATION is set to 1, so the application must provide
 an implementation of vApplicationGetIdleTaskMemory() to provide the memory that
 is used by the Idle task. */

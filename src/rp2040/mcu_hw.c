@@ -152,8 +152,8 @@ static struct {
   uint8_t instance;
   uint8_t js_index;
   uint8_t state;
-  int16_t state_x;
-  int16_t state_y;
+  uint8_t state_x;
+  uint8_t state_y;
   uint8_t state_btn_extra;
 } xbox_state[MAX_XBOX_DEVICES];
 
@@ -643,10 +643,10 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
 	    
 	    xbox_state[idx].state = state;
 	    xbox_state[idx].state_btn_extra = state_btn_extra;
-	    xbox_state[idx].state_x = sThumbLX;
-	    xbox_state[idx].state_y = sThumbLY;
+	    xbox_state[idx].state_x = ax;
+	    xbox_state[idx].state_y = ay;
 
-	    // usb_debugf("XBOX Joy%d: B %02x EB %02x X %02x Y %02x", xbox_state[idx].js_index, state, state_btn_extra, byteScaleAnalog(ax), byteScaleAnalog(ay));
+	    // usb_debugf("XBOX Joy%d: B %02x EB %02x X %02x Y %02x", xbox_state[idx].js_index, state, state_btn_extra, ax, ay);
 
 	    if(osd_is_visible()) {	       
 	      // if OSD is visible, then process events locally
@@ -804,7 +804,7 @@ static const char *auth_mode_str(int authmode) {
 
   int i;
   for(i=0;mode_str[i].mode != -1;i++)
-    if(mode_str[i].mode == authmode || mode_str[i].mode == -1)
+    if(mode_str[i].mode == authmode)
       return mode_str[i].str;
 
   return mode_str[i].str;
@@ -920,6 +920,7 @@ static void mcu_tcp_connect(const ip_addr_t *ipaddr, int port) {
   if (!tcp_pcb) {    
     debugf("Unable to create pcb");
     at_wifi_puts("Connection failed!\r\n");
+    return;
   }
 
   tcp_recv(tcp_pcb, mcu_tcp_recv);
@@ -1384,7 +1385,7 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
   }
 
   // adjust for the fact that we aren't really shifting
-  rx <<= 8-dlen;
+  if(dlen) rx <<= 8-dlen;
   return rx;
 }
 
