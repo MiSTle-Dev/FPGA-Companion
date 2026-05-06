@@ -98,13 +98,13 @@ static bool report_is_usable(uint16_t bit_count, uint8_t report_complete, hid_re
 	hidp_debugf("  - total bit count: %d (%d bytes, %d bits)", 
 	      bit_count, bit_count/8, bit_count%8);
 
-    // FIX: round report size up
-    conf->report_size = (bit_count + 7) / 8;
+	uint8_t report_size = (bit_count + 7) / 8;
 
     if (((conf->type == REPORT_TYPE_JOYSTICK) && ((report_complete & JOYSTICK_COMPLETE) == JOYSTICK_COMPLETE)) ||
         ((conf->type == REPORT_TYPE_MOUSE) && ((report_complete & MOUSE_COMPLETE) == MOUSE_COMPLETE)) ||
         (conf->type == REPORT_TYPE_KEYBOARD))
     {
+	conf->report_size = report_size;
 	hidp_debugf("  - report %d is usable", conf->report_id);
 
         hidp_debugf("=== RETURNED STRUCTURE ===");
@@ -304,7 +304,6 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                     usage_list_len = 0;
                     usage_range_set = false;
                     btns = 0;
-                    buttons = 0;
                     break; 
                 }
 
@@ -333,15 +332,16 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 // buttons
                 if (btns && (conf->type == REPORT_TYPE_JOYSTICK || conf->type == REPORT_TYPE_MOUSE))
                 {
-                    uint8_t max_buttons = MIN(report_count, (uint8_t)32); // If more than 12 modify hid_report_t 
+                    uint8_t max_buttons = MIN(report_count, (uint8_t)(32 - buttons)); // If more than 12 modify hid_report_t 
                     for (uint8_t b = 0; b < max_buttons; b++)
                     {
                         uint16_t this_bit = bit_count + b;
-                        hidp_debugf("BUTTON%d @ %d (byte %d, mask %d)", b, this_bit, this_bit / 8, 1 << (this_bit % 8));
-                        conf->joystick_mouse.button[b].byte_offset = this_bit / 8;
-                        conf->joystick_mouse.button[b].bitmask = 1 << (this_bit % 8);
-                        buttons = b + 1;
-								}
+						uint8_t button_idx = buttons + b;
+                        hidp_debugf("BUTTON%d @ %d (byte %d, mask %d)", button_idx, this_bit, this_bit / 8, 1 << (this_bit % 8));
+                        conf->joystick_mouse.button[button_idx].byte_offset = this_bit / 8;
+                        conf->joystick_mouse.button[button_idx].bitmask = 1 << (this_bit % 8);
+					}
+                    buttons += max_buttons;
                     if (buttons >= 1)
 							report_complete |= JOY_MOUSE_REQ_BTN_0;
                     if (buttons >= 2)
@@ -389,7 +389,10 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                                 axis[5] = idx;
                         }
                         else if (u == USAGE_WHEEL)
-                            axis[2] = idx;
+                        {
+                            if (axis[2] == -1)
+                                axis[2] = idx;
+                        }
                         else if (u == USAGE_HAT)
                             hat = idx;
                     }
@@ -430,7 +433,6 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 usage_list_len = 0;
                 usage_range_set = false;
 					btns = 0;
-                buttons = 0;
 					break;
             }
 
@@ -500,7 +502,8 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                     {
 							bit_count = 0;
 							report_complete = 0;
-                        report_has_input = false;
+							report_has_input = false;
+							buttons = 0;
                     }
                 }
                 else
@@ -522,6 +525,7 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
             case 0: // USAGE_PAGE
 					hidp_extreme_debugf("USAGE_PAGE(%lu/0x%lx)", value, value);
                 g.usage_page = (uint16_t)value;
+                btns = (value == USAGE_PAGE_BUTTON);
                 if (value == USAGE_PAGE_KEYBOARD)
 						hidp_extreme_debugf(" -> Keyboard");
                 else if (value == USAGE_PAGE_GAMING)
@@ -533,7 +537,6 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 else if (value == USAGE_PAGE_BUTTON)
                 {
 						hidp_extreme_debugf(" -> Buttons");
-						btns = 1;
                 }
                 else if (value == USAGE_PAGE_GENERIC_DESKTOP)
                 {
@@ -636,6 +639,7 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                     physical_maximum = g.physical_max;
                     report_size = g.report_size;
                     report_count = g.report_count;
+                    btns = (g.usage_page == USAGE_PAGE_BUTTON);
 
                     hidp_extreme_debugf("POP (gsp=%u)", gsp);
                 }

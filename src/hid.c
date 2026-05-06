@@ -534,6 +534,22 @@ void rii_joy_parse(const unsigned char *buffer) {
 #define AX_HIGH 0xC0
 #define AX_LOW 0x40
 
+static int sanitize_trigger_axis(const UsbGamepadMap *map, int axis_idx,
+                                 int other_axis_idx)
+{
+  if (axis_idx < 0)
+    return -1;
+
+  if (axis_idx == other_axis_idx)
+    return -1;
+
+  if (axis_idx == map->axis_lx || axis_idx == map->axis_ly ||
+      axis_idx == map->axis_rx || axis_idx == map->axis_ry)
+    return -1;
+
+  return axis_idx;
+}
+
 void parse_with_sdl_mapping(const hid_report_t *report,
                             struct hid_joystick_state_S *state,
                             const unsigned char *buffer, int nbytes,
@@ -709,6 +725,9 @@ void parse_with_sdl_mapping(const hid_report_t *report,
     ay = 255 - ay;
 
   unsigned char btn_extra = 0;
+  int axis_lt = sanitize_trigger_axis(map, map->axis_lt, map->axis_rt);
+  int axis_rt = sanitize_trigger_axis(map, map->axis_rt, map->axis_lt);
+
   if (READ_BUTTON_IDX(map->btn_back))
     btn_extra |= 0x01;
   if (READ_BUTTON_IDX(map->btn_start))
@@ -718,19 +737,19 @@ void parse_with_sdl_mapping(const hid_report_t *report,
   if (READ_BUTTON_IDX(map->btn_rightshoulder))
     btn_extra |= 0x08;
 
-  if (map->axis_lt >= 0)
+  if (axis_lt >= 0)
   {
     uint8_t lt = 0x00;
-    READ_AXIS_U8(map->axis_lt, lt);
+    READ_AXIS_U8(axis_lt, lt);
     if (map->axis_lt_invert)
       lt = 255 - lt;
     if (lt > 0x80)
       btn_extra |= 0x10;
   }
-  if (map->axis_rt >= 0)
+  if (axis_rt >= 0)
   {
     uint8_t rt = 0x00;
-    READ_AXIS_U8(map->axis_rt, rt);
+    READ_AXIS_U8(axis_rt, rt);
     if (map->axis_rt_invert)
       rt = 255 - rt;
     if (rt > 0x80)
