@@ -412,7 +412,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
      bool ok = tuh_hid_get_report(
       dev_addr,
       instance,
-      0xF2,
+      0xf2,
       HID_REPORT_TYPE_FEATURE,
       ps3_feature_buf,
       17
@@ -620,8 +620,10 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
 	  unsigned char state_btn_extra =
 	    ((p->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER  )?0x01:0x00) |
 	    ((p->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER )?0x02:0x00) |
-	    ((p->wButtons & XINPUT_GAMEPAD_BACK           )?0x10:0x00) | // Rumblepad 2 / Dual Action compatibility
-	    ((p->wButtons & XINPUT_GAMEPAD_START          )?0x20:0x00);
+	    ((p->wButtons & XINPUT_GAMEPAD_BACK           )?0x04:0x00) |
+	    ((p->wButtons & XINPUT_GAMEPAD_START          )?0x08:0x00) |
+      ((p->wButtons & XINPUT_GAMEPAD_LEFT_THUMB     )?0x40:0x00) |
+      ((p->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB    )?0x80:0x00);
 	  
 	  // build analog stick x,y state
 	  int16_t sThumbLX = p->sThumbLX;

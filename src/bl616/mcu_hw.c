@@ -190,6 +190,8 @@ static void mcu_hw_jtag_init(void);
 #define XINPUT_GAMEPAD_DPAD_RIGHT 0x0008
 #define XINPUT_GAMEPAD_START 0x0010
 #define XINPUT_GAMEPAD_BACK 0x0020
+#define XINPUT_GAMEPAD_LEFT_THUMB	0x0040
+#define XINPUT_GAMEPAD_RIGHT_THUMB	0x0080
 #define XINPUT_GAMEPAD_LEFT_SHOULDER 0x0100
 #define XINPUT_GAMEPAD_RIGHT_SHOULDER 0x0200
 
@@ -342,8 +344,10 @@ static void xbox_parse(struct xbox_info_S *xbox) {
   unsigned char state_btn_extra =
     ((wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER  )?0x01:0x00) |
     ((wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER )?0x02:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_BACK           )?0x10:0x00) | // Rumblepad 2 / Dual Action compatibility
-    ((wButtons & XINPUT_GAMEPAD_START          )?0x20:0x00);
+    ((wButtons & XINPUT_GAMEPAD_BACK           )?0x04:0x00) |
+    ((wButtons & XINPUT_GAMEPAD_START          )?0x08:0x00) |
+    ((wButtons & XINPUT_GAMEPAD_LEFT_THUMB     )?0x40:0x00) |
+    ((wButtons & XINPUT_GAMEPAD_RIGHT_THUMB    )?0x80:0x00);
 
   // build analog stick x,y state
   int16_t sThumbLX = xbox->buffer[7] << 8 | xbox->buffer[6];

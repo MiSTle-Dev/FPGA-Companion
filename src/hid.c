@@ -728,17 +728,16 @@ void parse_with_sdl_mapping(const hid_report_t *report,
   int axis_lt = sanitize_trigger_axis(map, map->axis_lt, map->axis_rt);
   int axis_rt = sanitize_trigger_axis(map, map->axis_rt, map->axis_lt);
 
-  if (READ_BUTTON_IDX(map->btn_back))
-    btn_extra |= 0x01;
-  if (READ_BUTTON_IDX(map->btn_start))
-    btn_extra |= 0x02;
   if (READ_BUTTON_IDX(map->btn_leftshoulder))
-    btn_extra |= 0x04;
+    btn_extra |= 0x01;
   if (READ_BUTTON_IDX(map->btn_rightshoulder))
+    btn_extra |= 0x02;
+  if (READ_BUTTON_IDX(map->btn_back))
+    btn_extra |= 0x04;
+  if (READ_BUTTON_IDX(map->btn_start))
     btn_extra |= 0x08;
 
-  if (axis_lt >= 0)
-  {
+  if (axis_lt >= 0) {
     uint8_t lt = 0x00;
     READ_AXIS_U8(axis_lt, lt);
     if (map->axis_lt_invert)
@@ -746,8 +745,7 @@ void parse_with_sdl_mapping(const hid_report_t *report,
     if (lt > 0x80)
       btn_extra |= 0x10;
   }
-  if (axis_rt >= 0)
-  {
+  if (axis_rt >= 0) {
     uint8_t rt = 0x00;
     READ_AXIS_U8(axis_rt, rt);
     if (map->axis_rt_invert)
