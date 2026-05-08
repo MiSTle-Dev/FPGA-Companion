@@ -350,6 +350,17 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   const char* protocol_str[] = { "None", "Keyboard", "Mouse" };
   uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
 
+  uint16_t vid, pid;
+  tuh_vid_pid_get(dev_addr, &vid, &pid);
+	
+  // check for Sony PS3 / Speedlink Competition Pro V3 (054c:0268)
+  if (vid == 0x054c && pid == 0x0268) {
+    static uint8_t const magic_init[] = { 0x42, 0x0c, 0x00, 0x00 };
+    // We send a Set_Report (Feature) to activate the controller
+    tuh_hid_set_report(dev_addr, instance, 0xf4, HID_REPORT_TYPE_FEATURE, (void*)magic_init, sizeof(magic_init));
+    usb_debugf("PS3-Mode Joystick activated!\n");
+   }
+
   uint8_t xfer_result = tuh_descriptor_get_device_sync(dev_addr, &desc.device, 18);
   if (XFER_RESULT_SUCCESS != xfer_result) {
     usb_debugf("Failed to get device descriptor");
@@ -399,31 +410,6 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   usb_debugf("  iSerialNumber       %u     ", desc.device.iSerialNumber);
   usb_debugf("%s", (char*)desc.serial); // serial is already to UTF-8
   usb_debugf("  bNumConfigurations  %u", desc.device.bNumConfigurations);
-
-  // check for Sony PS3 controller (054c:0268)
-  if (desc.device.idVendor == 0x054c && desc.device.idProduct == 0x0268) { 
-    /*
-    https://github.com/raspberrypi/linux/blob/rpi-5.1.y/drivers/hid/hid-sony.c
-    https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4a1a4d8b87389e35c3af04c0d0a95f6a0391b964
-    HID_QUIRK_SONY_PS3_CONTROLLER. This sends an HID_REQ_GET_REPORT to the the PS3 controller to put the device into ‘operational mode’.
-    */
-    static uint8_t ps3_feature_buf[17];
-
-     bool ok = tuh_hid_get_report(
-      dev_addr,
-      instance,
-      0xf2,
-      HID_REPORT_TYPE_FEATURE,
-      ps3_feature_buf,
-      17
-    );
-    if (ok) {
-        usb_debugf("Get Report Request Pending");
-    } else {
-        usb_debugf("Get Report Request Failed");
-    }
-    usb_debugf("PS3-Mode controller activated!\n");
-  }
 
   // search for a free hid entry
   int idx;
