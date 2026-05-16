@@ -381,11 +381,13 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
   // --------------------------------------------------------------------
   // HAT: read and map
   // --------------------------------------------------------------------
-  unsigned char hat_dir = 0;
 
   // HAT present ???
   if (report->joystick_mouse.hat.size > 0)
   {
+    unsigned char hat_dir = 0;
+    joy &= ~(DIR_RIGHT | DIR_LEFT | DIR_DOWN | DIR_UP);
+      
     // HAT is unsigned
     int hat_raw = collect_bits(buffer,
                                report->joystick_mouse.hat.offset,
@@ -470,7 +472,6 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
       }
 
       // FIX: give HAT a priority
-      joy &= ~(DIR_RIGHT | DIR_LEFT | DIR_DOWN | DIR_UP);
       joy |= hat_dir;
     }
 
