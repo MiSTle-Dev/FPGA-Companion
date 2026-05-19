@@ -78,6 +78,7 @@
 #define GOWIN_STATUS_WAKEUP               (1 << 30) // AT60K A25
 #define GOWIN_STATUS_AUTO_ERASE           (1 << 31) // AT60K A25
 
+#define IDCODE_GW1NR9C  0x100481b
 #define IDCODE_GW2AR18      0x81b
 #define IDCODE_GW5AT60    0x1481b
 #define IDCODE_GW5AST138  0x1081b

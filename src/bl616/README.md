@@ -119,6 +119,8 @@ After successful download you need to unplug the device again and reinsert it *w
 
 ## Compiling and uploading code for the BL616 (Windows 11)
 
+**Looks that recent SDK build doesn't support Windows properly anymore! Use Linux instead.**  
+
 Install [Git for Windows](https://gitforwindows.org)
 
 Install [cmake for Windows](https://cmake.org/download)

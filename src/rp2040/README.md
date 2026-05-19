@@ -99,6 +99,7 @@ cd src/rp2040
 mkdir build
 cd build
 cmake -DBOARD=PICO ..
+# for Pico OSD core loader use: cmake -DBOARD=MSP20k ..
 make
 ```
 
@@ -141,7 +142,7 @@ Pico as usual. Once successfully booted the Pico's LED will blink.
 For a *Waveshare RP2040-Zero* build you need to modify the CMakeLists.txt manually:
 
 ```bash
-set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE or DEV20K")
+set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE, DEV20K or MSP20k")
 # to
 set(BOARD WS2040ZERO CACHE STRING "Board type WS2040ZERO")
 # and leave set(PICO_BOARD pico_w CACHE STRING "Board type") as is
@@ -160,24 +161,24 @@ On the regular Pico, the FPGA Companion uses the following pins:
 | GP4  | LED 1 | indicator mouse |
 | GP5  | LED 2 | indicator keyboard |
 | GP6  | LED 3 | indicator joystick |
-| GP12 [^a]| TDI | JTAG TDI |
-| GP13 [^a]| TMS | JTAG TMS |
-| GP14 [^a]| TDO | JTAG TDO |
-| GP15 [^a]| TCK | JTAG TCK |
+| GP12[^1]| TDI | JTAG TDI |
+| GP13[^1]| TMS | JTAG TMS |
+| GP14[^1]| TDO | JTAG TDO |
+| GP15[^1]| TCK | JTAG TCK |
 | GP16 | MISO | SPI data from FPGA |
 | GP17 | CSn | SPI chip select to FPGA |
 | GP18 | SCK | SPI clock to FPGA |
 | GP19 | MOSI | SPI data to FPGA |
 | GP20 | tbd | spare <-> FPGA |
-| GP21 [^b]| CFGn | RECONFIGn to FPGA |
+| GP21[^2]| CFGn | RECONFIGn to FPGA |
 | GP22 | IRQn | SPI interrupt from FPGA |
-| GP23 [^b]| MODE0 | Boot MOD0 to FPGA |
-| GP24 [^b]| MODE1 | Boot MOD1 to FPGA |
+| GP23[^2]| MODE0 | Boot MOD0 to FPGA |
+| GP24[^2]| MODE1 | Boot MOD1 to FPGA |
 
-[^a]: JTAG FPGA loader
-[^b]: specific for DEV20k GW2A board
+[^1]: JTAG FPGA loader  
+[^2]: specific for DEV20k GW2A board  
 
-Location JTAG connection TN20k PCBA top side.
+Location JTAG connection TN20k PCBA top side.  
 
 ![Tang Nano 20k JTAG](jtag_tn20k.png)
 
@@ -269,10 +270,10 @@ regular pico:
 | GP6       | SCK     | SPI clock to FPGA |
 | GP7       | MOSI    | SPI data to FPGA |
 | GP8       | IRQn    | SPI interrupt from FPGA |
-| GP9  [^a] | TDI     | JTAG TDI |
-| GP10 [^a] | TMS     | JTAG TMS |
-| GP11 [^a] | TDO     | JTAG TDO |
-| GP12 [^a] | TCK     | JTAG TCK |
+| GP9[^1]   | TDI     | JTAG TDI |
+| GP10[^1]  | TMS     | JTAG TMS |
+| GP11[^1]  | TDO     | JTAG TDO |
+| GP12[^1]  | TCK     | JTAG TCK |
 | GP14      | tbd     | spare <-> FPGA |
 
 Also the RP2040-Zero comes with a WS2812 RGB led instead of a regular

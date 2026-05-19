@@ -49,9 +49,9 @@ disadvantages.
     - USB 2.0 highspeed host support
     - WiFi 6 support
     - Bluetooth BLE 5.2 support
+    - [CherryUSB](https://github.com/cherry-embedded/CherryUSB) stack
   - Cons
     - Limited SDK support
-      - USB needs manual update of the [CherryUSB](https://github.com/cherry-embedded/CherryUSB) stack
       - No classic Bluetooth support
 
 ### RP2040
@@ -60,6 +60,7 @@ disadvantages.
     - Powerful and well-supported SDK
     - Widely available and cheap
     - Fullspeed USB host support
+    - [TinyUSB](https://github.com/hathach/tinyusb) stack
   - Cons
     - No built-in bluetooth and WiFi support
       - Only available via seperate modules (e.g. on Pico(W))
