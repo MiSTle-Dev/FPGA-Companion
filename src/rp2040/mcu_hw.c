@@ -1640,11 +1640,11 @@ void mcu_hw_init(void) {
       xTimerStart(led_timer_handle, 0);
 #endif
     }
-  else {
 #ifdef ENABLE_WIFI
+  else {
     xTaskCreate(wifi_task, (char *)"wifi_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);  
-#endif
   }
+#endif
 
   debugf("Running on core %d", get_core_num());
   debugf("SDK heap total: %ld, free: %ld", getTotalHeap() ,getFreeHeap());
