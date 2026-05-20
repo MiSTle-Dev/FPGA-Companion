@@ -29,16 +29,18 @@
 
 #include "../mcu_hw.h"
 
+#ifdef ENABLE_BLUETOOTH
+#include "../bluetooth.h"
+#endif
+
 #ifndef MISTLE_BOARD
 #error "No MiSTle board type specified!"
 #endif
 
 #if MISTLE_BOARD == 0
 #warning "Building for Raspberry Pi Pico or Pico-W"
-#define ENABLE_WIFI
 #elif MISTLE_BOARD == 1
 #warning "Building for Raspberry Pi Pico2 or Pico2-W"
-#define ENABLE_WIFI
 #elif MISTLE_BOARD == 2
 #warning "Building for Waveshare RP2040-Zero"
 #include "../jtag.h"
@@ -50,7 +52,6 @@
 #include "./sdio.h"
 #elif MISTLE_BOARD == 5
 #warning "Building for MiSTeryShieldPicoTN20k"
-#define ENABLE_WIFI
 #include "../jtag.h"
 #else
 #error "Not a supported MiSTle board!"
@@ -112,6 +113,15 @@
 #warning "WiFi support enabled"
 #else
 #warning "WiFi support disabled"
+#endif
+
+#ifdef ENABLE_BLUETOOTH
+#ifndef ENABLE_WIFI
+#error "Bluetooth needs WiFi to be enabled!"
+#endif
+#warning "Bluetooth support enabled"
+#else
+#warning "Bluetooth support disabled"
 #endif
 
 #ifdef WS2812_PIN
@@ -568,8 +578,7 @@ void mcu_hw_spi_end() {
 }
 
 unsigned char mcu_hw_spi_tx_u08(unsigned char b) {
-  unsigned char retval;
-  spi_write_read_blocking(SPI_BUS, &b, &retval, 1);
+  unsigned char retval;  spi_write_read_blocking(SPI_BUS, &b, &retval, 1);
   return retval;
 }
 
@@ -758,11 +767,12 @@ static void mcu_hw_wifi_init(void) {
 #else
   debugf("Detected Pico-W");
 #endif
-  
+
   if(cyw43_arch_init_with_country(CYW43_COUNTRY_GERMANY)) {
-    debugf("WiFi failed to initialised");
+    debugf("WiFi failed to initialise");
     return;
   }
+  
   debugf("WiFi initialised");
   wifi_state = WIFI_STATE_DISCONNECTED;
   
@@ -775,6 +785,12 @@ static void mcu_hw_wifi_init(void) {
     xTimerCreate("LED timer (W)", pdMS_TO_TICKS(200), pdTRUE,
 		 NULL, led_timer_w);
   xTimerStart(led_timer_handle, 0);
+
+#ifdef ENABLE_BLUETOOTH
+  // this will actually never return. But that is no problem
+  // as this task is only needed for wifi init
+  bluetooth_init();
+#endif
 }
 
 static const char *auth_mode_str(int authmode) {
@@ -1024,6 +1040,8 @@ void mcu_hw_main_loop(void) {
 static void wifi_task(__attribute__((unused)) void *parms) {
   debugf("WiFi init task ...");
 
+  // wifi init only returns if bluetooth is not enabled. Otherwise
+  // it will run the bluetooth main loop
   mcu_hw_wifi_init();
 
   // only used for init
@@ -1587,23 +1605,34 @@ void mcu_hw_init(void) {
     xTimerCreate("LED timer", pdMS_TO_TICKS(200), pdTRUE, NULL, ws_led_timer);
   xTimerStart(led_timer_handle, 0);
 #endif
+
+#if !defined(WS2812_PIN) || defined(ENABLE_WIFI)
+  // a regular non-ws2812 led or the wifi detection needs gpio25  
+  gpio_init(PICO_DEFAULT_LED_PIN);
+  gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+#endif
   
 #ifdef ENABLE_WIFI
+  // gpio25 on the pico-w/pico2-w is cs for the wifi module but also disconnects
+  // the vsys input. On a regular non-w pico it controls the on-board led and vsys
+  // monitoring is permanently enabled. So if we can read a sane VSYS voltage with
+  // gpio25 being low, then we are on a regular non-w pico
+  gpio_put(PICO_DEFAULT_LED_PIN, 0);
+  
   adc_init();
   adc_gpio_init(29);
   adc_select_input(3);
+  sleep_ms(10);  // wait a few ms to get a stable value
 
   uint16_t result = adc_read();
-  debugf("ADC3 value: 0x%03x", result);
+  debugf("ADC3 value: 0x%03x/%d -> VSYS = %.2fV", result, result, result * 3.3 / 65536 * 33);	 
   is_pico_w = result < 0x100;
-
+  
   if(!is_pico_w)
 #endif
     {
 #ifndef WS2812_PIN
-      // prepare for using a regular led
-      gpio_init(PICO_DEFAULT_LED_PIN);
-      gpio_set_dir(PICO_DEFAULT_LED_PIN, 1);
+      // the LED pin has already been setup to detect a PICO-W
       gpio_put(PICO_DEFAULT_LED_PIN, !PICO_DEFAULT_LED_PIN_INVERTED);
       
       TimerHandle_t led_timer_handle =
@@ -1611,11 +1640,13 @@ void mcu_hw_init(void) {
       xTimerStart(led_timer_handle, 0);
 #endif
     }
+  else {
 #ifdef ENABLE_WIFI
-  else
     xTaskCreate(wifi_task, (char *)"wifi_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);  
 #endif
+  }
 
+  debugf("Running on core %d", get_core_num());
   debugf("SDK heap total: %ld, free: %ld", getTotalHeap() ,getFreeHeap());
   debugf("FreeRTOS heap total: %u, free: %u", configTOTAL_HEAP_SIZE, xPortGetFreeHeapSize());
 

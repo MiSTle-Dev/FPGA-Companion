@@ -1,7 +1,7 @@
 /* hid.h */
 
-#ifndef HID_H
-#define HID_H
+#ifndef _HID_H
+#define _HID_H
 
 #include <stdbool.h>
 #include "hidparser.h"
@@ -21,10 +21,15 @@ struct hid_joystick_state_S {
   unsigned char last_state_btn_extra;
 };
 
+struct hid_consumer_state_S {
+  uint32_t last_state;
+};
+
 typedef union {
   struct hid_kbd_state_S kbd;
   struct hid_mouse_state_S mouse;
   struct hid_joystick_state_S joystick;  
+  struct hid_consumer_state_S consumer;  
 } hid_state_t;
 
 void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* data, uint16_t len);
@@ -38,4 +43,4 @@ void hid_handle_event(void);
 uint8_t hid_allocate_joystick(void);
 void hid_release_joystick(uint8_t idx);
 
-#endif // HID_H
+#endif // _HID_H

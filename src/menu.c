@@ -33,6 +33,10 @@
 #include "debug.h"
 #include "mcu_hw.h"
 
+#ifdef ENABLE_BLUETOOTH
+#include "bluetooth.h"
+#endif
+
 // this is the u8g2_font_helvR08_te with any trailing
 // spaces removed
 #include "font_helvR08_te.c"
@@ -997,13 +1001,14 @@ void menu_do(int event) {
   menu_debugf("do %d", event);
   
   if(event)  {
-    if(event == MENU_EVENT_SHOW)
-      osd_enable(OSD_VISIBLE);
-      
-    if(event == MENU_EVENT_HIDE) {
-      menu_timer_enable(false);
-      osd_enable(OSD_INVISIBLE);
-      return;  // return now to prevent OSD from being drawn, again
+    if(event == MENU_EVENT_TOGGLE) {
+      if(!osd_is_visible())
+	osd_enable(OSD_VISIBLE);
+      else {
+	menu_timer_enable(false);
+	osd_enable(OSD_INVISIBLE);
+	return;  // return now to prevent OSD from being drawn, again
+      }
     }
 
     // a key release event just stops any repeat timer
@@ -1097,7 +1102,19 @@ static void menu_task(__attribute__((unused)) void *parms) {
       } else
 	menu_debugf("Already in system menu");
     } else
-    
+
+#ifdef ENABLE_BLUETOOTH
+    if(cmd == MENU_EVENT_BLUETOOTH_CONNECTED) {      
+      menu_draw_dialog("Bluetooth", "A device has been connected!");
+    } else if(cmd == MENU_EVENT_BLUETOOTH_DISCONNECTED) {
+      menu_draw_dialog("Bluetooth", "A device has been disconnected!");
+    } else if(cmd == MENU_EVENT_BLUETOOTH_SCAN) {
+      menu_draw_dialog("Bluetooth", "Searching for 10 seconds for devices ...");
+    } else if(cmd == MENU_EVENT_BLUETOOTH_PIN_CODE_REQUEST) {
+      menu_draw_dialog("Bluetooth", "Please enter pin '123456'");
+    } else
+#endif
+      
     // catch some non-user controlled events here
     if(cmd == MENU_EVENT_USB_MOUNTED) {
       menu_debugf("USB mount event");
@@ -1224,7 +1241,7 @@ void menu_button_state(unsigned char state) {
     if(state & 0x01) {
       // with keyboard and/or gamepad detected implement the same behaviour as
       // previous versions had
-      menu_notify(osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW);
+      menu_notify(MENU_EVENT_TOGGLE);
     }
   } else {
     static unsigned char prev_state = 0;
@@ -1236,7 +1253,7 @@ void menu_button_state(unsigned char state) {
       if(state & 1) {
 	// show the osd if it's closed
 	if(!osd_is_visible())
-	  menu_notify(MENU_EVENT_SHOW);
+	  menu_notify(MENU_EVENT_TOGGLE);
 	else {	
 	  menu_button_last_event = xTaskGetTickCount();
 	  
@@ -1271,6 +1288,34 @@ void menu_button_state(unsigned char state) {
 // the system menu is hard coded as it doesn't need to
 // be modified by the running core
 
+#ifdef ENABLE_BLUETOOTH
+
+void btscan(void) {
+  menu_notify(MENU_EVENT_BLUETOOTH_SCAN);
+  bluetooth_scan();
+}
+
+static const config_action_command_t bluetooth_exec = {
+  .code = CONFIG_ACTION_COMMAND_EXEC,
+  .exec = btscan
+};
+
+static const config_action_t bluetooth_action = {
+  .name = "btscan",
+  .commands = (config_action_command_t*)&bluetooth_exec
+};
+
+static const config_button_t bluetooth_btn = {
+  .label = "Scan Bluetooth",
+  .action = (config_action_t*)&bluetooth_action
+};
+
+static const config_menu_entry_t system_menu_bluetooth = {
+  .type = CONFIG_MENU_ENTRY_BUTTON,
+  .button = (config_button_t*)&bluetooth_btn
+};
+#endif
+
 // the usb core file selector
 static char *core_exts[] = { "fs", "bin", NULL }; 
 
@@ -1289,7 +1334,10 @@ static const config_fsel_t sdc_core_fsel = {
 // second entry in main system menu
 static const config_menu_entry_t system_menu_sdc_core_fsel = {
   .type = CONFIG_MENU_ENTRY_FILESELECTOR,
-  .fsel = (config_fsel_t*)&sdc_core_fsel
+  .fsel = (config_fsel_t*)&sdc_core_fsel,
+#ifdef ENABLE_BLUETOOTH
+  .next = (config_menu_entry_t*)&system_menu_bluetooth
+#endif
 };
 #endif
 
@@ -1306,6 +1354,10 @@ static const config_menu_entry_t system_menu_usb_core_fsel = {
   .fsel = (config_fsel_t*)&usb_core_fsel,
 #ifdef DIRECT_SDC_SUPPORTED
   .next = (config_menu_entry_t*)&system_menu_sdc_core_fsel
+#else
+#ifdef ENABLE_BLUETOOTH
+  .next = (config_menu_entry_t*)&system_menu_bluetooth
+#endif
 #endif
 };
 

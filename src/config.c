@@ -277,6 +277,9 @@ static void config_dump_action(config_action_t *act) {
     case CONFIG_ACTION_COMMAND_HIDE:
       debugf("  Hide OSD");
       break;
+    case CONFIG_ACTION_COMMAND_EXEC:
+      debugf("  Function execution");
+      break;
     }
     command = command->next;
   }

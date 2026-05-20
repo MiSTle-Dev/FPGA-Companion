@@ -70,6 +70,7 @@ add_library(u8g2 ${U8G2_SRC})
 add_executable(${PROJECT}
 	../main.c
 	mcu_hw.c
+	bluetooth.c
 	../sysctrl.c
 	../hidparser.c
 	../hid.c
@@ -92,15 +93,16 @@ add_executable(${PROJECT}
 family_add_pico_pio_usb(${PROJECT})
 
 target_compile_definitions(${PROJECT} PRIVATE
+        PICO_FLASH_ASSUME_CORE1_SAFE=1
         PIO_USB_DP_PIN_DEFAULT=2
         PICO_DEFAULT_PIO_USB_DP_PIN=2
         )
 
 if(${BOARD} STREQUAL PICO)
-   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=0)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=0 ENABLE_WIFI ENABLE_BLUETOOTH)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico or Pico-W.")
 elseif(${BOARD} STREQUAL PICO2)
-   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=1)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=1 ENABLE_WIFI ENABLE_BLUETOOTH)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for Raspberry Pi Pico2 or Pico2-W.")
 elseif(${BOARD} STREQUAL WS2040ZERO)
    add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=2)
@@ -120,7 +122,7 @@ elseif(${BOARD} STREQUAL DEV20K)
    target_sources(${PROJECT} PRIVATE usb_descriptors.c)
    target_link_libraries(${PROJECT} PRIVATE tinyusb_device)
 elseif(${BOARD} STREQUAL MSP20K)
-   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=5)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=5 ENABLE_WIFI ENABLE_BLUETOOTH)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for MiSTeryShieldPicoTN20k.")
    target_sources(${PROJECT} PRIVATE ../jtag.c ../gowin.c usb_jtag.c)
    target_sources(${PROJECT} PRIVATE usb_descriptors.c)
@@ -142,6 +144,7 @@ target_link_libraries(${PROJECT} PRIVATE pico_stdlib pico_multicore)
 target_link_libraries(${PROJECT} PRIVATE FreeRTOS-Kernel FreeRTOS-Kernel-Heap4)
 target_link_libraries(${PROJECT} PRIVATE hardware_pio hardware_dma hardware_spi hardware_adc)
 target_link_libraries(${PROJECT} PRIVATE pico_cyw43_arch_lwip_sys_freertos)
+target_link_libraries(${PROJECT} PRIVATE pico_btstack_cyw43 pico_btstack_classic)
 target_link_libraries(${PROJECT} PRIVATE tinyusb_common_base tinyusb_host tinyusb_common tinyusb_board u8g2)
 
 pico_add_extra_outputs(${PROJECT})

@@ -30,6 +30,7 @@
 #define CONFIG_ACTION_COMMAND_LOAD  4
 #define CONFIG_ACTION_COMMAND_HIDE  5
 #define CONFIG_ACTION_COMMAND_LINK  6
+#define CONFIG_ACTION_COMMAND_EXEC  7  // execute a function, for system menu only
 
 typedef struct config_action_command_S {
   unsigned char code;
@@ -43,6 +44,7 @@ typedef struct config_action_command_S {
     } delay;    
     char *filename;
     struct config_action_S *action;
+    void(*exec)(void);
   };
   struct config_action_command_S *next;
 } config_action_command_t;

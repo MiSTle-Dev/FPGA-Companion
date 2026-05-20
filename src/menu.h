@@ -16,15 +16,19 @@
 #define MENU_EVENT_BACK          8
 #define MENU_EVENT_KEY_RELEASE   9
 
-#define MENU_EVENT_SHOW         10
-#define MENU_EVENT_HIDE         11
+#define MENU_EVENT_TOGGLE       10
 
 // The system menu may want to deal with
 // the USB mass storage once it's mounted
-#define MENU_EVENT_USB_MOUNTED  12
-#define MENU_EVENT_USB_UMOUNTED 13
+#define MENU_EVENT_USB_MOUNTED  11
+#define MENU_EVENT_USB_UMOUNTED 12
 
-#define MENU_EVENT_SYSTEM       14
+#define MENU_EVENT_SYSTEM       13
+
+#define MENU_EVENT_BLUETOOTH_CONNECTED  14
+#define MENU_EVENT_BLUETOOTH_DISCONNECTED  15
+#define MENU_EVENT_BLUETOOTH_SCAN  16
+#define MENU_EVENT_BLUETOOTH_PIN_CODE_REQUEST 17
 
 typedef struct menu_variable {
   char id;

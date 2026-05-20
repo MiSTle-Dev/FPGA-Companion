@@ -20,6 +20,7 @@
 #define sdc_debugf(a, ...)  debugf("\033[0;33mSDC: " a "\033[0m", ##__VA_ARGS__)  // yellow
 // #define usb_debugf(a, ...)  debugf("\033[0;34mUSB: " a "\033[0m", ##__VA_ARGS__)  // blue -> too dark to read
 #define usb_debugf(a, ...)  debugf("\033[0;36mUSB: " a "\033[0m", ##__VA_ARGS__)  // cyan
+#define bt_debugf(a, ...)  debugf("\033[0;36mBT: " a "\033[0m", ##__VA_ARGS__)  // cyan
 #define hidp_debugf(a, ...) debugf("\033[0;35mHDP: " a "\033[0m", ##__VA_ARGS__)  // magenta
 #define osd_debugf(a, ...)  debugf("\033[0;36mOSD: " a "\033[0m", ##__VA_ARGS__)  // cyan
 #define menu_debugf(a, ...) debugf("\033[1;33mMNU: " a "\033[0m", ##__VA_ARGS__)  // bold yellow
@@ -27,6 +28,7 @@
 #define jtag_highlight_debugf(a, ...)  debugf("\033[1;32mJTAG: " a "\033[0m", ##__VA_ARGS__)  // bold green
 #define gowin_debugf(a, ...)  debugf("\033[0;34mGOWIN: " a "\033[0m", ##__VA_ARGS__)  // blue
 #define fatal_debugf(a, ...)  debugf("\033[1;31mFATAL: " a "\033[0m", ##__VA_ARGS__)  // bold red
+#define success_debugf(a, ...)  debugf("\033[1;32mSUCCESS: " a "\033[0m", ##__VA_ARGS__)  // bold green
 
 #include <ctype.h>
 static inline void hexdump(const void *data, int size) {

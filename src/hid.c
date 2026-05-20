@@ -131,7 +131,7 @@ void newkbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid
         // release event will be sent into the core. The core should thus
         // cope with release events that did not have a press event before
         if (keyboard_change[1][i] == inifile_option_get(INIFILE_OPTION_HOTKEY))
-          msg = osd_is_visible() ? MENU_EVENT_HIDE : MENU_EVENT_SHOW;
+          msg = MENU_EVENT_TOGGLE;
         else if (osd_is_visible() && keyboard_change[1][i] == 0x29 /* ESC key */)
           msg = MENU_EVENT_BACK;
         else
@@ -236,7 +236,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       if(buffer[2+i] == inifile_option_get(INIFILE_OPTION_HOTKEY)) {
         // for now, shift-F12 activates the system menu
         if(buffer[0] & 0x22) msg = MENU_EVENT_SYSTEM;
-        else	  msg = osd_is_visible()?MENU_EVENT_HIDE:MENU_EVENT_SHOW;
+        else	  msg = MENU_EVENT_TOGGLE;
       } else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
         msg = MENU_EVENT_BACK;
       else {
@@ -382,11 +382,11 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
   // HAT: read and map
   // --------------------------------------------------------------------
 
-  // HAT present ???
+  // HAT present?
   if (report->joystick_mouse.hat.size > 0)
   {
+    // give HAT a priority and clear and ignore previous axix results
     unsigned char hat_dir = 0;
-    joy &= ~(DIR_RIGHT | DIR_LEFT | DIR_DOWN | DIR_UP);
       
     // HAT is unsigned
     int hat_raw = collect_bits(buffer,
@@ -471,7 +471,14 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
         }
       }
 
-      // FIX: give HAT a priority
+      // This only erases and overwrites joy from HAT info if the
+      // hat is not on neutral position. This allows to use regular
+      // exis reports by default and only use hat events, if the
+      // hat is actually being controlled by the user. Only problem:
+      // if a gamepad reports a position != center on either the x or
+      // y axis by default then the hat will not overwrite this while
+      // the hat is in neutral position.      
+      joy &= ~(DIR_RIGHT | DIR_LEFT | DIR_DOWN | DIR_UP);
       joy |= hat_dir;
     }
 
@@ -506,6 +513,31 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
     }
   }
 
+void consumer_parse(const hid_report_t *report, struct hid_consumer_state_S *state,
+		    const unsigned char *buffer, __attribute__((unused)) int nbytes) {
+  usb_debugf("consumer: %d %02x", nbytes, buffer[0]);
+
+  // search for button state changes
+  for(int i=0;i<32;i++) {
+    if(buffer[report->joystick_mouse.button[i].byte_offset] & 
+       report->joystick_mouse.button[i].bitmask) {
+      if(!(state->last_state & (1<<i))) {
+	usb_debugf("press event %d", i);
+	state->last_state |= (1<<i);
+	// tell menu system about this event
+	menu_notify(i);
+      }
+    } else {
+      if((state->last_state & (1<<i))) {
+	usb_debugf("release event %d", i);
+	state->last_state &= ~(1<<i);
+	// tell menu system that key is now released
+	menu_notify(MENU_EVENT_KEY_RELEASE);
+      }
+    }
+  }
+}
+  
 void rii_joy_parse(const unsigned char *buffer) {
   unsigned char b = 0;
   if(buffer[0] == 0xcd && buffer[1] == 0x00) b = 0x10;      // cd == play/pause  -> center
@@ -819,7 +851,7 @@ void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* da
     // skip report id
     data++; len--;
   }
-  
+
   if(len == report->report_size) {
     if(report->type == REPORT_TYPE_KEYBOARD)
       kbd_parse(report, &state->kbd, data, len);
@@ -834,9 +866,12 @@ void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* da
       }
       else {
         // fallback
-      joystick_parse(report, &state->joystick, data, len);
+	joystick_parse(report, &state->joystick, data, len);
       }
     }
+
+    if(report->type == REPORT_TYPE_CONSUMER)
+      consumer_parse(report, &state->consumer, data, len);
   }
 }
 

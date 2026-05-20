@@ -7,6 +7,7 @@
 
 #include "hidparser.h"
 #include "debug.h"
+#include "menu.h"       // for the consumer events to the menu system
 
 #if 1
 #define hidp_extreme_debugf(...) hidp_debugf(__VA_ARGS__)
@@ -27,6 +28,7 @@ typedef struct {
 #define JOY_MOUSE_REQ_BTN_1   0x08
 #define JOYSTICK_COMPLETE     (JOY_MOUSE_REQ_AXIS_X | JOY_MOUSE_REQ_AXIS_Y | JOY_MOUSE_REQ_BTN_0)
 #define MOUSE_COMPLETE        (JOY_MOUSE_REQ_AXIS_X | JOY_MOUSE_REQ_AXIS_Y | JOY_MOUSE_REQ_BTN_0 | JOY_MOUSE_REQ_BTN_1)
+#define CONSUMER_COMPLETE     (JOY_MOUSE_REQ_BTN_0)
 
 #define USAGE_PAGE_GENERIC_DESKTOP  1
 #define USAGE_PAGE_SIMULATION       2
@@ -41,7 +43,10 @@ typedef struct {
 #define USAGE_PAGE_TELEPHONY       11
 #define USAGE_PAGE_CONSUMER        12
 
+// consumer controls
+#define USAGE_CONSUMER_CONTROL   1
 
+// generic desktop usages
 #define USAGE_POINTER   1
 #define USAGE_MOUSE     2
 #define USAGE_JOYSTICK  4
@@ -59,8 +64,37 @@ typedef struct {
 #define USAGE_WHEEL   56
 #define USAGE_HAT     57
 
+// Consumer input (e.g. "remote control buttons") are not flexibly handled but
+// their use inside this project is hard coded. The following list thus lists
+// which values are actually evaluated and mapped to which of the 32 internal
+// buttons. These buttons are then used internally to e.g. open the OSD using
+// the HOME button present on some keyboards or game controllers.
+// see e.g. https://unfoldedcircle.github.io/core-api/bt/hid_consumer.html
+
+static const struct {
+  uint16_t code;         // HID consumer code
+  uint8_t  index;        // internal button index
+} consumer_code_map[] = {
+  // up = 0 / down = 1 / left = 2 / right = 3
+  { 0x42,  MENU_EVENT_UP     },    // MENU UP
+  { 0x43,  MENU_EVENT_DOWN   },    // MENU DOWN
+  { 0x44,  MENU_EVENT_LEFT   },    // MENU LEFT
+  { 0x45,  MENU_EVENT_RIGHT  },    // MENU RIGHT
+
+  // enter = 4 / back = 5
+  { 0x41,  MENU_EVENT_SELECT },    // MENU PICK
+  { 0x225, MENU_EVENT_SELECT },    // AC FORWARD
+  { 0x46,  MENU_EVENT_BACK   },    // MENU ESCAPE
+  { 0x224, MENU_EVENT_BACK   },    // AC BACK
+
+  // open/close OSD (F12) = 6
+  { 0x40,  MENU_EVENT_TOGGLE },    // MENU
+  { 0x223, MENU_EVENT_TOGGLE },    // AC HOME
+  { 0, 0 }  
+};
+
 // ---- helpers ----
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define HIDP_MIN(a, b) ((a) < (b) ? (a) : (b))
 
 static inline int32_t sign_extend(uint32_t v, uint8_t size_bytes)
 {
@@ -102,6 +136,7 @@ static bool report_is_usable(uint16_t bit_count, uint8_t report_complete, hid_re
 
     if (((conf->type == REPORT_TYPE_JOYSTICK) && ((report_complete & JOYSTICK_COMPLETE) == JOYSTICK_COMPLETE)) ||
         ((conf->type == REPORT_TYPE_MOUSE) && ((report_complete & MOUSE_COMPLETE) == MOUSE_COMPLETE)) ||
+	((conf->type == REPORT_TYPE_CONSUMER) && ((report_complete & CONSUMER_COMPLETE) == CONSUMER_COMPLETE)) ||
         (conf->type == REPORT_TYPE_KEYBOARD))
     {
 	conf->report_size = report_size;
@@ -145,7 +180,9 @@ static bool report_is_usable(uint16_t bit_count, uint8_t report_complete, hid_re
 	return true;
 	}
 
-	hidp_debugf("  - unusable report %d", conf->report_id);
+	hidp_debugf("  - report %d is unusable", conf->report_id);
+        hidp_debugf("      conf->type = %d", conf->type);
+        hidp_debugf("      report_complete = 0x%02x", report_complete);
 	return false;
 }
 
@@ -153,7 +190,6 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
 	int8_t app_collection = 0;
 	int8_t phys_log_collection = 0;
 	uint8_t skip_collection = 0;
-	int8_t generic_desktop = -1;   // depth at which first gen_desk was found
 	uint8_t collection_depth = 0;
 
 	uint8_t i;
@@ -274,8 +310,6 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 {
 					skip_collection--;
 					collection_depth--;
-                    if (generic_desktop > collection_depth)
-						generic_desktop = -1;
 				}
 			}
             continue;
@@ -318,7 +352,7 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 }
 
                 uint16_t local_usage_at_pos[HID_LOCAL_USAGE_MAX];
-                uint8_t assignable = MIN(report_count, (uint8_t)HID_LOCAL_USAGE_MAX);
+                uint8_t assignable = HIDP_MIN(report_count, (uint8_t)HID_LOCAL_USAGE_MAX);
                 uint8_t pos = 0;
                 for (; pos < assignable && pos < usage_list_len; ++pos)
                     local_usage_at_pos[pos] = usage_list[pos];
@@ -332,7 +366,7 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 // buttons
                 if (btns && (conf->type == REPORT_TYPE_JOYSTICK || conf->type == REPORT_TYPE_MOUSE))
                 {
-                    uint8_t max_buttons = MIN(report_count, (uint8_t)(32 - buttons)); // If more than 12 modify hid_report_t 
+                    uint8_t max_buttons = HIDP_MIN(report_count, (uint8_t)(32 - buttons)); // If more than 12 modify hid_report_t 
                     for (uint8_t b = 0; b < max_buttons; b++)
                     {
                         uint16_t this_bit = bit_count + b;
@@ -479,8 +513,6 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 }
 
 					collection_depth--;
-                if (generic_desktop > collection_depth)
-						generic_desktop = -1;
 
                 if (phys_log_collection)
                 {
@@ -492,10 +524,10 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
 						hidp_extreme_debugf("  -> app end");
 						app_collection--;
 
+						conf->report_id_present = have_active_report_id;
+						conf->report_id = have_active_report_id ? active_report_id : 0;
                     if (report_has_input && report_is_usable(bit_count, report_complete, conf))
                     {
-                        conf->report_id_present = have_active_report_id;
-                        conf->report_id = have_active_report_id ? active_report_id : 0;
 						        return true;
                     }
                     else
@@ -535,15 +567,9 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 else if (value == USAGE_PAGE_CONSUMER)
 						hidp_extreme_debugf(" -> Consumer");
                 else if (value == USAGE_PAGE_BUTTON)
-                {
 						hidp_extreme_debugf(" -> Buttons");
-                }
                 else if (value == USAGE_PAGE_GENERIC_DESKTOP)
-                {
 						hidp_extreme_debugf(" -> Generic Desktop");
-                    if (generic_desktop < 0)
-							generic_desktop = collection_depth;
-                }
                 else
 						hidp_extreme_debugf(" -> UNSUPPORTED USAGE_PAGE");
 					break;
@@ -587,6 +613,7 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
             { // REPORT_ID
                 uint8_t new_id = (uint8_t)value;
 
+		// new and additional report id ends a previous report
                 if (have_active_report_id && report_has_input && report_is_usable(bit_count, report_complete, conf))
                 {
 					conf->report_id_present = 1;
@@ -659,7 +686,7 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
             switch (tag)
             {
             case 0: // USAGE
-					hidp_extreme_debugf("USAGE(%lu/0x%lx)", value, value);
+	      hidp_extreme_debugf("USAGE(%lu/0x%lx) in page %d at depth %d", value, value, g.usage_page, collection_depth);
                 if (usage_list_len < HID_LOCAL_USAGE_MAX)
                     usage_list[usage_list_len++] = (uint16_t)value;
 
@@ -675,13 +702,35 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 }
                 else if (!collection_depth && (value == USAGE_GAMEPAD || value == USAGE_JOYSTICK))
                 {
-							hidp_debugf("Gamepad/Joystick usage found");
+							hidp_debugf(" -> Gamepad/Joystick");
 							conf->type = REPORT_TYPE_JOYSTICK;
                 }
+		else if (!collection_depth && value == USAGE_CONSUMER_CONTROL && g.usage_page == USAGE_PAGE_CONSUMER)
+		{
+							hidp_debugf("  -> Consumer");
+							conf->type = REPORT_TYPE_CONSUMER;
+		}
                 else if (value == USAGE_POINTER && app_collection)
-                {
                     hidp_debugf(" -> Pointer");
-                }
+
+		// parse consumer usages. These are very similar to joystick and mouse buttons and are
+		// basically single bits that are assigned to certain button like events
+		// we expect single bits for each consumer control, so we ignore this if report_size != 1
+		if(collection_depth > 0 && report_size == 1 && g.usage_page == USAGE_PAGE_CONSUMER &&
+		   conf->type == REPORT_TYPE_CONSUMER) {
+
+		  // check if this particular code is in the consumer code map
+		  for(int i=0;consumer_code_map[i].code;i++) {
+		    if(consumer_code_map[i].code == value) {
+		      hidp_debugf("BUTTON%d @ %d (byte %d, mask %d)", consumer_code_map[i].index, buttons, buttons / 8, 1 << (buttons % 8));
+		      conf->joystick_mouse.button[consumer_code_map[i].index].byte_offset = buttons / 8;
+		      conf->joystick_mouse.button[consumer_code_map[i].index].bitmask = 1 << (buttons % 8);
+		      report_complete |= JOY_MOUSE_REQ_BTN_0;							
+		      continue;
+		    }
+		  }
+		  buttons += 1;
+		}
 					break;
 
 				case 1:
@@ -707,13 +756,13 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
 			}
 		}
 
-
+#if 1 // TH: It doesn't make much sense to return true if the parser exited prematurely
     if (have_active_report_id && report_has_input && report_is_usable(bit_count, report_complete, conf))
     {
         conf->report_id_present = 1;
         conf->report_id = active_report_id;
         return true;
     }
-
+#endif
 	return false;
 }

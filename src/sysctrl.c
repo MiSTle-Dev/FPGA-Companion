@@ -391,7 +391,13 @@ void sys_run_action(config_action_t *action) {
       sys_debugf("LINK");
       sys_run_action(command->action);
       break;
+      
+    case CONFIG_ACTION_COMMAND_EXEC:
+      sys_debugf("EXEC");
+      command->exec();
+      break;      
     }
+    
     command = command->next;
   }
 }
