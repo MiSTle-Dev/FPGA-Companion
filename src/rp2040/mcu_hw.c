@@ -1587,7 +1587,7 @@ void mcu_hw_init(void) {
   };
   tusb_init(BOARD_TUH_RHPORT, &host_init);
   
-#if (MISTLE_BOARD == 2) ||(MISTLE_BOARD == 4) || (MISTLE_BOARD == 5)
+#if (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5)
   tusb_rhport_init_t dev_init = {
     .role = TUSB_ROLE_DEVICE,
     .speed = TUSB_SPEED_AUTO

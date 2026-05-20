@@ -145,7 +145,7 @@ target_link_libraries(${PROJECT} PRIVATE FreeRTOS-Kernel FreeRTOS-Kernel-Heap4)
 target_link_libraries(${PROJECT} PRIVATE hardware_pio hardware_dma hardware_spi hardware_adc)
 target_link_libraries(${PROJECT} PRIVATE pico_cyw43_arch_lwip_sys_freertos)
 target_link_libraries(${PROJECT} PRIVATE pico_btstack_cyw43 pico_btstack_classic)
-target_link_libraries(${PROJECT} PRIVATE tinyusb_common_base tinyusb_host tinyusb_common tinyusb_board u8g2)
+target_link_libraries(${PROJECT} PRIVATE tinyusb_host tinyusb_board u8g2)
 
 pico_add_extra_outputs(${PROJECT})
 pico_enable_stdio_usb(${PROJECT} 0)
