@@ -53,7 +53,8 @@ static btstack_packet_callback_registration_t hci_event_callback_registration;
 // SDP
 static uint8_t hid_descriptor_storage[MAX_ATTRIBUTE_VALUE_SIZE];
 
-static hid_protocol_mode_t hid_host_report_mode = HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT;
+//static hid_protocol_mode_t hid_host_report_mode = HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT;
+static hid_protocol_mode_t hid_host_report_mode = HID_PROTOCOL_MODE_REPORT;
 
 static struct bt_hid_device_S *get_dev_by_hid_cid(uint16_t cid) {
   for(int i=0;i<MAX_BT_HID_DEVICES;i++)
