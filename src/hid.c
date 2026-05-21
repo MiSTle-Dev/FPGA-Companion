@@ -269,7 +269,7 @@ static uint16_t collect_bits(const uint8_t *p, uint16_t offset, uint8_t size, bo
   uint8_t bits = size;
   uint8_t shift = offset&7;
   
-  //  iusb_debugf("0 m:%x by:%d bi=%d sh=%d ->", mask, byte, bits, shift);
+  // usb_debugf("0 m:%x by:%d bi=%d sh=%d ->", mask, byte, bits, shift);
   uint16_t rval = (p[byte++] & mask) >> shift;
   mask = 0xff;
   shift = 8-shift;
@@ -347,6 +347,10 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
     
     a[i] = collect_bits(buffer, report->joystick_mouse.axis[i].offset, 
 			report->joystick_mouse.axis[i].size, is_signed);
+
+    // scale axis down to 8 bits if required
+    if(report->joystick_mouse.axis[i].size > 8)
+      a[i] >>= (report->joystick_mouse.axis[i].size - 8);
   }
 
   // ... and four buttons
