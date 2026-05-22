@@ -37,6 +37,8 @@ for b in "${boards[@]}"; do
             cp -f bl616_fpga_partner/bl616_fpga_partner_25kDock.bin "buildall/bl616_fpga_partner_${b}.bin"
         elif [ "$b" = "nano20k" ]; then
             cp -f bl616_fpga_partner/bl616_fpga_partner_20kNano.bin "buildall/bl616_fpga_partner_${b}.bin"
+            cp -f bl616_fpga_partner/bl616_bootloader_0x20000_nano20k_signed.bin "buildall/bl616_bootloader_0x20000_nano20k_signed.bin"
+            cp -f bl616_bootloader_0x20000_nano20k_signed_flash_prog_cfg.ini "buildall/flash_nano20k_unconditional.ini"
         fi
 
         # Flash INI handling

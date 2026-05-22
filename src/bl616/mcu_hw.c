@@ -44,6 +44,7 @@
 #endif
 #include "bflb_clock.h"
 #include "bflb_flash.h"
+#include "bflb_sec_mutex.h"
 #include "bflb_xip_sflash.h"
 #include "bflb_sf_ctrl.h"
 #include "board_flash_psram.h"
@@ -1147,6 +1148,17 @@ static void console_init() {
 #endif
 }
 
+#ifdef CONFIG_HIGH_ISR_STACK
+void bflb_wfa_init(void)
+{
+    extern void interrupt1_handler(void);
+    bflb_irq_attach(MAC_INT_PROT_TRIGGER_IRQn, (irq_callback)interrupt1_handler, NULL);
+    bflb_irq_enable(MAC_INT_PROT_TRIGGER_IRQn);
+    extern void csi_vic_set_prio(int32_t IRQn, uint32_t priority);
+    csi_vic_set_prio(MAC_INT_PROT_TRIGGER_IRQn, 2);
+}
+#endif
+
 static void wifi_init(void);
 
 // local board_init used as a replacemement for global board_init
@@ -1159,7 +1171,14 @@ static void mn_board_init(void) {
     /* lock */
     flag = bflb_irq_save();
 
+#ifndef CONFIG_BOARD_FLASH_INIT_SKIP
+    /* flash init */
     ret = bflb_flash_init();
+#ifndef CONFIG_BOARD_FLASH_LOW_SPEED
+    /* flash clock frequency increased to 80MHz */
+    board_set_flash_80m();
+#endif
+#endif
 
     /* system clock */
     system_clock_init();
@@ -1173,6 +1192,9 @@ static void mn_board_init(void) {
     extern void interrupt0_handler(void);
     bflb_irq_attach(WIFI_IRQn, (irq_callback)interrupt0_handler, NULL);
     bflb_irq_enable(WIFI_IRQn);
+#endif
+#ifdef CONFIG_HIGH_ISR_STACK
+    bflb_wfa_init();
 #endif
 
     gpio = bflb_device_get_by_name("gpio");
@@ -1238,10 +1260,7 @@ static void mn_board_init(void) {
     rtc = bflb_device_get_by_name("rtc");
 #endif
 
-#ifdef CONFIG_MBEDTLS
-    extern void bflb_sec_mutex_init(void);
     bflb_sec_mutex_init();
-#endif
 
     /* unlock */
     bflb_irq_restore(flag);
