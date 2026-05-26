@@ -99,7 +99,7 @@ cd src/rp2040
 mkdir build
 cd build
 cmake -DBOARD=PICO ..
-# for Pico OSD core loader use: cmake -DBOARD=MSP20k ..
+# for Pico OSD core loader use: cmake -DBOARD=MSP20K ..
 make
 ```
 
