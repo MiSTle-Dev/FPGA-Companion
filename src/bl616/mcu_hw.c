@@ -90,6 +90,8 @@ extern void bl_show_chipinfo(void);
 #define PIN_UART_RX  GPIO_PIN_22
 #elif M0S_DOCK
 #warning "Building for M0S DOCK BL616"
+#include "../jtag.h"
+#include "./sdc_direct.h"
 #define PIN_UART_TX  GPIO_PIN_21
 #define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_MEGA138KPRO
@@ -2003,7 +2005,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
    vTaskDelay(pdMS_TO_TICKS(250));
 
    bflb_irq_disable(gpio->irq_num);
-#ifndef TANG_NANO20K
+#if !defined(TANG_NANO20K) && !defined(M0S_DOCK)
     bflb_gpio_deinit(gpio, SPI_PIN_MISO);
     bflb_gpio_deinit(gpio, SPI_PIN_MOSI);
     bflb_gpio_deinit(gpio, SPI_PIN_SCK);
@@ -2019,7 +2021,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
     bflb_gpio_init(gpio, PIN_JTAG_TDO, GPIO_INPUT  | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
     bflb_gpio_init(gpio, PIN_JTAG_TDI, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
     bflb_gpio_init(gpio, PIN_JTAG_TMS, GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_3);
-#ifndef TANG_NANO20K
+#if !defined(TANG_NANO20K) && !defined(M0S_DOCK)
     bflb_gpio_set(gpio, PIN_JTAGSEL); // select JTAG mode
     sys_jtagsel(true);    
 #endif
@@ -2230,7 +2232,7 @@ void mcu_hw_fpga_resume_spi(void) {
   bflb_gpio_deinit(gpio, PIN_JTAG_TMS);
   bflb_gpio_deinit(gpio, PIN_JTAG_TDO);
 
-#ifndef TANG_NANO20K
+#if !defined(TANG_NANO20K) && !defined(M0S_DOCK)
   bflb_gpio_init(gpio, SPI_PIN_MISO, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_init(gpio, SPI_PIN_MOSI, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
   bflb_gpio_init(gpio, SPI_PIN_SCK, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_3);
@@ -2394,8 +2396,19 @@ bool mcu_hw_usb_msc_present(void) {
 }
 
 // M0S_DOCK
-/* GPIO 21 default UART TX */
-/* GPIO 22 default UART RX */
+/* GPIO  0 TMS, M0S solder point */
+/* GPIO  1 TCK, M0S solder point */
+/* GPIO  2 TDO, M0S solder point */
+/* GPIO  3 TDI, M0S solder point */
+/* GPIO 12 CSN */
+/* GPIO 13 SCK */
+/* GPIO 10 MISO */
+/* GPIO 11 MOSI */
+/* GPIO 14 IRQn */
+/* GPIO 21 UART TX */
+/* GPIO 22 UART RX */
+/* GPIO 27 LED1 */
+/* GPIO 28 LED2 */
 
 // TANG_NANO20K
 /* GPIO 11 default UART TX */

@@ -5,7 +5,31 @@ for the BL616 MCU (M0S Dock).
 
 ## Example wiring M0S Dock
 
-![Tang Nano 20k with M0S Dock](m0s_dock_tn20k.png)  
+![Tang Nano 20k with M0S Dock](m0s_dock_tn20k.png)
+
+|M0S pin|Signal      |BL616 GPIO|Note        |
+|--|------------- |--------|--------------|
+|20|JTAG TMS[^1]  |GPIO  0 |              |
+|21|JTAG TCK[^1]  |GPIO  1 |              |
+|22|JTAG TDO[^1]  |GPIO  2 |EN_CHIP BL616 |
+|23|JTAG TDI[^1]  |GPIO  3 |              |
+||CSN           |GPIO 12 |              |
+||SCK           |GPIO 13 |              |
+||MISO          |GPIO 10 |              |
+||MOSI          |GPIO 11 |              |
+||IRQN          |GPIO 14 |              |
+||BL616 UART RX |GPIO 21 |              |
+||BL616 UART TX |GPIO 22 |              |
+
+[^1]: JTAG FPGA loader
+
+Location JTAG connection TN20k PCBA top side.  
+
+![Tang Nano 20k JTAG](../rp2040/jtag_tn20k.png)
+
+Location GPIO 0...3 for JTAG purposes on M0S sub-module PCBA. M0S Dock top side. 
+
+![M0S](M0S.png)
 
 ## Tang integrated onboard BL616 MPU
 
