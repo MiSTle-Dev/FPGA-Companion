@@ -143,7 +143,15 @@ After successful download you need to unplug the device again and reinsert it *w
 
 ## Compiling and uploading code for the BL616 (Windows 11)
 
-**Looks that recent SDK build doesn't support Windows properly anymore! Use Linux instead.**  
+**Looks that recent SDK build still need a [patch](https://github.com/bouffalolab/bouffalo_sdk/issues/236) for Windows or use alternatively Linux instead.**
+
+```shell
+cmake/compiler_flags.cmake
+sdk_add_link_options
+ -flto
+ to
+ -fno-lto
+ ```
 
 Install [Git for Windows](https://gitforwindows.org)
 
