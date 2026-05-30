@@ -336,7 +336,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 	}
 	break;
 	
-      case HID_SUBEVENT_CONNECTION_CLOSED:
+      case HID_SUBEVENT_CONNECTION_CLOSED: {
 	struct bt_hid_device_S *dev = get_dev_by_hid_cid(hid_subevent_connection_closed_get_hid_cid(packet));
 
 	if(!dev)
@@ -356,7 +356,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 
 	  menu_notify(MENU_EVENT_BLUETOOTH_DISCONNECTED);
 	}
-	break;
+      } break;
         
       default:
 	break;				    
