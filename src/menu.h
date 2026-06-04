@@ -30,6 +30,8 @@
 #define MENU_EVENT_BLUETOOTH_SCAN  16
 #define MENU_EVENT_BLUETOOTH_PIN_CODE_REQUEST 17
 
+#define MENU_EVENT_KEY_LATIN1    256  // 256..511
+
 typedef struct menu_variable {
   char id;
   int value;
@@ -40,7 +42,7 @@ extern TaskHandle_t menu_handle;
 
 void menu_init(void);
 menu_variable_t *menu_get_variables(void);
-void menu_set_value(unsigned char id, unsigned char value);
+void menu_set_value(unsigned char id, char value);
 void menu_do(int);
 void menu_notify(unsigned long msg);
 void menu_joystick_state(unsigned char state);

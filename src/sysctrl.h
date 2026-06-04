@@ -23,7 +23,7 @@ int  sys_status_is_valid(void);
 void sys_set_leds(char);
 void sys_set_rgb(unsigned long);
 unsigned char sys_get_buttons(void);
-void sys_set_val(char, uint8_t);
+void sys_set_val(char, int8_t);
 unsigned char sys_irq_ctrl(unsigned char);
 void sys_handle_interrupts(unsigned char, bool);
 bool sys_wait4fpga(void);

@@ -167,6 +167,12 @@ static void menu_setup_menu_variables(const config_menu_t *menu) {
       // setup variable ...
       menu_setup_variable(me->toggle->id, me->toggle->def);
     }
+    
+    if(me->type == CONFIG_MENU_ENTRY_RANGE) {
+      // setup variable ...
+      menu_setup_variable(me->range->id, me->range->def);
+    }
+    
     me = me->next;
   }
 }
@@ -184,7 +190,7 @@ static void menu_setup_variables(void) {
 }
 
 
-void menu_set_value(unsigned char id, unsigned char value) {
+void menu_set_value(unsigned char id, char value) {
   // this is called when reading the ini file
   // We allow values in the ini file which are actually not in the
   // menu at all. This can be used for "static" changes which are made
@@ -369,7 +375,27 @@ static int menu_entry_is_usable(void) {
   return menu_state->selected != 0;
 }
 
+static config_menu_entry_t *menu_get_selected_entry(void) {
+  config_menu_entry_t *entry = menu_state->menu->entries;
+  for(int i=0;i<menu_state->selected - 1;i++) entry=entry->next;
+  return entry;
+}
+  
 static void menu_entry_go(int step) {
+
+  // the up/down events change the a range value in edit mode
+  config_menu_entry_t *entry = menu_get_selected_entry();
+  if(entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
+    int value = menu_variable_get(entry->range->id);
+
+    value -= step;
+    if(value > entry->range->max) value = entry->range->max;
+    if(value < entry->range->min) value = entry->range->min;          
+
+    menu_variable_set(entry->range->id, value);
+    return;
+  }							  
+  
   int entries = menu_count_entries();
   do {
     menu_state->selected += step;
@@ -449,6 +475,8 @@ static char *menuentry_get_label(config_menu_entry_t *entry) {
     return entry->image->label;
   if(entry->type == CONFIG_MENU_ENTRY_TOGGLE)
     return entry->toggle->label;
+  if(entry->type == CONFIG_MENU_ENTRY_RANGE)
+    return entry->range->label;
   
   return NULL;
 }
@@ -490,7 +518,6 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected) 
   u8g2_DrawStr(&u8g2, 1, ypos, s);
     
   // prepare highlight
-  int hl_x = 0;
   int hl_w = width;
 
   // handle second string for list entries
@@ -506,21 +533,20 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected) 
       u8g2_DrawStr(&u8g2, width-sw, ypos, str);
     }
 		  
-    hl_x = width/2;
     hl_w = width/2;
   }
   
   // some entries have a small icon to the right    
-  if(entry->type == CONFIG_MENU_ENTRY_MENU)
+  else if(entry->type == CONFIG_MENU_ENTRY_MENU)
     u8g2_DrawXBM(&u8g2, hl_w-8, ypos-8, 8, 8, icn_right_bits);
 
-  if(entry->type == CONFIG_MENU_ENTRY_FILESELECTOR) {
+  else if(entry->type == CONFIG_MENU_ENTRY_FILESELECTOR) {
     // icon depends if floppy is inserted
     u8g2_DrawXBM(&u8g2, hl_w-MENU_ENTRY_BASE, ypos-8, 8, 8,
 		 sdc_get_image_name(entry->fsel->index)?icn_floppy_bits:icn_empty_bits);
   }
   
-  if(entry->type == CONFIG_MENU_ENTRY_TOGGLE) 
+  else if(entry->type == CONFIG_MENU_ENTRY_TOGGLE) 
     u8g2_DrawXBM(&u8g2, hl_w-MENU_ENTRY_BASE, ypos-8, 8, 8,
 		 menu_variable_get(entry->toggle->id)?icn_on_bits:icn_off_bits);
   
@@ -532,8 +558,28 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected) 
     u8g2_DrawXBM(&u8g2, hl_w-MENU_ENTRY_BASE, ypos-8, 8, 8, icon);
   }
     
+  else if(entry->type == CONFIG_MENU_ENTRY_RANGE) {
+    char str[5];  // max length 5 for "-100\0"
+    
+    // draw range value
+    int value = menu_variable_get(entry->range->id);
+    sprintf(str, "%d", value);
+
+    // right align entry
+    int sw = u8g2_GetStrWidth(&u8g2, str) + 1;
+    if(sw > width/2) sw = width/2;
+    u8g2_DrawStr(&u8g2, width-sw, ypos, str);
+
+    // in "normal" menu mode, the entire range is highlighted when
+    // selected. In "edit" mode only the value is highlighted
+    if(entry->range->edit) {    
+      // only highlight the value
+      hl_w = u8g2_GetStrWidth(&u8g2, str) + 1;      
+    }
+  }
+    
   if(selected)
-    u8g2_DrawButtonFrame(&u8g2, hl_x, ypos, U8G2_BTN_INV, hl_w, 1, 1);
+    u8g2_DrawButtonFrame(&u8g2, width-hl_w, ypos, U8G2_BTN_INV, hl_w, 1, 1);
 }
 
 static int menu_wrap_text(int y_in, const char *msg) {  
@@ -862,6 +908,13 @@ void menu_run_current_image_action(void) {
 
 // user has pressed esc to go back one level
 static void menu_back(void) {
+  // when in range edit mode, back leaves edit mode
+  config_menu_entry_t *entry = menu_get_selected_entry();
+  if(entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
+    entry->range->edit = false;
+    return;
+  }							  
+
   // stop doing the scroll timer
   menu_timer_enable(false);
 
@@ -887,6 +940,13 @@ static void menu_back(void) {
 
 // user has selected a menu entry
 static void menu_select(void) {
+  // when in range edit mode, select leaves edit mode
+  config_menu_entry_t *entry = menu_get_selected_entry();
+  if(entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
+    entry->range->edit = false;
+    return;
+  }							  
+
   // if the title was selected, then goto parent form
   if(menu_state->selected == 0) {
     menu_pop();
@@ -898,9 +958,7 @@ static void menu_select(void) {
     menu_fileselector_select(dir_entry(menu_state->dir, menu_state->selected-1));
     return;
   }
-
-  config_menu_entry_t *entry = menu_state->menu->entries;
-  for(int i=0;i<menu_state->selected - 1;i++) entry=entry->next;
+  
   menu_debugf("Selected: %s '%s'", config_menuentry_get_type_str(entry), menuentry_get_label(entry));
 
   switch(entry->type) {
@@ -942,6 +1000,11 @@ static void menu_select(void) {
     menu_variable_set(entry->toggle->id, !menu_variable_get(entry->toggle->id));
     if(entry->toggle->action)
       sys_run_action(entry->toggle->action);
+    break;
+
+  case CONFIG_MENU_ENTRY_RANGE:
+    // selecting a range entry enables changing its value
+    entry->range->edit = true;
     break;
     
   default:
@@ -1079,6 +1142,12 @@ static bool menu_is_systemmenu(void) {
   return false;
 }  
 
+static void menu_handle_latin1(uint8_t code) {
+  if(code > 31) menu_debugf("menu_handle_latin1(%d/%c)", code, code);
+  else          menu_debugf("menu_handle_latin1(%d)", code);
+
+}
+
 static void menu_task(__attribute__((unused)) void *parms) {
   menu_debugf("task running");
 
@@ -1087,7 +1156,7 @@ static void menu_task(__attribute__((unused)) void *parms) {
     // receive events from usb    
     long cmd;
     xQueueReceive(menu_queue, &cmd, 0xffffffffUL);
-    menu_debugf("command %ld", cmd);
+    menu_debugf("command %04lx", cmd);
 
     if(cmd == MENU_EVENT_SYSTEM) {
       menu_debugf("system menu requested");
@@ -1103,6 +1172,8 @@ static void menu_task(__attribute__((unused)) void *parms) {
 	menu_debugf("Already in system menu");
     } else
 
+    // catch some non-user controlled events here
+
 #ifdef ENABLE_BLUETOOTH
     if(cmd == MENU_EVENT_BLUETOOTH_CONNECTED) {      
       menu_draw_dialog("Bluetooth", "A device has been connected!");
@@ -1115,7 +1186,6 @@ static void menu_task(__attribute__((unused)) void *parms) {
     } else
 #endif
       
-    // catch some non-user controlled events here
     if(cmd == MENU_EVENT_USB_MOUNTED) {
       menu_debugf("USB mount event");
 
@@ -1132,7 +1202,12 @@ static void menu_task(__attribute__((unused)) void *parms) {
       if (f_unmount("/usb") != FR_OK )	menu_debugf("/usb unmount failed");
       else	                        menu_debugf("/usb unmounted");
       menu_draw_dialog("USB", "A USB mass storage device has been removed!");
-    } else
+    }
+
+    else if((cmd & 0xffffff00) == MENU_EVENT_KEY_LATIN1)
+      menu_handle_latin1(cmd & 0xff);
+
+    else
       menu_do(cmd);
   }
 }

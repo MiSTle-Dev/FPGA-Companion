@@ -85,7 +85,7 @@ unsigned char sys_get_buttons(void) {
   return btns;
 }
 
-void sys_set_val(char id, uint8_t value) {
+void sys_set_val(char id, int8_t value) {
   sys_debugf("set value %c = %d", id, value);
   
   sys_begin(SPI_SYS_SETVAL);   // send value command
@@ -504,7 +504,7 @@ char *sys_get_config(void) {
 
     // terminate the config string
     dst[dstlen] = '\0';
-    
+
     return (char*)dst;
   }
   
