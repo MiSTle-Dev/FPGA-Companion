@@ -42,7 +42,7 @@ extern TaskHandle_t menu_handle;
 
 void menu_init(void);
 menu_variable_t *menu_get_variables(void);
-void menu_set_value(unsigned char id, char value);
+void menu_set_value(unsigned char id, int8_t value);
 void menu_do(int);
 void menu_notify(unsigned long msg);
 void menu_joystick_state(unsigned char state);

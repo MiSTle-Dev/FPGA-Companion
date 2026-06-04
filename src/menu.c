@@ -190,7 +190,7 @@ static void menu_setup_variables(void) {
 }
 
 
-void menu_set_value(unsigned char id, char value) {
+void menu_set_value(unsigned char id, int8_t value) {
   // this is called when reading the ini file
   // We allow values in the ini file which are actually not in the
   // menu at all. This can be used for "static" changes which are made
@@ -376,6 +376,10 @@ static int menu_entry_is_usable(void) {
 }
 
 static config_menu_entry_t *menu_get_selected_entry(void) {
+  // first check if there's a menu at all  
+  if(menu_state->type != CONFIG_MENU_ENTRY_MENU)
+    return NULL;
+  
   config_menu_entry_t *entry = menu_state->menu->entries;
   for(int i=0;i<menu_state->selected - 1;i++) entry=entry->next;
   return entry;
@@ -385,7 +389,7 @@ static void menu_entry_go(int step) {
 
   // the up/down events change the a range value in edit mode
   config_menu_entry_t *entry = menu_get_selected_entry();
-  if(entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
+  if(entry && entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
     int value = menu_variable_get(entry->range->id);
 
     value -= step;
@@ -910,7 +914,7 @@ void menu_run_current_image_action(void) {
 static void menu_back(void) {
   // when in range edit mode, back leaves edit mode
   config_menu_entry_t *entry = menu_get_selected_entry();
-  if(entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
+  if(entry && entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
     entry->range->edit = false;
     return;
   }							  
@@ -942,7 +946,7 @@ static void menu_back(void) {
 static void menu_select(void) {
   // when in range edit mode, select leaves edit mode
   config_menu_entry_t *entry = menu_get_selected_entry();
-  if(entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
+  if(entry && entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
     entry->range->edit = false;
     return;
   }							  
