@@ -1,11 +1,11 @@
-# MiSTeryNano FPGA Companion
+# MiSTle FPGA Companion
 
-The MiSTeryNano FPGA Companion implements support functions for FPGA
+The MiSTle FPGA Companion implements support functions for FPGA
 based retro computing projects like [MiSTeryNano
 project](https://github.com/MiSTle-Dev/MiSTeryNano). While the FPGA
 typically implements the hardware of the retro machine itself the
 Companion uses a microcontroller to add support for modern peripherals
-like USB keyboard, mice and SD cards. It also implements an
+like USB keyboards, mice and SD cards. It also implements an
 on-screen-display menu to allow the user to configure the retro
 machine.
 
