@@ -7,8 +7,7 @@ mkdir -p buildall
 rm -f buildall/*
 
 # List of boards to build
-boards=("m0sdock" "nano20k" "console60k" "mega60k" "mega138kpro" "primer25k")
-# boards=("m0sdock" "nano20k" "console60k" "mega60k" "mega138kpro" "primer25k")
+boards=("m0sdock" "nano20k" "nano20k_v3923" "console60k" "mega60k" "mega138kpro" "primer25k")
 
 for b in "${boards[@]}"; do
     echo "Building for board: $b"
@@ -35,7 +34,7 @@ for b in "${boards[@]}"; do
             cp -f bl616_fpga_partner/bl616_fpga_partner_138kproDock.bin "buildall/bl616_fpga_partner_${b}.bin"
         elif [ "$b" = "primer25k" ]; then
             cp -f bl616_fpga_partner/bl616_fpga_partner_25kDock.bin "buildall/bl616_fpga_partner_${b}.bin"
-        elif [ "$b" = "nano20k" ]; then
+        elif [ "$b" = "nano20k" ] || [ "$b" = "nano20k_v3923" ]; then
             cp -f bl616_fpga_partner/bl616_fpga_partner_20kNano.bin "buildall/bl616_fpga_partner_${b}.bin"
             cp -f bl616_fpga_partner/bl616_bootloader_0x20000_nano20k_signed.bin "buildall/bl616_bootloader_0x20000_nano20k_signed.bin"
             cp -f bl616_bootloader_0x20000_nano20k_signed_flash_prog_cfg.ini "buildall/flash_nano20k_unconditional.ini"
