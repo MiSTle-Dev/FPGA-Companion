@@ -1,9 +1,8 @@
-# MiSTeryNano FPGA companion BL616 variant
+# MiSTle FPGA companion BL616 variant
 
-This is the variant of the MiSTeryNano FPGA companion firmware
-for the BL616 MCU (M0S Dock).
+This is the variant of the FPGA companion firmware for the BL616 MCU.
 
-## Example wiring M0S Dock
+## Example wiring M0S Dock (BL616 MPU)
 
 ![Tang Nano 20k with M0S Dock](m0s_dock_tn20k.png)
 
@@ -33,23 +32,43 @@ Location GPIO 0...3 for JTAG purposes on M0S sub-module PCBA. M0S Dock top side.
 
 ## Tang integrated onboard BL616 MPU
 
-JTAG signals, UART RX and TX are re-purposed as SPI and control interface. MPU is Master and FPGA is slave. UART RX GPIO is board specific and used as an SPI interrupt input. The UART TX GPIO is a board-specific signal used to control the FPGA’s dedicated JTAG hw pins and determine whether the interface operates in native JTAG or SPI mode. Nano 20k always stays in JTAG active enabled mode as both JTAG and SPI are as dedicated hw pins available.
+JTAG signals, UART RX and TX are re-purposed as SPI and control interface. MPU is Master and FPGA is slave. UART RX GPIO is board specific and used as an SPI interrupt input. The UART TX GPIO is a board-specific signal used to control the FPGA’s dedicated JTAG hw pins and determine whether the interface operates in native JTAG or SPI mode. Nano 20k always stays in JTAG active enabled mode as both JTAG and SPI are as dedicated hw pins available.  
 
-|Tang Board wiring BL616|BL616 GPIO|SPI re-use|Note|
-|------------- |----- |--------  |-----|
-|JTAG TMS      |GPIO0 |SPI _SS   |  |
-|JTAG TCK      |GPIO1 |SPI SCK   |  |
-|JTAG TDO      |GPIO2 |SPI MISO  | EN_CHIP BL616 |
-|JTAG TDI      |GPIO3 |SPI MOSI  |  |
-|BL616 UART RX |GPIO x|SPI _IRQ  |  |
-|BL616 UART TX |GPIO x|V_JTAGSELN| 1=JTAG, 0=SPI |
-|BL616 TWI SCL[^1] |GPIO x|UART TX   | debug console |
+**Tang Nano 20k**
+
+|BL616 GPIO    |Nano 20k 3921 |Nano 20k 3923|re-use|Note|
+|-----   |------------- |----|--------  |-----|
+|GPIO0   |SPI _SS       |SPI _SS|-   |  |
+|GPIO1   |SPI SCK       |SPI SCK|-   |  |
+|GPIO2   |SPI MISO      |unused|-  | EN_CHIP BL616 |
+|GPIO3   |SPI MOSI      |unused|-  |  |
+|GPIO 13 |BL616 UART RX |BL616 UART RX|SPI _IRQ  |  |
+|GPIO 11 |BL616 UART TX |BL616 UART TX|- | debug console |
+|GPIO 16 |JTAG TMS      |JTAG TMS|-   |  |
+|GPIO 10 |JTAG TCK      |JTAG TCK |-  |  |
+|GPIO 14 |JTAG TDO      |JTAG TDO |-  |  |
+|GPIO 12 |JTAG TDI      |JTAG TDI |-  |  |
+|GPIO 22 |unused        |unused  |UART RX  | debug console  |
+|GPIO 27 |unused        | SPI MOSI   |-  |  |
+|GPIO 30 |unused        | SPI MISO   |-  |  |
+
+Nano20k uses default BL616 UART TX for the debug console.  
+
+**Primer / Console / Mega**
+
+|BL616 GPIO|Tang Board wiring BL616|re-use|Note|
+|----- |------------- |--------  |-----|
+|GPIO0 |JTAG TMS      |SPI _SS   |  |
+|GPIO1 |JTAG TCK      |SPI SCK   |  |
+|GPIO2 |JTAG TDO      |SPI MISO  | EN_CHIP BL616 |
+|GPIO3 |JTAG TDI      |SPI MOSI  |  |
+|GPIO x|BL616 UART RX |SPI _IRQ  |  |
+|GPIO x|BL616 UART TX |V_JTAGSELN| 1=JTAG, 0=SPI |
+|GPIO x|BL616 TWI SCL[^1] |UART TX   | debug console |
 
 [^1]: The extra TWI SCL connection is only available for Console60k/138k and Mega138k Pro.  
-Nano20k uses default BL616 UART TX for the debug console as no V_JTAGSELN needed.  
-TN20k has a differnt pin mapping and uses GPIO16, GPIO10, GPIO14, GPIO12 for JTAG.  
 
-Primer25K re-use after a needed HW modification by removing capacitor C22 the GPIO12 available at button S3 to access debug console. Mega 60k could likely re-use GPIO 16 or GPIO 17 to output debug data.  
+Primer25K BL616 debug console can be used after a required hardware modification: remove capacitor C22 to make GPIO12 available at button S3 for debug TX console access. Mega60k can likely re-use GPIO16 or GPIO17 for debug output. 
 
 [All in One Build](#tang-onboard-bl616)
 
