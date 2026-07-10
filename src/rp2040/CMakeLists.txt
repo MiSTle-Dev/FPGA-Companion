@@ -28,16 +28,17 @@ set(PICO_BOARD pico_w CACHE STRING "Board type")
 
 # The BOARD option selects which board to build for
 # Regular Pico (W) by default
-set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE, DEV20K, MSP20K")
+set(BOARD PICO CACHE STRING "Board type. Can be PICO, PICO2, WS2040ZERO, SH20KLITE, DEV20K, MSP20K, DEV25K")
 
-set(BOARDS PICO PICO2 WS2040ZERO SH20KLITE DEV20K MSP20K)
+set(BOARDS PICO PICO2 WS2040ZERO SH20KLITE DEV20K MSP20K DEV25K)
 if( NOT BOARD IN_LIST BOARDS)
     message(FATAL_ERROR "BOARD must be one of ${BOARDS}")
 endif()
 
 # This will also work for the the Pico-W and the regular Pico. The
 # firmware detects it and acts accordingly
-if(${BOARD} STREQUAL PICO2)
+set(PICO2BOARDS PICO2 DEV25K)
+if( BOARD IN_LIST PICO2BOARDS)
    message("Building for RP2350")
    set(PICO_BOARD pico2_w)
    set(TARGET rp2350)
@@ -127,8 +128,14 @@ elseif(${BOARD} STREQUAL MSP20K)
    target_sources(${PROJECT} PRIVATE ../jtag.c ../gowin.c usb_jtag.c)
    target_sources(${PROJECT} PRIVATE usb_descriptors.c)
    target_link_libraries(${PROJECT} PRIVATE tinyusb_device)
+elseif(${BOARD} STREQUAL DEV25K)
+   add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=6)
+   add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for GW3A/GW5A Dev25k.")
+   target_sources(${PROJECT} PRIVATE sdio.c ../jtag.c ../gowin.c usb_jtag.c)
+   target_sources(${PROJECT} PRIVATE usb_descriptors.c)
+   target_link_libraries(${PROJECT} PRIVATE tinyusb_device)
 else()
-   message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040ZERO, SH20KLITE, DEV20K or MSP20K")
+   message(FATAL_ERROR "BOARD must be PICO, PICO2, WS2040ZERO, SH20KLITE, DEV20K, MSP20K or DEV25K")
 endif()
 
 target_include_directories(${PROJECT} PRIVATE

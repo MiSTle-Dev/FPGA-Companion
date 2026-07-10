@@ -24,8 +24,8 @@
 
 #include "../gowin.h"   // TODO remove gowin dependency
 
-#if MISTLE_BOARD != 4
-#error "Direct SDIO access only works for the Dev20k board"
+#if MISTLE_BOARD != 4 && MISTLE_BOARD != 6
+#error "Direct SDIO access only works for the Dev20k adn Dev25k boards"
 #endif
 
 #define SD_VERIFY_CRC   0

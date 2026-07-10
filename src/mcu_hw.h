@@ -30,11 +30,20 @@ bool mcu_hw_usb_msc_present(void);
 // received a byte via the io port (e.g. rs232 from core)
 void mcu_hw_port_byte(unsigned char);
 
+// command line wifi interface for use with AT commands
 void mcu_hw_wifi_scan(void);
 void mcu_hw_wifi_connect(char *ssid, char *key);
 void mcu_hw_tcp_connect(char *ip, int port);
 void mcu_hw_tcp_disconnect(void);
 bool mcu_hw_tcp_data(unsigned char byte);
+
+// more generic wifi interface for use within companion itself
+typedef struct mcu_hw_scan_result_S {
+  char *ssid;
+  struct mcu_hw_scan_result_S *next;
+} mcu_hw_scan_result_t;
+typedef void (*mcu_hw_wifi_scan_cb_func)(mcu_hw_scan_result_t *);
+char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
 
 // some boards provide a connection to the FPGAs JTAG interface
 #ifdef TANG_CONSOLE60K
@@ -75,7 +84,7 @@ void mcu_hw_jtag_toggleClk(uint32_t);
 #define FPGA_BOOT_TIMEOUT 5000    /* give FPGA 5 seconds to boot */
 #endif
 
-#if MISTLE_BOARD == 4
+#if MISTLE_BOARD == 4 || MISTLE_BOARD == 6
 #include "sdio.h"
 // currently only the Dev20k
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);

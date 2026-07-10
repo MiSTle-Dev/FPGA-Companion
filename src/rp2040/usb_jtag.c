@@ -10,8 +10,8 @@
 #include "../mcu_hw.h"
 #include "../debug.h"
 
-#if MISTLE_BOARD != 2 && MISTLE_BOARD != 4 && MISTLE_BOARD != 5
-#error "USB JTAG is only available for the PiZero, Dev20k, MSP20k"
+#if MISTLE_BOARD != 2 && MISTLE_BOARD != 4 && MISTLE_BOARD != 5 && MISTLE_BOARD != 6
+#error "USB JTAG is only available for the PiZero, Dev20k, MSP20k, Dev25k"
 #else
 #warning "Enabling USB JTAG bridge"
 #endif
@@ -506,12 +506,18 @@ static uint16_t cmd_shift_parse(struct jtag *jtag, uint8_t *buf, uint16_t len) {
 
 // https://github.com/MiSTle-Dev/PICO-MPSSE/blob/main/pico_mpsse/pico_mpsse.c
 void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize) {
+#if 0  
   uint8_t lbuf[bufsize]; // use a local buffer as jtag_send may want to reverse the byte order
   uint8_t *lbuffer = lbuf;
   memcpy(lbuffer, buffer, bufsize);
-  
+#else
+  uint8_t lbuf[tud_vendor_available()];
+  uint8_t *lbuffer = lbuf;
+  bufsize = tud_vendor_read(lbuffer, sizeof(lbuf));
+#endif
+    
 #ifdef DEBUG_DATA_TRANSFER
-  usb_debugf("tud_vendor_rx_cb(%d, %p, %d)", itf, lbuffer, bufsize); 
+  usb_debugf("tud_vendor_rx_cb(%d, %p, %ld)", itf, lbuffer, bufsize); 
   hexdump(lbuffer, bufsize);
 #endif
   
@@ -587,34 +593,33 @@ void tud_vendor_tx_cb(uint8_t itf, __attribute__((unused)) uint32_t bufsize) {
 
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const* request) {
   bool dir_in = (request->bmRequestType_bit.direction == TUSB_DIR_IN) ? true : false; 
+  //  usb_debugf("tud_vendor_control_xfer_cb(if=0x%02x stage=%d req=0x%02x "
+  //	     "type=0x%02x dir=%s wValue=0x%04x wIndex=0x%04x wLength=%d)",
+  //	     request->wIndex, stage, request->bRequest, request->bmRequestType_bit.type,
+  //	     dir_in ? "IN" : "OUT", request->wValue, request->wIndex, request->wLength);
 
   if (request->bmRequestType_bit.type != TUSB_REQ_TYPE_VENDOR) {
     usb_debugf("Ignoring unexpected type 0x%02x", request->bmRequestType);
     return false;
   }
 
+  if(stage != CONTROL_STAGE_SETUP)
+    return true;
+
 #if JTAG_CHANNELS == 2
   struct jtag *jtag = NULL;
   if(request->wIndex >= 1 && request->wIndex <= 2)
     jtag = &jtag_engine[request->wIndex-1];
-
-  if(!jtag) {
-    usb_debugf("wIndex 0x%02x out of range", request->wIndex);
-    return false;
-  }
 #else
   struct jtag *jtag = jtag_engine;
 #endif
-
-  if(stage != CONTROL_STAGE_SETUP)
-    return true;
 
   if(!dir_in) {
     switch(request->bRequest) {
       
     case 0x00:
       usb_debugf("RESET, #%d=%d", request->wIndex, request->wValue);
-      if(request->wValue == 2) send_status_and_data(jtag);
+      if(request->wValue == 2 && jtag) send_status_and_data(jtag);
       break;
 
     case 0x01:
@@ -647,13 +652,12 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
       
     case 0x09:
       usb_debugf("SET LATENCY TIMER, #%d=%d", request->wIndex, request->wValue);
-      jtag->latency_timer = request->wValue & 0xff;
+      if(jtag) jtag->latency_timer = request->wValue & 0xff;
       break;
       
     case 0x0b:
       usb_debugf("SET BITMODE, #%d=0x%02x", request->wIndex, request->wValue);
-      if(request->wIndex >= 1 && request->wIndex <= 2) {
-	struct jtag *jtag = &jtag_engine[request->wIndex-1];
+      if(jtag) {
 	jtag->mode = request->wValue>>8;
 	//  port_gpio_set_dir(jtag, pkt->wValue & 0xff);
       }
@@ -676,11 +680,6 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
     tud_control_status(rhport, request);
     return true;
   } else {
-    //    usb_debugf("tud_vendor_control_xfer_cb(if=0x%02x stage=%d req=0x%02x "
-    //	       "type=0x%02x dir=%s wValue=0x%04x wIndex=0x%04x wLength=%d)",
-    //	       request->wIndex, stage, request->bRequest, request->bmRequestType_bit.type,
-    //	       dir_in ? "IN" : "OUT", request->wValue, request->wIndex, request->wLength);
-
     switch(request->bRequest) {
     case 0x05:
       usb_debugf("POLL MODEM STATUS");
@@ -688,9 +687,11 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
       break;
       
     case 0x0a:
-      usb_debugf("GET LATENCY TIMER = %d", jtag->latency_timer);
-      return tud_control_xfer(rhport, request, &(jtag->latency_timer), 1);
-
+      if(jtag) {
+	usb_debugf("GET LATENCY TIMER = %d", jtag->latency_timer);
+	return tud_control_xfer(rhport, request, &(jtag->latency_timer), 1);
+      } else
+	return false;
       break;
 
     case 0x90: // read eeprom      

@@ -53,11 +53,14 @@
 #elif MISTLE_BOARD == 5
 #warning "Building for MiSTeryShieldPicoTN20k"
 #include "../jtag.h"
+#elif MISTLE_BOARD == 6
+#warning "Building for GW3A/GW5A DEV 25K"
+#include "../jtag.h"
 #else
 #error "Not a supported MiSTle board!"
 #endif
 
-#if MISTLE_BOARD == 4
+#if MISTLE_BOARD == 4 || MISTLE_BOARD == 6
 // FPGA JTAG pins
 #define PIN_JTAG_TDI  12   // pin 15, gpio 12
 #define PIN_JTAG_TMS  13   // pin 16, gpio 13
@@ -186,7 +189,7 @@ static void pio_usb_task(__attribute__((unused)) void *parms) {
   while(1) {
     for(int i=0;i<100;i++) {
       tuh_task();
-#if (MISTLE_BOARD == 2) || (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5)
+#if (MISTLE_BOARD == 2) || (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5) || (MISTLE_BOARD == 6)
       tud_task();
       usb_jtag_poll();
 #endif
@@ -814,6 +817,7 @@ static const char *auth_mode_str(int authmode) {
   return mode_str[i].str;
 }
 
+static mcu_hw_wifi_scan_cb_func wifi_scan_cb = NULL;
 static int scan_result(__attribute__((unused)) void *env, const cyw43_ev_scan_result_t *result) {
   if (result) {
     char str[74];
@@ -822,19 +826,41 @@ static int scan_result(__attribute__((unused)) void *env, const cyw43_ev_scan_re
 	   result->ssid, result->rssi, result->channel,
 	   result->auth_mode);
 
-    snprintf(str, sizeof(str), "SSID %s, RSSI %d, CH %d, %s\r\n",
-	     result->ssid, result->rssi, result->channel,
-	     auth_mode_str(result->auth_mode));
+    if(wifi_scan_cb) {
+      // allocate reply. It's up to the callee to free this
+      mcu_hw_scan_result_t *res = pvPortMalloc(sizeof(mcu_hw_scan_result_t));
+      char *ssid = pvPortMalloc(sizeof(strlen(result->ssid)+1));
+      strcpy(ssid, result->ssid);
+      res->ssid = ssid;
+			       
+      wifi_scan_cb(res);
+    } else {     
+      snprintf(str, sizeof(str), "SSID %s, RSSI %d, CH %d, %s\r\n",
+	       result->ssid, result->rssi, result->channel,
+	       auth_mode_str(result->auth_mode));
+      
+      at_wifi_puts(str);
+    }
+  }
+  return 0;
+}
 
-    at_wifi_puts(str);
+char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func cb) {
+  cyw43_wifi_scan_options_t scan_options = {0};
+  wifi_scan_cb = cb;
+  int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_result);
+  if(err) {
+    debugf("Scan failed");
+    return -1;
   }
   return 0;
 }
 
 void mcu_hw_wifi_scan(void) {
   debugf("WiFi: Performing scan");
-    
+
   cyw43_wifi_scan_options_t scan_options = {0};
+  wifi_scan_cb = NULL;
   int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_result);
   if(err) {
     at_wifi_puts("Scan failed\r\n");
@@ -845,7 +871,7 @@ void mcu_hw_wifi_scan(void) {
 
   while(cyw43_wifi_scan_active(&cyw43_state))
     vTaskDelay(pdMS_TO_TICKS(10));
-  }
+}
 
 void mcu_hw_wifi_connect(char *ssid, char *key) {
 
@@ -1151,8 +1177,8 @@ uint32_t getFreeHeap(void) {
 
 static bool jtag_is_active = false;
 
-//#define DEBUG_JTAG    // debug raw JTAG IO
-//#define DEBUG_TAP     // set to follow the JTAG state machine
+// #define DEBUG_JTAG    // debug raw JTAG IO
+// #define DEBUG_TAP     // set to follow the JTAG state machine
 
 #ifdef DEBUG_TAP
 #define JTAG_STATE_TEST_LOGIC_RESET  0
@@ -1484,7 +1510,7 @@ void mcu_hw_jtag_toggleClk(uint32_t clk_len) {
 static void mcu_hw_jtag_init(void) {
   // -------- init FPGA control pins ---------
 
-#if (MISTLE_BOARD == 4)
+#if (MISTLE_BOARD == 4) || (MISTLE_BOARD == 6)
   // FPGA mode pins. Init as inputs, so the buttons work
   gpio_init(PIN_MODE0); // gpio_put(PIN_MODE0, 0);
   gpio_set_dir(PIN_MODE0, GPIO_IN);
@@ -1506,7 +1532,7 @@ static void mcu_hw_jtag_init(void) {
 void mcu_hw_fpga_reconfig(bool run) {
   // alternally the FPGA may be put into a mode != 00 to
   // suppress MSPI loading
-#if (MISTLE_BOARD == 4)
+#if MISTLE_BOARD == 4 || MISTLE_BOARD == 6
   if(!run) {
     gpio_put(PIN_MODE0, 1); gpio_set_dir(PIN_MODE0, GPIO_OUT);
     gpio_put(PIN_MODE1, 0); gpio_set_dir(PIN_MODE1, GPIO_OUT);
@@ -1587,7 +1613,7 @@ void mcu_hw_init(void) {
   };
   tusb_init(BOARD_TUH_RHPORT, &host_init);
   
-#if (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5)
+#if (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5) || (MISTLE_BOARD == 6)
   tusb_rhport_init_t dev_init = {
     .role = TUSB_ROLE_DEVICE,
     .speed = TUSB_SPEED_AUTO
@@ -1664,7 +1690,7 @@ void mcu_hw_upload_core(char *name) {
 
   // if the core is to be loaded from sd card, then the hw may need
   // to hand card access over from FPGA to the MCU
-#if MISTLE_BOARD == 4   // DEV20k
+#if MISTLE_BOARD == 4 || MISTLE_BOARD == 6   // DEV20k/DEV25K
   if(strncasecmp(name, "/sd", 3) == 0)
     sdio_take_over();
 #endif

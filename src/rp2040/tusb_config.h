@@ -58,7 +58,7 @@
 
 // the dev board implements a USB JTAG bridge
 
-#if (MISTLE_BOARD == 2) || (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5)
+#if (MISTLE_BOARD == 2) || (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5) || (MISTLE_BOARD == 6)
 #define JTAG_CHANNELS   2    // can be one or two
    
 // RHPort number used for device can be defined by board.mk, default to port 0
