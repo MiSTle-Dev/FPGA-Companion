@@ -4,21 +4,24 @@ This is the variant of the FPGA companion firmware for the BL616 MCU.
 
 ## Example wiring M0S Dock (BL616 MPU)
 
+M0S Dock consists of a M0S PCBA subassembly that is mounted on a carrier PCBA as a M0S Dock.
 ![Tang Nano 20k with M0S Dock](m0s_dock_tn20k.png)
 
-|M0S pin|Signal      |BL616 GPIO|Note        |
-|--|------------- |--------|--------------|
-|20|JTAG TMS[^1]  |GPIO  0 |              |
-|21|JTAG TCK[^1]  |GPIO  1 |              |
-|22|JTAG TDO[^1]  |GPIO  2 |EN_CHIP BL616 |
-|23|JTAG TDI[^1]  |GPIO  3 |              |
-||CSN           |GPIO 12 |              |
-||SCK           |GPIO 13 |              |
-||MISO          |GPIO 10 |              |
-||MOSI          |GPIO 11 |              |
-||IRQN          |GPIO 14 |              |
-||BL616 UART RX |GPIO 21 |              |
-||BL616 UART TX |GPIO 22 |              |
+|M0S pin<BR>/ Dock|Signal      |BL616 GPIO|Note        |
+|------|------------- |--------|--------------|
+|20    |JTAG TMS[^1]  |GPIO  0 |              |
+|21    |JTAG TCK[^1]  |GPIO  1 |              |
+|22    |JTAG TDO[^1]  |GPIO  2 |EN_CHIP BL616 |
+|23    |JTAG TDI[^1]  |GPIO  3 |              |
+|IO 12 |CSN           |GPIO 12 |              |
+|IO 13 |SCK           |GPIO 13 |              |
+|IO 10 |MISO          |GPIO 10 |              |
+|IO 11 |MOSI          |GPIO 11 |              |
+|IO 14 |IRQN          |GPIO 14 |              |
+|RX    |BL616 UART RX |GPIO 21 |debug console |
+|TX    |BL616 UART TX |GPIO 22 |debug console |
+|GND   |GND           |        |              |
+|+5V   |+5V   R       |        |              |
 
 [^1]: JTAG FPGA loader
 
