@@ -55,7 +55,8 @@ int sys_status_is_valid(void) {
       // check colboot status
       sys_debugf("Coldboot status is %02x", coldboot);
     }
-  }
+  } else
+    sys_debugf("Unexpected status reply: %02x/%02x/%02x/%02x", b0, b1, core_id, coldboot);
   
   return((b0 == 0x5c) && (b1 == 0x42));
 }
@@ -226,6 +227,21 @@ static int16_t sys_port_get(unsigned char port) {
   return d;
 }
 
+// a timer to handle delayed reboot if the MCU detects that the core has changed but
+// USB/JTAG needs to finish cleanly before reboot fires
+static TimerHandle_t sys_reboot_timer = NULL;  
+
+static void sys_reboot(__attribute__((unused)) TimerHandle_t arg) {
+  // check if jtag is still busy and re-schedule timer in that case
+  if(mcu_hw_jtag_is_active()) {
+    sys_debugf("Delayed MCU reset, jtag still in progress");
+    xTimerStart( sys_reboot_timer, 0 );
+  } else {
+    sys_debugf("Delayed MCU reset, jtag done, rebooting");
+    mcu_hw_reset();
+  }
+}
+
 static void sys_handle_event(bool ignore_coldboot) {
   // the FPGAs cold boot flag was set indicating that the
   // FPGA has be reloaded while the MCU was running. Reset
@@ -269,7 +285,7 @@ static void sys_handle_event(bool ignore_coldboot) {
 
     // the second button controls the OSD, so it can be used in conjunction
     // with 
-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
+#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)||(MISTLE_BOARD == 6)
     if(!mcu_hw_jtag_is_active())
 #endif
 
@@ -284,20 +300,29 @@ static void sys_handle_event(bool ignore_coldboot) {
     else {
       sys_debugf("FPGA cold boot detected, reseting MCU ...");
 
-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
+#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)||(MISTLE_BOARD == 6)
       // Check for USB-JTAG activity and don't reset (and thus break
       // the JTAG activity)
       if(mcu_hw_jtag_is_active()) {
-	      debugf("Suppressing MCU reset due to JTAG activity");
+	sys_debugf("Delaying MCU reset due to JTAG activity");
+	      
         // stop OSD task to avoid further SPI traffic 
         if (menu_handle != NULL) {
           vTaskDelete(menu_handle);
           menu_handle = NULL;
+
+	  // Start a timeout timer, so that we can detect the end
+	  // of USB communication and trigger the restart then. A restart
+	  // is needed to cope with the potentially newly uploaded core and
+	  // to make sure disabled functions are being re-enabled
+	  sys_reboot_timer = xTimerCreate( "sys reboot timer", pdMS_TO_TICKS(1000), pdFALSE,
+					   NULL, sys_reboot);
+	  xTimerStart( sys_reboot_timer, 0 );	  
         }
       }
       else	
 #endif
-	       mcu_hw_reset();
+	mcu_hw_reset();
     }
   }
 }

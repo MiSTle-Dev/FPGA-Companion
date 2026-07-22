@@ -16,6 +16,12 @@
 #warning "Enabling USB JTAG bridge"
 #endif
 
+#ifdef PICO_RP2350
+#warning "Enabling PIO for JTAG on RP2350"
+#endif
+
+#include "pio_jtag.h"
+
 #if JTAG_CHANNELS == 1
 #warning "Implementing single channel USB JTAG."
 #warning "Most Gowin related tools expect dual channel by default!"
@@ -115,6 +121,7 @@ struct jtag {
   uint8_t mode;  // 2=JTAG
   uint8_t latency_timer;
   TickType_t latency_timer_last_event;
+  uint16_t master_clock;
   
   // command buffer to assemble incoming commands and
   // which may be split over multiple usb transfers
@@ -149,6 +156,7 @@ void tud_mount_cb(void) {
     jtag_engine[i].rx_disabled = false;
     jtag_engine[i].reply_len = 0;
     jtag_engine[i].cmd_buf.len = 0;
+    jtag_engine[i].master_clock = 12;        // 12 MHz
   }
 }
 
@@ -291,10 +299,9 @@ static void cmd_parse(struct jtag *jtag) {
   case 0x86: {
     // send input state in a reply byte
     int divisor = jtag->cmd_buf.data.cmd.w;
-    int rate12 = 12000000 / ((1+divisor) * 2);
-    int rate60 = 60000000 / ((1+divisor) * 2);
-    usb_debugf("Set TCK/SK Divisor to %d = %d/%d khz",
-	       divisor, rate12/1000, rate60/1000);
+    int clk = jtag->master_clock * 1000000 / ((1+divisor) * 2);
+    usb_debugf("Set TCK/SK Divisor to %d -> %d khz", 2*(1+divisor), clk/1000);
+    mcu_hw_jtag_set_clock(clk);
   } break;
 
   case 0x87:
@@ -307,10 +314,12 @@ static void cmd_parse(struct jtag *jtag) {
 
   case 0x8a:
     usb_debugf("Disable div by 5 (60MHz master clock)");
+    jtag->master_clock = 60;
     break;
         
   case 0x8b:
     usb_debugf("Enable div by 5 (12MHz master clock)");
+    jtag->master_clock = 12;
     break;
 
     // gowin programmer uses this ...

@@ -56,6 +56,7 @@
 #elif MISTLE_BOARD == 6
 #warning "Building for GW3A/GW5A DEV 25K"
 #include "../jtag.h"
+#include "pio_jtag.h"
 #else
 #error "Not a supported MiSTle board!"
 #endif
@@ -77,7 +78,6 @@
 #define PIN_JTAG_TMS  13   // pin 16, gpio 13
 #define PIN_JTAG_TDO  14   // pin 17, gpio 14
 #define PIN_JTAG_TCK  15   // pin 18, gpio 15
-
 #endif
 
 #if MISTLE_BOARD == 2
@@ -1177,8 +1177,30 @@ uint32_t getFreeHeap(void) {
 
 static bool jtag_is_active = false;
 
+// Enabling any of the following debug mechanisms will disable the use
+// of PIO driven HW JTAG on the rp2350 and use software driven JTAG instead.
 // #define DEBUG_JTAG    // debug raw JTAG IO
 // #define DEBUG_TAP     // set to follow the JTAG state machine
+
+// Enable PIO JTAG whenever running on a RP2350
+// TODO: This should be disabled when TAP debugging is wanted
+#ifdef PICO_RP2350
+#if defined(DEBUG_JTAG) || defined(DEBUG_TAP)
+#warning "Disabling JTAG PIO since JTAG debugging is enabled"
+#else
+#define USE_PIO_JTAG
+#endif
+#endif
+
+#ifdef USE_PIO_JTAG
+static pio_jtag_inst_t pio_jtag;
+static uint32_t pio_jtag_clock_value = 6000000;
+#else
+// Using the gpio functions directly without any further delay results
+// in a max clock rate of about 6Mhz.
+#define MCU_HW_JTAG_CLK_HI()   gpio_put(PIN_JTAG_TCK, 1);
+#define MCU_HW_JTAG_CLK_LOW()  gpio_put(PIN_JTAG_TCK, 0);
+#endif
 
 #ifdef DEBUG_TAP
 #define JTAG_STATE_TEST_LOGIC_RESET  0
@@ -1353,12 +1375,28 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   // check if the pin direction pattern matches JTAG
   if((dir & 0x0f) == 0x0b) {
     jtag_is_active = true;
-    
+
 #ifdef DEBUG_JTAG
     jtag_debugf("DIR pattern matches JTAG");
 #endif
     // JTAG may actually be disabled on the FPGA. Try to detect the
     // FPGA and if none is detected, try to reconfigure it
+#ifdef USE_PIO_JTAG
+    if(!pio_jtag.pio) {
+      jtag_debugf("Enabling PIO JTAG on PIO2");
+    
+      // setup PIO JTAG for PIO2
+      pio_jtag.pio = pio2;
+      pio_jtag.pin_tck = PIN_JTAG_TCK;
+      pio_jtag.pin_tdi = PIN_JTAG_TDI;
+      pio_jtag.pin_tdo = PIN_JTAG_TDO;
+      pio_jtag.pin_tms = PIN_JTAG_TMS;
+      pio_jtag.write_pending = false;
+      
+      // Use 6MHz JTAG clock by default
+      pio_jtag_init(&pio_jtag, pio_jtag_clock_value/1000);
+    }
+#endif
 
     // send a bunch of 1's to return into Test-Logic-Reset state.
     mcu_hw_jtag_tms(1, 0b11111, 5);
@@ -1375,7 +1413,7 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
   
     jtag_debugf("IDCODE = %08lx", idcode);
 
-    // anything bit all 1's or all 0's indicates that JTAG seems to
+    // anything but all 1's or all 0's indicates that JTAG seems to
     // be working
     if((idcode == 0xffffffff) || (idcode == 0x00000000)) {
       jtag_highlight_debugf("JTAG doesn't seem to work. Forcing non-flash reconfig");
@@ -1387,6 +1425,11 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
 
 // send up to 8 TMS bits with a given fixed TDI state
 uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
+#ifdef USE_PIO_JTAG
+  uint8_t rx = 0;
+  pio_jtag_write_tms(&pio_jtag, true, tdi, &data, &rx, len);
+  return rx;
+#else
   int dlen = len & 7;
   uint8_t mask = 1;
   uint8_t rx = 0;
@@ -1395,7 +1438,7 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
 
   while(len--) {
     gpio_put(PIN_JTAG_TMS, (data & mask)?1:0);  
-    gpio_put(PIN_JTAG_TCK, 1);
+    MCU_HW_JTAG_CLK_HI();
 
 #ifdef DEBUG_TAP
     jtag_tap_advance_state((data & mask)?1:0, tdi);
@@ -1411,7 +1454,7 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
     
     if(gpio_get(PIN_JTAG_TDO)) rx |= mask;
     
-    gpio_put(PIN_JTAG_TCK, 0);
+    MCU_HW_JTAG_CLK_LOW();
 
     mask <<= 1;
   }
@@ -1419,9 +1462,14 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
   // adjust for the fact that we aren't really shifting
   if(dlen) rx <<= 8-dlen;
   return rx;
+#endif
 }
 
 void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
+#ifdef USE_PIO_JTAG
+  // jtag_debugf("mcu_hw_jtag_data(%p,%p,%d)", txd, rxd, len);  
+  pio_jtag_write_tdi_read_tdo(&pio_jtag, true, txd, rxd, len);
+#else
   uint8_t mask = 1;
   int dlen = len & 7;
 
@@ -1445,14 +1493,14 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
     len >>= 3;
     while(len--) {
       // set data bit and clock tck at once
-      gpio_put(PIN_JTAG_TDI, *txd & 0x01); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
-      gpio_put(PIN_JTAG_TDI, *txd & 0x02); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
-      gpio_put(PIN_JTAG_TDI, *txd & 0x04); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
-      gpio_put(PIN_JTAG_TDI, *txd & 0x08); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
-      gpio_put(PIN_JTAG_TDI, *txd & 0x10); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
-      gpio_put(PIN_JTAG_TDI, *txd & 0x20); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
-      gpio_put(PIN_JTAG_TDI, *txd & 0x40); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
-      gpio_put(PIN_JTAG_TDI, *txd & 0x80); gpio_put(PIN_JTAG_TCK, 1); gpio_put(PIN_JTAG_TCK, 0);
+      gpio_put(PIN_JTAG_TDI, *txd & 0x01); MCU_HW_JTAG_CLK_HI(); MCU_HW_JTAG_CLK_LOW();
+      gpio_put(PIN_JTAG_TDI, *txd & 0x02); MCU_HW_JTAG_CLK_HI(); MCU_HW_JTAG_CLK_LOW();
+      gpio_put(PIN_JTAG_TDI, *txd & 0x04); MCU_HW_JTAG_CLK_HI(); MCU_HW_JTAG_CLK_LOW();
+      gpio_put(PIN_JTAG_TDI, *txd & 0x08); MCU_HW_JTAG_CLK_HI(); MCU_HW_JTAG_CLK_LOW();
+      gpio_put(PIN_JTAG_TDI, *txd & 0x10); MCU_HW_JTAG_CLK_HI(); MCU_HW_JTAG_CLK_LOW();
+      gpio_put(PIN_JTAG_TDI, *txd & 0x20); MCU_HW_JTAG_CLK_HI(); MCU_HW_JTAG_CLK_LOW();
+      gpio_put(PIN_JTAG_TDI, *txd & 0x40); MCU_HW_JTAG_CLK_HI(); MCU_HW_JTAG_CLK_LOW();
+      gpio_put(PIN_JTAG_TDI, *txd & 0x80); MCU_HW_JTAG_CLK_HI(); MCU_HW_JTAG_CLK_LOW();
       txd++;
     }
   } else {  
@@ -1462,7 +1510,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
       
       // set data bit and clock tck at once
       gpio_put(PIN_JTAG_TDI, tx_bit);  
-      gpio_put(PIN_JTAG_TCK, 1);
+      MCU_HW_JTAG_CLK_HI();
       
 #ifdef DEBUG_TAP
       jtag_tap_advance_state(0, tx_bit);
@@ -1478,7 +1526,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
 	else                       *rxd &= ~mask;
       }
       
-      gpio_put(PIN_JTAG_TCK, 0);
+      MCU_HW_JTAG_CLK_LOW();
       
       // advance bit mask
       mask <<= 1;
@@ -1490,7 +1538,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
       len--;
     }    
   }
-    
+
   // We aren't really shifting, but instead setting bits
   // via mask. This makes a difference for the last byte
   // when not reading all 8 bits
@@ -1498,13 +1546,31 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
     // jtag_highlight_debugf("last byte %02x, rshift = %d", *rxd, dlen);
     *rxd <<= 8-dlen;
   }
+#endif
 }
 
 void mcu_hw_jtag_toggleClk(uint32_t clk_len) {
+#ifdef USE_PIO_JTAG
+  // this is being used if the MCU is locally generating JTAG signales e.g. when
+  // uploading a core from sd card
+  pio_jtag_write_tdi(&pio_jtag, true, NULL, clk_len);
+#else
   while(clk_len--) {
-    gpio_put(PIN_JTAG_TCK, 1);
-    gpio_put(PIN_JTAG_TCK, 0);
+    MCU_HW_JTAG_CLK_HI();
+    MCU_HW_JTAG_CLK_LOW();
   }
+#endif
+}
+
+void mcu_hw_jtag_set_clock(uint32_t clk) {
+  // Only PIO mode actually allows to adjust the clock. GPIO mode
+  // will always run at ~6MHz
+#ifdef USE_PIO_JTAG
+  jtag_debugf("mcu_hw_jtag_set_clock(%lu)", clk);
+  pio_jtag_clock_value = clk;
+  
+  pio_jtag_set_clk_freq(&pio_jtag, clk/1000);
+#endif  
 }
 
 static void mcu_hw_jtag_init(void) {
@@ -1537,7 +1603,7 @@ void mcu_hw_fpga_reconfig(bool run) {
     gpio_put(PIN_MODE0, 1); gpio_set_dir(PIN_MODE0, GPIO_OUT);
     gpio_put(PIN_MODE1, 0); gpio_set_dir(PIN_MODE1, GPIO_OUT);
   }
-    
+
   // trigger FPGA reconfiguration
   gpio_put(PIN_nCFG, 0);  vTaskDelay(pdMS_TO_TICKS(1));
   gpio_put(PIN_nCFG, 1);  vTaskDelay(pdMS_TO_TICKS(100));

@@ -87,6 +87,7 @@
 // #define configKERNEL_PROVIDED_STATIC_MEMORY     1
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configSUPPORT_DYNAMIC_ALLOCATION        1
+// TODO: use more ram on rp2350
 #ifdef ENABLE_BLUETOOTH
 // reserve a little more ram outside freertos for bluetooth
 #define configTOTAL_HEAP_SIZE                   (112*1024)
