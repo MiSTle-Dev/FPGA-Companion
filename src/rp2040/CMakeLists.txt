@@ -85,10 +85,11 @@ add_executable(${PROJECT}
 	../fatfs/source/ffunicode.c
 	../u8g2/sys/bitmap/common/u8x8_d_bitmap.c
 	../tusb_xinput/xinput_host.c
+	../tusb_asix/asix_host.c
 	../config.c
 	../freertos_callbacks.c
 	../xml.c
-   ../ps2helper.c
+   	../ps2helper.c
 )
 
 family_add_pico_pio_usb(${PROJECT})
@@ -97,7 +98,8 @@ target_compile_definitions(${PROJECT} PRIVATE
         PICO_FLASH_ASSUME_CORE1_SAFE=1
         PIO_USB_DP_PIN_DEFAULT=2
         PICO_DEFAULT_PIO_USB_DP_PIN=2
-        )
+	# CFG_TUSB_DEBUG=2
+)
 
 if(${BOARD} STREQUAL PICO)
    add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=0 ENABLE_WIFI ENABLE_BLUETOOTH)
@@ -145,6 +147,7 @@ target_include_directories(${PROJECT} PRIVATE
       ${CMAKE_CURRENT_LIST_DIR}/../fatfs/source
       ${CMAKE_CURRENT_LIST_DIR}/../u8g2/csrc
       ${CMAKE_CURRENT_LIST_DIR}/../tusb_xinput
+      ${CMAKE_CURRENT_LIST_DIR}/../tusb_asix
 )
 
 string(APPEND CMAKE_C_FLAGS " -Os -fdata-sections -ffunction-sections -Wno-error=incompatible-pointer-types" )

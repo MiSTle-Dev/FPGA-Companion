@@ -137,6 +137,8 @@
 #define CFG_TUH_VENDOR              0
 #define CFG_TUH_XINPUT              MAX_XBOX_DEVICES
 
+#define CFG_TUH_ASIX                1   // support one ASIX network interface
+
 // max device support (excluding hub device)
 #define CFG_TUH_DEVICE_MAX          (CFG_TUH_HUB ? 4 : 1) // hub typically has 4 ports
 

@@ -586,15 +586,177 @@ unsigned char mcu_hw_spi_tx_u08(unsigned char b) {
 }
 
 /* ======================================================================= */
-/* ======                   XBOX controllers                     ========= */
+/* ======                   custom usb host drivers              ========= */
 /* ======================================================================= */
 
 #include "xinput_host.h"
+#include "asix_host.h"
 
 usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count){
-  *driver_count = 1;
-  return &usbh_xinput_driver;
+  static usbh_class_driver_t drivers[2];
+
+  *driver_count = 2;
+  memcpy(drivers+0, &usbh_xinput_driver, sizeof(usbh_class_driver_t));
+  memcpy(drivers+1, &usbh_asix_driver, sizeof(usbh_class_driver_t));
+
+  return drivers;
 }
+
+// the network connection state
+#define NETWORK_STATUS_UNINITIALIZED        (0)
+#define NETWORK_STATUS_TCPIP_INIT         (1<<0) // lwip has been initialized
+#define NETWORK_STATUS_WIFI               (1<<1) // current setup is wifi based
+#define NETWORK_STATUS_UP                 (1<<2) // wifi connected or ethernet up
+#define NETWORK_STATUS_TCP_CONNECTED      (1<<3) // the at wifi tcp connection is established
+
+static uint8_t network_status = NETWORK_STATUS_UNINITIALIZED;
+
+/* ======================================================================= */
+/* ======                   ASIX ethernet                        ========= */
+/* ======================================================================= */
+
+// LWIP network interface
+#include "lwip/etharp.h"
+#include "lwip/netif.h"
+#include "lwip/dhcp.h"
+
+static err_t netif_asix_output(struct netif *netif, struct pbuf *p) {
+  if(network_status == NETWORK_STATUS_UNINITIALIZED) return ERR_OK;
+  
+  tuh_asix_transmit(netif, p->payload, p->tot_len);
+  return ERR_OK;
+}
+
+static err_t netif_asix_low_init(struct netif *netif) {
+  netif->linkoutput = netif_asix_output;
+  netif->output     = etharp_output;
+  netif->mtu        = 1500; 
+  netif->flags      = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET | NETIF_FLAG_IGMP | NETIF_FLAG_MLD6;
+
+  return ERR_OK;
+}
+
+static void netif_asix_link_callback(struct netif *netif) {
+  usb_debugf("ASIX: netif link status changed %s", netif_is_link_up(netif) ? "up" : "down");
+  if(netif_is_link_up(netif)) network_status |=  NETWORK_STATUS_UP;
+  else                        network_status &= ~NETWORK_STATUS_UP;
+}
+
+static void netif_asix_status_callback(struct netif *netif) {
+  usb_debugf("ASIX: netif status changed %s", ip4addr_ntoa(netif_ip4_addr(netif)));
+}
+
+// re-use parts of the existing PICO/WIFI integration
+#include "pico/async_context_freertos.h"
+#include "pico/lwip_freertos.h"
+#include "pico/cyw43_arch.h"
+
+static void asix_net_register(asixh_interface_t *itf) {
+  if(!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
+    usb_debugf("Ignoring USB network device since TCP stack is not initialized");
+    return;
+  }
+
+  // if wifi has been connected, then no USB networking device will be accepted
+  if((network_status & NETWORK_STATUS_UP) &&
+     (network_status & NETWORK_STATUS_WIFI)) {
+    usb_debugf("Ignoring USB network device since WIFI is connected");
+    return;
+  }
+
+  // It is actually possible to register the usb network if wifi is
+  // available but not connected. However, from this point on in this session, wifi is not
+  // being used anymore, even if the usb network device is being unplugged.  
+  network_status &= ~NETWORK_STATUS_WIFI;
+  
+  memcpy(itf->netif.hwaddr, itf->mac, ETH_HWADDR_LEN);
+  itf->netif.hwaddr_len = ETH_HWADDR_LEN;
+    
+  // initialize the ASIX Ethernet network interface
+  netif_add(&itf->netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY, NULL,
+	    netif_asix_low_init, netif_input);
+  
+  itf->netif.name[0] = 'e';
+  itf->netif.name[1] = '0';
+
+  // assign callbacks for link and status
+  netif_set_link_callback(&itf->netif, netif_asix_link_callback);
+  netif_set_status_callback(&itf->netif, netif_asix_status_callback);
+  
+  // set the default interface and bring it up
+  netif_set_default(&itf->netif);
+  netif_set_up(&itf->netif);
+
+  // Start DHCP client
+  dhcp_start(&itf->netif);
+}
+
+void tuh_asix_mount_cb(asixh_interface_t *itf) {
+  usb_debugf("%s(%d)", __FUNCTION__, itf->dev_addr);
+  
+  uint8_t xfer_result = tuh_descriptor_get_device_sync(itf->dev_addr, &desc.device, 18);
+  if (XFER_RESULT_SUCCESS != xfer_result) {
+    usb_debugf("Failed to get device descriptor");
+    return;
+  }
+  
+  usb_debugf("ID[%04x:%04x] ASIX Device", desc.device.idVendor, desc.device.idProduct);
+  usb_debugf("Device Descriptor:");
+  usb_debugf("  bLength             %u", desc.device.bLength);
+  usb_debugf("  bDescriptorType     %u", desc.device.bDescriptorType);
+  usb_debugf("  bcdUSB              %04x", desc.device.bcdUSB);
+  usb_debugf("  bDeviceClass        %u", desc.device.bDeviceClass);
+  usb_debugf("  bDeviceSubClass     %u", desc.device.bDeviceSubClass);
+  usb_debugf("  bDeviceProtocol     %u", desc.device.bDeviceProtocol);
+  usb_debugf("  bMaxPacketSize0     %u", desc.device.bMaxPacketSize0);
+  usb_debugf("  idVendor            0x%04x", desc.device.idVendor);
+  usb_debugf("  idProduct           0x%04x", desc.device.idProduct);
+  usb_debugf("  bcdDevice           %04x", desc.device.bcdDevice);
+
+  asix_net_register(itf);
+}
+
+// Invoked when device with asix device is un-mounted
+void tuh_asix_umount_cb(asixh_interface_t *itf) {
+  usb_debugf("[%u] ASIX Device is unmounted", itf->dev_addr);
+
+  // ignore unmount if tcpip stack isn't even initialzed or
+  // if wifi setup is active
+  if(!(network_status & NETWORK_STATUS_TCPIP_INIT) ||
+     (network_status & NETWORK_STATUS_WIFI)) {
+
+    if(network_status & NETWORK_STATUS_WIFI)
+      usb_debugf("Ignoring USB network device since WIFI interface has been detected");
+    
+    if(!(network_status & NETWORK_STATUS_TCPIP_INIT))
+      usb_debugf("Ignoring USB network device since TCP stack is not initialized");
+
+    return;
+  }
+  
+  netif_set_down(&itf->netif);
+
+  // unregister netif from stack
+  netif_remove(&itf->netif);
+}
+
+static void asix_net_task(__attribute__((unused)) void *parms) {
+  // setup async context exactly like the cyw43 does it
+  async_context_t *context = cyw43_arch_async_context();
+  if (!context) {
+    context = cyw43_arch_init_default_async_context();
+    cyw43_arch_set_async_context(context);
+  }
+
+  lwip_freertos_init(context);
+  network_status |= NETWORK_STATUS_TCPIP_INIT;
+
+  vTaskDelete(NULL);
+}  
+  
+  /* ======================================================================= */
+/* ======                   XBOX controllers                     ========= */
+/* ======================================================================= */
 
 void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_interface_t const* xid_itf, __attribute__((unused)) uint16_t len) {
   const xinput_gamepad_t *p = &xid_itf->pad;
@@ -730,11 +892,12 @@ void mcu_hw_reset(void) {
 /* ========================================================================= */
 
 #ifndef ENABLE_WIFI
-void mcu_hw_wifi_scan(void) { }
-void mcu_hw_wifi_connect(__attribute__((unused)) char *ssid, __attribute__((unused)) char *key) { }
-void mcu_hw_tcp_connect(__attribute__((unused)) char *host, __attribute__((unused)) int port) { }
-void mcu_hw_tcp_disconnect(void) { }
-bool mcu_hw_tcp_data(__attribute__((unused)) unsigned char byte) { return false; }
+void mcu_hw_wifi_scan(void) {
+  at_wifi_puts("WiFi not available\r\n");
+}
+void mcu_hw_wifi_connect(__attribute__((unused)) char *ssid, __attribute__((unused)) char *key) {
+  at_wifi_puts("WiFi not available\r\n");
+}
 #else  
 static bool is_pico_w = false;
 #include "pico/cyw43_arch.h"
@@ -756,14 +919,6 @@ static void led_timer_w(__attribute__((unused)) TimerHandle_t pxTimer) {
   state = !state;
 }
 
-// the wifi connection state
-#define WIFI_STATE_UNKNOWN      0
-#define WIFI_STATE_DISCONNECTED 1
-#define WIFI_STATE_CONNECTING   2
-#define WIFI_STATE_CONNECTED    3
-
-static int wifi_state = WIFI_STATE_UNKNOWN;
-
 static void mcu_hw_wifi_init(void) {
 #ifdef PICO_RP2350
   debugf("Detected Pico2-W");
@@ -777,7 +932,7 @@ static void mcu_hw_wifi_init(void) {
   }
   
   debugf("WiFi initialised");
-  wifi_state = WIFI_STATE_DISCONNECTED;
+  network_status |= (NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI);
   
   cyw43_arch_enable_sta_mode();
   debugf("STA mode enabled");
@@ -856,7 +1011,27 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func cb) {
   return 0;
 }
 
+static bool wifi_available(void) {
+  // refuse to scan wifi stack has not been initialized or it's
+  // not a wifi setup (but usb ethernet)
+  if(!(network_status & NETWORK_STATUS_TCPIP_INIT) ||
+     !(network_status & NETWORK_STATUS_WIFI)) {
+
+    if(!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
+      debugf("Ignoring WiFi command since TCP stack is not initialized");
+      at_wifi_puts("TCPIP not available\r\n");
+    } else if(!(network_status & NETWORK_STATUS_WIFI)) {
+      debugf("Ignoring WiFi command since network hardware is not wifi");
+      at_wifi_puts("WiFi not available\r\n");
+    }    
+    return false;
+  }  
+  return true;
+}
+
 void mcu_hw_wifi_scan(void) {
+  if(!wifi_available()) return;
+  
   debugf("WiFi: Performing scan");
 
   cyw43_wifi_scan_options_t scan_options = {0};
@@ -874,6 +1049,7 @@ void mcu_hw_wifi_scan(void) {
 }
 
 void mcu_hw_wifi_connect(char *ssid, char *key) {
+  if(!wifi_available()) return;
 
   debugf("WiFI: connect to %s/%s", ssid, key);
   
@@ -882,12 +1058,32 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
     at_wifi_puts("\r\nConnection failed!\r\n");
   } else {
     at_wifi_puts("\r\nConnected\r\n");
+    network_status |= NETWORK_STATUS_UP;
   }  
 }
+#endif
 
 #include "lwip/dns.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
+
+static bool network_available(void) {
+  // refuse to scan wifi stack has not been initialized or it's
+  // not a wifi setup (but usb ethernet)
+  if(!(network_status & NETWORK_STATUS_TCPIP_INIT) ||
+     !(network_status & NETWORK_STATUS_UP)) {
+
+    if(!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
+      debugf("Ignoring command since TCP stack is not initialized");
+      at_wifi_puts("TCPIP not available\r\n");
+    } else if(!(network_status & NETWORK_STATUS_UP)) {
+      debugf("Ignoring command since network is down or disconnected");
+      at_wifi_puts("Network not available\r\n");
+    }    
+    return false;
+  }  
+  return true;
+}
 
 static struct tcp_pcb *tcp_pcb = NULL;
 
@@ -899,19 +1095,36 @@ static err_t mcu_tcp_connected( __attribute__((unused)) void *arg, __attribute__
   
   debugf("Connected");
   at_wifi_puts("Connected\r\n");
-  wifi_state = WIFI_STATE_CONNECTED;  // connected
+  network_status |= NETWORK_STATUS_TCP_CONNECTED;
   return ERR_OK;
+}
+
+// when using irq driven wifi, the tcp socket interface needs to be protected
+// by a semaphore
+static inline void lwip_check(void) {
+  if(network_status & NETWORK_STATUS_WIFI)
+    cyw43_arch_lwip_check();
+}
+
+static inline void lwip_begin(void) {
+  if(network_status & NETWORK_STATUS_WIFI)
+    cyw43_arch_lwip_begin();
+}
+
+static inline void lwip_end(void) {
+  if(network_status & NETWORK_STATUS_WIFI)
+    cyw43_arch_lwip_end();
 }
 
 static void mcu_tcp_err(__attribute__((unused)) void *arg, err_t err) {
   if( err == ERR_RST) {
     debugf("tcp connection reset");
     at_wifi_puts("\r\nNO CARRIER\r\n");
-    wifi_state = WIFI_STATE_DISCONNECTED;      
+    network_status &= ~NETWORK_STATUS_TCP_CONNECTED;
   } else if (err == ERR_ABRT) {
     debugf("err abort");
     at_wifi_puts("Connection failed\r\n");
-    wifi_state = WIFI_STATE_DISCONNECTED;    
+    network_status &= ~NETWORK_STATUS_TCP_CONNECTED;
   } else {
     debugf("tcp_err %d", err);
   }
@@ -921,14 +1134,14 @@ err_t mcu_tcp_recv(__attribute__((unused)) void *arg, struct tcp_pcb *tpcb, stru
   if (!p) {
     debugf("No data, disconnected?");
     at_wifi_puts("\r\nNO CARRIER\r\n");
-    wifi_state = WIFI_STATE_DISCONNECTED;    
+    network_status &= ~NETWORK_STATUS_TCP_CONNECTED;
     return ERR_OK;
   }
 
   // this method is callback from lwIP, so cyw43_arch_lwip_begin is not required, however you
   // can use this method to cause an assertion in debug mode, if this method is called when
   // cyw43_arch_lwip_begin IS needed
-  cyw43_arch_lwip_check();
+  lwip_check();
   if (p->tot_len > 0) {
     // debugf("recv %d err %d", p->tot_len, err);
 
@@ -943,6 +1156,8 @@ err_t mcu_tcp_recv(__attribute__((unused)) void *arg, struct tcp_pcb *tpcb, stru
 }
 
 static void mcu_tcp_connect(const ip_addr_t *ipaddr, int port) {
+  if(!network_available()) return;
+
   debugf("Connecting to IP %s %d", ipaddr_ntoa(ipaddr), port);
   
   // the address was resolved and we can connect
@@ -956,19 +1171,22 @@ static void mcu_tcp_connect(const ip_addr_t *ipaddr, int port) {
   tcp_recv(tcp_pcb, mcu_tcp_recv);
   tcp_err(tcp_pcb, mcu_tcp_err);
   
-  cyw43_arch_lwip_begin();
+  lwip_begin();
   err_t err = tcp_connect(tcp_pcb, ipaddr, port, mcu_tcp_connected);
-  cyw43_arch_lwip_end();
+  lwip_end();
 
   if(err) {
     debugf("tcp_connect() failed"); 
     at_wifi_puts("Connection failed!\r\n");
-  } else
-    wifi_state = WIFI_STATE_CONNECTING;    
+  }
 }
 
 void mcu_hw_tcp_disconnect(void) {
-  if(wifi_state == WIFI_STATE_CONNECTED)
+  if(!network_available()) return;
+  
+  if(!(network_status & NETWORK_STATUS_TCP_CONNECTED))
+    at_wifi_puts("Not connected!\r\n");
+  else
     tcp_close(tcp_pcb);
 }
 
@@ -989,12 +1207,14 @@ void mcu_hw_tcp_connect(char *host, int port) {
   static int lport;
   static ip_addr_t address;
 
+  if(!network_available()) return;
+
   lport = port;
   debugf("connecting to %s %d", host, lport);
   
-  cyw43_arch_lwip_begin();
+  lwip_begin();
   int err = dns_gethostbyname(host, &address, dns_found, &lport);
-  cyw43_arch_lwip_end();
+  lwip_end();
 
   if(err != ERR_OK && err != ERR_INPROGRESS) {
     debugf("DNS error");
@@ -1010,10 +1230,10 @@ void mcu_hw_tcp_connect(char *host, int port) {
 }
 
 bool mcu_hw_tcp_data(unsigned char byte) {
-  if(wifi_state == WIFI_STATE_CONNECTED) {
-    cyw43_arch_lwip_begin();
+  if(network_status & NETWORK_STATUS_TCP_CONNECTED) {
+    lwip_begin();
     err_t err = tcp_write(tcp_pcb, &byte, 1, TCP_WRITE_FLAG_COPY);
-    cyw43_arch_lwip_end();
+    lwip_end();
     if (err != ERR_OK) debugf("Failed to write data %d", err);
 
     return true;
@@ -1021,7 +1241,6 @@ bool mcu_hw_tcp_data(unsigned char byte) {
     
   return false;  // data has not been processed (we are not connected)
 }
-#endif
 
 #ifndef WS2812_PIN
 // the LED PIN is not defined if we build for a pico-w. But we
@@ -1731,6 +1950,9 @@ void mcu_hw_init(void) {
 	xTimerCreate("LED timer", pdMS_TO_TICKS(200), pdTRUE, NULL, led_timer);
       xTimerStart(led_timer_handle, 0);
 #endif
+
+      // start a init thread
+      xTaskCreate(asix_net_task, (char *)"asix_net_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);
     }
 #ifdef ENABLE_WIFI
   else {
