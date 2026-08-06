@@ -270,6 +270,11 @@ static void postproc_bmsr(asixh_interface_t *itf) {
   { SETUP_READ,   AX_CMD_READ_MII_REG, 0,reg, offsetof(asixh_interface_t,var), 2, preproc_phy_id,cb }, \
   { SETUP_WRITE,  AX_CMD_SET_HW_MII, 0,0, 0, 0, NULL,NULL }
 
+#define WRITE_MII_REG(reg,var,cb) \
+  { SETUP_WRITE,  AX_CMD_SET_SW_MII, 0,0, 0, 0, NULL,NULL },  \
+  { SETUP_WRITE,  AX_CMD_WRITE_MII_REG, 0,reg, offsetof(asixh_interface_t,var), 2, cb,NULL }, \
+  { SETUP_WRITE,  AX_CMD_SET_HW_MII, 0,0, 0, 0, NULL,NULL }
+
 // structure describing the setup process
 static const struct {
   uint8_t type;
@@ -304,19 +309,13 @@ static const struct {
   READ_MII_REG(MII_ADVERTISE, advertise, postproc_advertise),
 
   // reset the phy
-  { SETUP_WRITE,  AX_CMD_SET_SW_MII, 0,0, 0, 0, NULL,NULL },
-  { SETUP_WRITE,  AX_CMD_WRITE_MII_REG, 0,MII_BMCR, offsetof(asixh_interface_t, bmcr), 2, preproc_bmcr_reset,NULL },
-  { SETUP_WRITE,  AX_CMD_SET_HW_MII, 0,0, 0, 0, NULL,NULL },
+  WRITE_MII_REG(MII_BMCR, bmcr, preproc_bmcr_reset),
 
   // set advertise register
-  { SETUP_WRITE,  AX_CMD_SET_SW_MII, 0,0, 0, 0, NULL,NULL },
-  { SETUP_WRITE,  AX_CMD_WRITE_MII_REG, 0,MII_ADVERTISE, offsetof(asixh_interface_t, advertise), 2, preproc_advertise,NULL },
-  { SETUP_WRITE,  AX_CMD_SET_HW_MII, 0,0, 0, 0, NULL,NULL },
+  WRITE_MII_REG(MII_ADVERTISE, advertise, preproc_advertise),
 
   // (re-)enable auto negotiation
-  { SETUP_WRITE,  AX_CMD_SET_SW_MII, 0,0, 0, 0, NULL,NULL },
-  { SETUP_WRITE,  AX_CMD_WRITE_MII_REG, 0,MII_BMCR, offsetof(asixh_interface_t, bmcr), 2, preproc_bmcr_autonegotiate,NULL },
-  { SETUP_WRITE,  AX_CMD_SET_HW_MII, 0,0, 0, 0, NULL,NULL },
+  WRITE_MII_REG(MII_BMCR, bmcr, preproc_bmcr_autonegotiate),
   
   { SETUP_WRITE,  AX_CMD_WRITE_MEDIUM_MODE, AX88772_MEDIUM_DEFAULT,0, 0, 0, NULL,NULL },
 
