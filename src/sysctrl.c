@@ -541,3 +541,17 @@ void sys_jtagsel(char on) {
   mcu_hw_spi_tx_u08(on?1:0);
   mcu_hw_spi_end();
 }
+
+void sys_set_time(uint8_t flags, uint8_t year, uint8_t month, uint8_t day,
+		  uint8_t hour, uint8_t minute, uint8_t second) {
+  sys_begin(SPI_SYS_TIME);
+  mcu_hw_spi_tx_u08(SPI_SYS_TIME_SET);
+  mcu_hw_spi_tx_u08(flags);    // bit 1: dst, bit 0: ntp
+  mcu_hw_spi_tx_u08(year);     // since 1900
+  mcu_hw_spi_tx_u08(month);    // 0..11
+  mcu_hw_spi_tx_u08(day);      // 1..31
+  mcu_hw_spi_tx_u08(hour);     // 0..23
+  mcu_hw_spi_tx_u08(minute);   // 0..59
+  mcu_hw_spi_tx_u08(second);   // 0..59
+  mcu_hw_spi_end();
+}

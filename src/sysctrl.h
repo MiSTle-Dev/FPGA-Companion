@@ -37,4 +37,9 @@ const char *sys_get_config_name(void);
 void sys_port_write(unsigned char, const unsigned char*, int);
 bool sys_port_get_status(unsigned char);
 
+#define SYS_TIME_FLAGS_NTP   (1<<0)
+#define SYS_TIME_FLAGS_DST   (1<<1)
+void sys_set_time(uint8_t flags, uint8_t year, uint8_t month, uint8_t day,
+		  uint8_t hour, uint8_t minute, uint8_t second); 
+
 #endif // SYS_CTRL_H

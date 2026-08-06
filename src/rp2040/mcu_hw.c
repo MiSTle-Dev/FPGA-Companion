@@ -607,7 +607,9 @@ usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count){
 #define NETWORK_STATUS_TCPIP_INIT         (1<<0) // lwip has been initialized
 #define NETWORK_STATUS_WIFI               (1<<1) // current setup is wifi based
 #define NETWORK_STATUS_UP                 (1<<2) // wifi connected or ethernet up
-#define NETWORK_STATUS_TCP_CONNECTED      (1<<3) // the at wifi tcp connection is established
+#define NETWORK_STATUS_HAS_ADDR           (1<<3) // IP address is valid
+#define NETWORK_STATUS_SNTP_STARTED       (1<<4) // sntp app is running
+#define NETWORK_STATUS_TCP_CONNECTED      (1<<5) // the at wifi tcp connection is established
 
 static uint8_t network_status = NETWORK_STATUS_UNINITIALIZED;
 
@@ -619,6 +621,7 @@ static uint8_t network_status = NETWORK_STATUS_UNINITIALIZED;
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
 #include "lwip/dhcp.h"
+#include "lwip/apps/sntp.h"
 
 static err_t netif_asix_output(struct netif *netif, struct pbuf *p) {
   if(network_status == NETWORK_STATUS_UNINITIALIZED) return ERR_OK;
@@ -642,14 +645,60 @@ static void netif_asix_link_callback(struct netif *netif) {
   else                        network_status &= ~NETWORK_STATUS_UP;
 }
 
-static void netif_asix_status_callback(struct netif *netif) {
-  usb_debugf("ASIX: netif status changed %s", ip4addr_ntoa(netif_ip4_addr(netif)));
-}
+// this is actually called by axis _and_ the wifi
+static void netif_status_callback(struct netif *netif) {
+  usb_debugf("netif status changed %s", ip4addr_ntoa(netif_ip4_addr(netif)));
 
+  // check if we got a valid IP (not ANY, which is 0.0.0.0)
+  if(!ip4_addr_isany_val(*netif_ip4_addr(netif))) {
+    if(!(network_status & NETWORK_STATUS_HAS_ADDR)) {
+      // just got an ip address, start services
+      usb_debugf("just got an ip address");
+
+      // start ntp client
+      if(!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
+	network_status |= NETWORK_STATUS_SNTP_STARTED;
+	sntp_init();
+      } else
+	usb_debugf("sntp already started");
+    }
+    
+    network_status |=  NETWORK_STATUS_HAS_ADDR;
+  } else
+    network_status &= ~NETWORK_STATUS_HAS_ADDR;
+}
+  
 // re-use parts of the existing PICO/WIFI integration
 #include "pico/async_context_freertos.h"
 #include "pico/lwip_freertos.h"
 #include "pico/cyw43_arch.h"
+
+/* Number of seconds between 1970 and Feb 7, 2036 06:28:16 UTC (epoch 1) */
+#define DIFF_SEC_1970_2036          ((u32_t)2085978496L)
+
+void sntp_set_system_time(u32_t sec) {
+  debugf("%s(%lu)", __FUNCTION__, sec);
+
+  time_t ut = sec;
+  struct tm* timeinfo = gmtime(&ut);
+
+  // TODO: handle time zone
+  // (needs to be read from config or the like)
+  
+  // time is UTC ...
+  debugf(" YEAR:   %u", 1900 + timeinfo->tm_year);
+  debugf(" MONTH:  %u", 1 + timeinfo->tm_mon);
+  debugf(" DAY:    %u", timeinfo->tm_mday);
+  debugf(" HOUR:   %u", timeinfo->tm_hour);
+  debugf(" MINUTE: %u", timeinfo->tm_min);
+  debugf(" SECOND: %u", timeinfo->tm_sec);
+  debugf(" DST:    %s", timeinfo->tm_isdst?"true":"false");
+
+  // send time into core
+  sys_set_time(SYS_TIME_FLAGS_NTP | ( timeinfo->tm_isdst?SYS_TIME_FLAGS_DST:0),
+	       timeinfo->tm_year, timeinfo->tm_mon, timeinfo->tm_mday,
+	       timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+}
 
 static void asix_net_register(asixh_interface_t *itf) {
   if(!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
@@ -681,13 +730,14 @@ static void asix_net_register(asixh_interface_t *itf) {
 
   // assign callbacks for link and status
   netif_set_link_callback(&itf->netif, netif_asix_link_callback);
-  netif_set_status_callback(&itf->netif, netif_asix_status_callback);
+  netif_set_status_callback(&itf->netif, netif_status_callback);
   
   // set the default interface and bring it up
   netif_set_default(&itf->netif);
   netif_set_up(&itf->netif);
 
   // Start DHCP client
+  sntp_servermode_dhcp(1);
   dhcp_start(&itf->netif);
 }
 
@@ -926,6 +976,8 @@ static void mcu_hw_wifi_init(void) {
   debugf("Detected Pico-W");
 #endif
 
+  sntp_servermode_dhcp(1);
+
   if(cyw43_arch_init_with_country(CYW43_COUNTRY_GERMANY)) {
     debugf("WiFi failed to initialise");
     return;
@@ -944,6 +996,8 @@ static void mcu_hw_wifi_init(void) {
 		 NULL, led_timer_w);
   xTimerStart(led_timer_handle, 0);
 
+  netif_set_status_callback(netif_default, netif_status_callback);
+  
 #ifdef ENABLE_BLUETOOTH
   // this will actually never return. But that is no problem
   // as this task is only needed for wifi init
@@ -1193,7 +1247,6 @@ void mcu_hw_tcp_disconnect(void) {
 // Call back with a DNS result
 static void dns_found(__attribute__((unused)) const char *hostname, const ip_addr_t *ipaddr, void *arg) {
   if (ipaddr) {
-    // state->ntp_server_address = *ipaddr;
     at_wifi_puts("Using address ");
     at_wifi_puts(ipaddr_ntoa(ipaddr));
     at_wifi_puts("\r\n");
