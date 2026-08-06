@@ -2,13 +2,8 @@
   asix_host.c
 
   TinyUSB host driver for ASIX8877x based USB ethernet adapters
-
-  TODO:
-  - test tcp with ethernet
-  - sntp
  */
 
-#include <stdio.h>
 #include "tusb_option.h"
 
 #if (TUSB_OPT_HOST_ENABLED && CFG_TUH_ASIX)
@@ -36,14 +31,14 @@ static const struct {
   { 0, 0 }
 };
 
-static asixh_interface_t _devices[CFG_TUH_ASIX];
+static asixh_interface_t _interfaces[CFG_TUH_ASIX];
 
 TU_ATTR_ALWAYS_INLINE static inline asixh_interface_t *get_interface(uint8_t dev_addr) {
   TU_VERIFY(dev_addr <= CFG_TUH_DEVICE_MAX, NULL);
 
   for(int i=0;i<CFG_TUH_ASIX;i++)
-    if(_devices[i].dev_addr == dev_addr)
-      return &_devices[i];
+    if(_interfaces[i].dev_addr == dev_addr)
+      return &_interfaces[i];
     
   return NULL;
 }
@@ -52,7 +47,7 @@ static bool asix_write_cmd(uint8_t daddr, uint8_t cmd, uint16_t value, uint16_t 
 			   uint8_t *buffer, uint16_t length,
 			   tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
 
-  // printf("%s() cmd=0x%02x value=0x%04x index=0x%04x length=%d\n", __FUNCTION__,
+  // TU_LOG2("%s() cmd=0x%02x value=0x%04x index=0x%04x length=%d\r\n", __FUNCTION__,
   //    cmd, value, index, length);
 
   tusb_control_request_t const request = {
@@ -82,7 +77,7 @@ static bool asix_write_cmd(uint8_t daddr, uint8_t cmd, uint16_t value, uint16_t 
 static bool asix_read_cmd(uint8_t daddr, uint8_t cmd, uint16_t value, uint16_t index,
 			   uint8_t * buffer, uint16_t length,
 			  tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
-  //printf("%s() cmd=0x%02x value=0x%04x index=0x%04x length=%d\n", __FUNCTION__,
+  //TU_LOG2("%s() cmd=0x%02x value=0x%04x index=0x%04x length=%d\r\n", __FUNCTION__,
   //	 cmd, value, index, length);
 
   tusb_control_request_t const request = {
@@ -113,7 +108,7 @@ static bool asix_read_cmd(uint8_t daddr, uint8_t cmd, uint16_t value, uint16_t i
 // USBH API
 //--------------------------------------------------------------------+
 bool asixh_init(void) {
-    tu_memclr(_devices, sizeof(_devices));
+    tu_memclr(_interfaces, sizeof(_interfaces));
     return true;
 }
 
@@ -138,7 +133,7 @@ uint16_t asixh_open(__attribute__((unused)) uint8_t rhport, uint8_t dev_addr,
     // bail out if end of list was reached
     TU_VERIFY(asix_devs[i].vid, 0);
 
-    printf("[%u] ASIX opening Interface %u\r\n", dev_addr, desc_itf->bInterfaceNumber);
+    TU_LOG2("[%u] ASIX opening Interface %u\r\r\n", dev_addr, desc_itf->bInterfaceNumber);
 
     // get an unused entry, bail out of there's none
     asixh_interface_t *itf = get_interface(0);
@@ -174,9 +169,9 @@ uint16_t asixh_open(__attribute__((unused)) uint8_t rhport, uint8_t dev_addr,
 #define SETUP_READ  2
 
 static void postproc_pyh_id(asixh_interface_t *itf) {
-  printf("ASIX: phy is 0x%04x\n", tu_htole16(itf->phy_id));
+  TU_LOG2("ASIX: phy is 0x%04x\r\n", tu_htole16(itf->phy_id));
   itf->embd_phy = (itf->phy_id & 0x1f00) == 0x1000 ? 1 : 0;
-  printf("      phy is %sembedded\n", itf->embd_phy?"":"not ");
+  TU_LOG2("      phy is %sembedded\r\n", itf->embd_phy?"":"not ");
 }
 
 static uint16_t preproc_phy_select(asixh_interface_t *itf) {
@@ -192,30 +187,30 @@ static uint16_t preproc_swreset(asixh_interface_t *itf) {
 }
 
 static void postproc_rx_ctl(asixh_interface_t *itf) {
-  printf("ASIX: rx ctl is 0x%04x\n", tu_htole16(itf->rx_ctl));
+  TU_LOG2("ASIX: rx ctl is 0x%04x\r\n", tu_htole16(itf->rx_ctl));
 }
 
 static void postproc_medium_status(asixh_interface_t *itf) {
-  printf("ASIX: medium status is 0x%04x\n", tu_htole16(itf->medium_status));
+  TU_LOG2("ASIX: medium status is 0x%04x\r\n", tu_htole16(itf->medium_status));
 }
 
 static void postproc_read_mac(asixh_interface_t *itf) {
-  printf("ASIX: MAC is %02x:%02x:%02x:%02x:%02x:%02x\n",
+  TU_LOG2("ASIX: MAC is %02x:%02x:%02x:%02x:%02x:%02x\r\n",
 	 itf->mac[0],itf->mac[1],itf->mac[2],itf->mac[3],itf->mac[4],itf->mac[5]);
 }
 
 static void postproc_phy_id32(asixh_interface_t *itf) {
   uint32_t oui = (itf->mii_phy_id[0] << 6) + (itf->mii_phy_id[1] >> 10);
   
-  printf("ASIX: PHY ID is 0x%04x%04x\n", itf->mii_phy_id[1], itf->mii_phy_id[0] );
-  printf("      OUI %02lx:%02lx:%02lx\n", (oui>>16)&0xff,(oui>>8)&0xff,oui&0xff);
-  printf("      Manufacturer %0d\n", (itf->mii_phy_id[1]>>4)&0x3f);
-  printf("      Revision %d\n", itf->mii_phy_id[1]&0xf);
+  TU_LOG2("ASIX: PHY ID is 0x%04x%04x\r\n", itf->mii_phy_id[1], itf->mii_phy_id[0] );
+  TU_LOG2("      OUI %02lx:%02lx:%02lx\r\n", (oui>>16)&0xff,(oui>>8)&0xff,oui&0xff);
+  TU_LOG2("      Manufacturer %0d\r\n", (itf->mii_phy_id[1]>>4)&0x3f);
+  TU_LOG2("      Revision %d\r\n", itf->mii_phy_id[1]&0xf);
 }
 
 static uint16_t preproc_bmcr_reset(asixh_interface_t *itf) {
   itf->bmcr = BMCR_RESET;
-  printf("ASIX: Setting bmcr to 0x%04x\n", itf->bmcr);
+  TU_LOG2("ASIX: Setting bmcr to 0x%04x\r\n", itf->bmcr);
   return preproc_phy_id(itf);
 }
 
@@ -223,51 +218,51 @@ static uint16_t preproc_bmcr_autonegotiate(asixh_interface_t *itf) {
   if(itf->bmcr & BMCR_ANENABLE)
     itf->bmcr |= BMCR_ANRESTART;
   
-  printf("ASIX: Setting bmcr to 0x%04x\n", itf->bmcr);
+  TU_LOG2("ASIX: Setting bmcr to 0x%04x\r\n", itf->bmcr);
   return preproc_phy_id(itf);
 }
 
 static void postproc_bmcr(asixh_interface_t *itf) {
-  printf("ASIX: Basic mode control register is 0x%04x\n", itf->bmcr);
-  if(itf->bmcr & BMCR_SPEED1000) printf("      MSB of Speed (1000)\n");
-  if(itf->bmcr & BMCR_CTST)      printf("      Collision test\n");
-  if(itf->bmcr & BMCR_FULLDPLX)  printf("      Full duplex\n");
-  if(itf->bmcr & BMCR_ANRESTART) printf("      Auto negotiation restart\n");
-  if(itf->bmcr & BMCR_ISOLATE)   printf("      Disconnect from MII\n");
-  if(itf->bmcr & BMCR_PDOWN)     printf("      Powerdown\n");
-  if(itf->bmcr & BMCR_ANENABLE)  printf("      Enable auto negotiation\n");
-  if(itf->bmcr & BMCR_SPEED100)  printf("      Select 100Mbps\n");
-  if(itf->bmcr & BMCR_LOOPBACK)  printf("      TXD loopback bits\n");
-  if(itf->bmcr & BMCR_RESET)     printf("      Reset\n");
+  TU_LOG2("ASIX: Basic mode control register is 0x%04x\r\n", itf->bmcr);
+  if(itf->bmcr & BMCR_SPEED1000) {TU_LOG2("      MSB of Speed (1000)\r\n");}
+  if(itf->bmcr & BMCR_CTST)      {TU_LOG2("      Collision test\r\n");}
+  if(itf->bmcr & BMCR_FULLDPLX)  {TU_LOG2("      Full duplex\r\n");}
+  if(itf->bmcr & BMCR_ANRESTART) {TU_LOG2("      Auto negotiation restart\r\n");}
+  if(itf->bmcr & BMCR_ISOLATE)   {TU_LOG2("      Disconnect from MII\r\n");}
+  if(itf->bmcr & BMCR_PDOWN)     {TU_LOG2("      Powerdown\r\n");}
+  if(itf->bmcr & BMCR_ANENABLE)  {TU_LOG2("      Enable auto negotiation\r\n");}
+  if(itf->bmcr & BMCR_SPEED100)  {TU_LOG2("      Select 100Mbps\r\n");}
+  if(itf->bmcr & BMCR_LOOPBACK)  {TU_LOG2("      TXD loopback bits\r\n");}
+  if(itf->bmcr & BMCR_RESET)     {TU_LOG2("      Reset\r\n");}
 }
 
 static uint16_t preproc_advertise(asixh_interface_t *itf) {
   itf->advertise = ADVERTISE_ALL | ADVERTISE_CSMA;
-  printf("ASIX: Setting advertise to 0x%04x\n", itf->advertise);
+  TU_LOG2("ASIX: Setting advertise to 0x%04x\r\n", itf->advertise);
   return preproc_phy_id(itf);
 }
 
 static void postproc_advertise(asixh_interface_t *itf) {
-  printf("ASIX: Advertise register is 0x%04x\n", itf->advertise);
+  TU_LOG2("ASIX: Advertise register is 0x%04x\r\n", itf->advertise);
 }
 
 static void postproc_bmsr(asixh_interface_t *itf) {
   // Basic mode status register.
-  printf("ASIX: Basic mode status register is 0x%04x\n", itf->bmsr);
-  if(itf->bmsr & BMSR_ERCAP)        printf("      Ext-reg capability\n");
-  if(itf->bmsr & BMSR_JCD)          printf("      Jabber detected\n");
-  if(itf->bmsr & BMSR_LSTATUS)      printf("      Link status\n");
-  if(itf->bmsr & BMSR_ANEGCAPABLE)  printf("      Able to do auto-negotiation\n");
-  if(itf->bmsr & BMSR_RFAULT)       printf("      Remote fault detected\n");
-  if(itf->bmsr & BMSR_ANEGCOMPLETE) printf("      Auto-negotiation complete\n");
-  if(itf->bmsr & BMSR_ESTATEN)      printf("      Extended Status in R15\n");
-  if(itf->bmsr & BMSR_100HALF2)     printf("      Can do 100BASE-T2 HDX\n");
-  if(itf->bmsr & BMSR_100FULL2)     printf("      Can do 100BASE-T2 FDX\n");
-  if(itf->bmsr & BMSR_10HALF)       printf("      Can do 10mbps, half-duplex\n");
-  if(itf->bmsr & BMSR_10FULL)       printf("      Can do 10mbps, full-duplex\n");
-  if(itf->bmsr & BMSR_100HALF)      printf("      Can do 100mbps, half-duplex\n");
-  if(itf->bmsr & BMSR_100FULL)      printf("      Can do 100mbps, full-duplex\n");
-  if(itf->bmsr & BMSR_100BASE4)     printf("      Can do 100mbps, 4k packets\n");
+  TU_LOG2("ASIX: Basic mode status register is 0x%04x\r\n", itf->bmsr);
+  if(itf->bmsr & BMSR_ERCAP)        {TU_LOG2("      Ext-reg capability\r\n");}
+  if(itf->bmsr & BMSR_JCD)          {TU_LOG2("      Jabber detected\r\n");}
+  if(itf->bmsr & BMSR_LSTATUS)      {TU_LOG2("      Link status\r\n");}
+  if(itf->bmsr & BMSR_ANEGCAPABLE)  {TU_LOG2("      Able to do auto-negotiation\r\n");}
+  if(itf->bmsr & BMSR_RFAULT)       {TU_LOG2("      Remote fault detected\r\n");}
+  if(itf->bmsr & BMSR_ANEGCOMPLETE) {TU_LOG2("      Auto-negotiation complete\r\n");}
+  if(itf->bmsr & BMSR_ESTATEN)      {TU_LOG2("      Extended Status in R15\r\n");}
+  if(itf->bmsr & BMSR_100HALF2)     {TU_LOG2("      Can do 100BASE-T2 HDX\r\n");}
+  if(itf->bmsr & BMSR_100FULL2)     {TU_LOG2("      Can do 100BASE-T2 FDX\r\n");}
+  if(itf->bmsr & BMSR_10HALF)       {TU_LOG2("      Can do 10mbps, half-duplex\r\n");}
+  if(itf->bmsr & BMSR_10FULL)       {TU_LOG2("      Can do 10mbps, full-duplex\r\n");}
+  if(itf->bmsr & BMSR_100HALF)      {TU_LOG2("      Can do 100mbps, half-duplex\r\n");}
+  if(itf->bmsr & BMSR_100FULL)      {TU_LOG2("      Can do 100mbps, full-duplex\r\n");}
+  if(itf->bmsr & BMSR_100BASE4)     {TU_LOG2("      Can do 100mbps, 4k packets\r\n");}
 }
 
 #define READ_MII_REG(reg,var,cb) \
@@ -395,7 +390,7 @@ bool tuh_asix_receive(uint8_t dev_addr, uint8_t ep) {
 }
 
 bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
-  // printf("%s(%d,%02x,%lu)\n", __FUNCTION__, dev_addr, ep_addr, xferred_bytes);
+  // TU_LOG2("%s(%d,%02x,%lu)\r\n", __FUNCTION__, dev_addr, ep_addr, xferred_bytes);
   
   uint8_t const dir = tu_edpt_dir(ep_addr);
   uint8_t const number = tu_edpt_number(ep_addr);
@@ -452,13 +447,13 @@ bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint
 }
 
 void tuh_asix_transmit(struct netif *netif, uint8_t *data, uint16_t len) {
-  // printf("%s(%p,%p,%u)\n", __FUNCTION__, netif, data, len);
+  // TU_LOG2("%s(%p,%p,%u)\r\n", __FUNCTION__, netif, data, len);
 
   // find asix interface matching this netif
   asixh_interface_t *itf = NULL;
   for(int i=0;i<CFG_TUH_ASIX;i++)
-    if(&_devices[i].netif == netif)
-      itf = &_devices[i];
+    if(&_interfaces[i].netif == netif)
+      itf = &_interfaces[i];
 
   TU_VERIFY(itf, );
   TU_VERIFY(usbh_edpt_claim(itf->dev_addr, itf->ep[2]), );
