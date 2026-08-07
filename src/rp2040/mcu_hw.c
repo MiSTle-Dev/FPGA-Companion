@@ -686,17 +686,18 @@ void sntp_set_system_time(u32_t sec) {
   // (needs to be read from config or the like)
   
   // time is UTC ...
-  debugf(" YEAR:   %u", 1900 + timeinfo->tm_year);
-  debugf(" MONTH:  %u", 1 + timeinfo->tm_mon);
-  debugf(" DAY:    %u", timeinfo->tm_mday);
-  debugf(" HOUR:   %u", timeinfo->tm_hour);
-  debugf(" MINUTE: %u", timeinfo->tm_min);
-  debugf(" SECOND: %u", timeinfo->tm_sec);
-  debugf(" DST:    %s", timeinfo->tm_isdst?"true":"false");
+  debugf(" YEAR:     %u", 1900 + timeinfo->tm_year);
+  debugf(" MONTH:    %u", 1 + timeinfo->tm_mon);
+  debugf(" DAY:      %u", timeinfo->tm_mday);
+  debugf(" WEEK DAY: %u", timeinfo->tm_wday);
+  debugf(" HOUR:     %u", timeinfo->tm_hour);
+  debugf(" MINUTE:   %u", timeinfo->tm_min);
+  debugf(" SECOND:   %u", timeinfo->tm_sec);
+  debugf(" DST:      %s", timeinfo->tm_isdst?"true":"false");
 
   // send time into core
   sys_set_time(SYS_TIME_FLAGS_NTP | ( timeinfo->tm_isdst?SYS_TIME_FLAGS_DST:0),
-	       timeinfo->tm_year, timeinfo->tm_mon, timeinfo->tm_mday,
+	       timeinfo->tm_year, timeinfo->tm_mon, timeinfo->tm_mday + (timeinfo->tm_wday << 5),
 	       timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
 }
 

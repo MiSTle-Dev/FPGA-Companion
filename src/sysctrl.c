@@ -549,7 +549,7 @@ void sys_set_time(uint8_t flags, uint8_t year, uint8_t month, uint8_t day,
   mcu_hw_spi_tx_u08(flags);    // bit 1: dst, bit 0: ntp
   mcu_hw_spi_tx_u08(year);     // since 1900
   mcu_hw_spi_tx_u08(month);    // 0..11
-  mcu_hw_spi_tx_u08(day);      // 1..31
+  mcu_hw_spi_tx_u08(day);      // lowest 5 bit = 1..31, top 3 bits = day in week (1..7)
   mcu_hw_spi_tx_u08(hour);     // 0..23
   mcu_hw_spi_tx_u08(minute);   // 0..59
   mcu_hw_spi_tx_u08(second);   // 0..59
