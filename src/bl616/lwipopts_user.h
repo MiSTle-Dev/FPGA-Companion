@@ -66,31 +66,75 @@
 
 #define PBUF_LINK_ENCAPSULATION_HLEN  388
 
-#define IP_REASS_MAX_PBUFS            (2 * CONFIG_MAC_RXQ_DEPTH - 2)
-
 #define MEMP_NUM_NETBUF               32
 #define MEMP_NUM_NETCONN              16
 #define MEMP_NUM_UDP_PCB              16
+
+#define MAC_TXQ_DEPTH                 32
+#define MAC_RXQ_DEPTH                 12
+
+#define IP_REASS_MAX_PBUFS            (2 * MAC_RXQ_DEPTH - 2)
 #define MEMP_NUM_REASSDATA            LWIP_MIN((IP_REASS_MAX_PBUFS), 5)
 
-#define MAC_TXQ_DEPTH                 CONFIG_MAC_TXQ_DEPTH
-#define MAC_RXQ_DEPTH                 CONFIG_MAC_RXQ_DEPTH
-
 #define TCP_MSS                       (1500 - 40)
+#if (defined(BL602))
+#define TCP_WND                       (3 * TCP_MSS)
+#else 
 #define TCP_WND                       (2 * MAC_RXQ_DEPTH * TCP_MSS)
-#define TCP_SND_BUF                   (4 * MAC_TXQ_DEPTH * TCP_MSS)
+#endif
+
+#ifndef CONFIG_WIFI_TCP_HIGH_PERF
+#define CONFIG_WIFI_TCP_HIGH_PERF     0
+#endif
+#ifndef CONFIG_WIFI_TCP_HIGH_PERF_SND_BUF_MSS
+#define CONFIG_WIFI_TCP_HIGH_PERF_SND_BUF_MSS 232
+#endif
+#ifndef CONFIG_WIFI_TCP_HIGH_PERF_HEAP_KB
+#define CONFIG_WIFI_TCP_HIGH_PERF_HEAP_KB     116
+#endif
+
+#if CONFIG_WIFI_TCP_HIGH_PERF
+#define TCP_SND_BUF                   (CONFIG_WIFI_TCP_HIGH_PERF_SND_BUF_MSS * TCP_MSS)
+#elif defined(BL602)
+#define TCP_SND_BUF                   (4 * TCP_MSS)
+#else
+#define TCP_SND_BUF                   (96 * TCP_MSS)
+#endif
+
+#if (!CONFIG_WIFI_TCP_HIGH_PERF && defined(BL602))
+#define TCP_SND_QUEUELEN              ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
+#else
+#define TCP_SND_QUEUELEN              ((2 * TCP_SND_BUF) / TCP_MSS)
+#endif
 
 #define TCP_QUEUE_OOSEQ               1
-#define MEMP_NUM_TCP_SEG              ((4 * TCP_SND_BUF) / TCP_MSS)
+#if (!CONFIG_WIFI_TCP_HIGH_PERF && defined(BL602))
+#define MEMP_NUM_TCP_SEG              TCP_SND_QUEUELEN
 #define MEMP_NUM_PBUF                 (TCP_SND_BUF / TCP_MSS)
+#else
+#define MEMP_NUM_TCP_SEG              TCP_SND_QUEUELEN
+#define MEMP_NUM_PBUF                 ((TCP_SND_BUF / TCP_MSS) + 8)
+#endif
 #define PBUF_POOL_SIZE                0
 #define LWIP_WND_SCALE                1
 #define TCP_RCV_SCALE                 2
+#if (!CONFIG_WIFI_TCP_HIGH_PERF && defined(BL602))
 #define TCP_SNDLOWAT                  LWIP_MIN(LWIP_MAX(((TCP_SND_BUF) / 4), (2 * TCP_MSS) + 1), (TCP_SND_BUF)-1)
+#else
+#define TCP_SNDLOWAT                  LWIP_MIN((16 * TCP_MSS), ((TCP_SND_BUF) / 2))
+#endif
 
 #define MEM_MIN_TCP                   (2300 + MEMP_NUM_PBUF * (100 + PBUF_LINK_ENCAPSULATION_HLEN))
 #define MEM_MIN                       MEM_MIN_TCP
 #define MEM_ALIGNMENT                 4
+
+#if CONFIG_WIFI_TCP_HIGH_PERF
+#define LWIP_HEAP_SIZE (CONFIG_WIFI_TCP_HIGH_PERF_HEAP_KB * 1024)
+#elif defined(BL602)
+#define LWIP_HEAP_SIZE (14 * 1024)
+#else
+#define LWIP_HEAP_SIZE (64 * 1024)
+#endif 
 
 #ifdef LWIP_HEAP_SIZE
 #define MEM_SIZE LWIP_HEAP_SIZE
@@ -115,15 +159,12 @@
 
 #define LWIP_DHCP                 1
 #define LWIP_DNS                  1
-#define LWIP_DNS_SERVER           0
 #define LWIP_IGMP                 0
 #define LWIP_SO_RCVTIMEO          1
 #define LWIP_SO_SNDTIMEO          1
 #define SO_REUSE                  1
 #define LWIP_TCP_KEEPALIVE        1
 
-extern int *__errno(void);
-#define errno                         (*__errno())
 #define LWIP_NETIF_STATUS_CALLBACK    1
 #define LWIP_NETIF_API                1
 
@@ -136,5 +177,18 @@ extern int *__errno(void);
 #define LWIP_NETIF_TX_SINGLE_PBUF 1
 #endif
 #define LWIP_RAND()                                      ((u32_t)random())
+
+#define CONFIG_LWIP_NETCONN_DUPLEX    1
+#ifdef CONFIG_LWIP_NETCONN_DUPLEX
+#define LWIP_NETCONN_FULLDUPLEX       1
+#define LWIP_NETCONN_SEM_PER_THREAD   1
+
+void *sys_thread_sem_get(void);
+void sys_thread_sem_init(void);
+void sys_thread_sem_deinit(void);
+#define LWIP_NETCONN_THREAD_SEM_GET()   sys_thread_sem_get()
+#define LWIP_NETCONN_THREAD_SEM_ALLOC() sys_thread_sem_init()
+#define LWIP_NETCONN_THREAD_SEM_FREE()  sys_thread_sem_deinit()
+#endif
 
 #endif /* LWIP_HDR_LWIPOPTS_H__ */

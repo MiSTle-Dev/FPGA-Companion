@@ -49,16 +49,25 @@
 #include "bflb_sf_ctrl.h"
 #include "board_flash_psram.h"
 
+//#if defined(TANG_NANO20K)  // ||defined(M0S_DOCK)
+#include "lwip/opt.h"
+#include "lwip/init.h"
+#include "netif/etharp.h"
+#include "lwip/netif.h"
+#include "lwip/tcpip.h"
+#include "lwip/dhcp.h"
+//#else
 #include <lwip/tcpip.h>
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
 #include <lwip/dns.h>
-#include "fhost_api.h"
+//#include "fhost_api.h"
 #include "wifi_mgmr_ext.h"
-#include "wifi_mgmr.h"
+//#include "wifi_mgmr.h"
 #include "rfparam_adapter.h"
+//#endif
 
 #include "bflb_rtc.h" 
 #include "bflb_acomp.h"
@@ -899,7 +908,7 @@ void usb_host(void) {
     usb_config.xbox_info[i].sem = xSemaphoreCreateBinary();
   }
 
-  usbh_initialize(0, usb_dev->reg_base);
+  usbh_initialize(0, usb_dev->reg_base, NULL);
 }
 
 uint8_t usbh_get_hport_active_config_index(struct usbh_hubport *hport)
@@ -1343,10 +1352,15 @@ void mcu_hw_init(void) {
 
 #ifdef M0S_DOCK
   wifi_init();
+//  tcpip_init(NULL, NULL);
 #elif TANG_CONSOLE60K
   wifi_init();
 #elif TANG_MEGA60K
   wifi_init();
+#endif
+
+#ifdef TANG_NANO20K
+  tcpip_init(NULL, NULL);
 #endif
 
 #ifdef ENABLE_JTAG
@@ -1445,7 +1459,7 @@ void mcu_hw_port_byte(unsigned char byte) {
 }
 
 extern int wifi_mgmr_task_start(void);
-extern int fhost_init(void);
+//extern int fhost_init(void);
 extern int wifi_mgmr_sta_scanlist(void);
 extern int wifi_mgmr_sta_quickconnect(const char *ssid, const char *key, uint16_t freq1, uint16_t freq2);
 
