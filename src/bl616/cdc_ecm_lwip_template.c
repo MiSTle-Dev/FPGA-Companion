@@ -21,7 +21,7 @@
 #include "usbh_cdc_ecm.h"
 
 #define DBG_TAG "LWIP_ECM"
-#include "log.h"
+#include "../debug.h"
 
 ip_addr_t g_ipaddr;
 ip_addr_t g_netmask;
@@ -123,7 +123,7 @@ static void usbh_cdc_ecm_request_stop(enum usbh_cdc_ecm_stop_reason reason)
 static void usbh_cdc_ecm_netif_status_callback(struct netif *netif)
 {
     if (netif_is_up(netif) && !ip4_addr_isany_val(*netif_ip4_addr(netif))) {
-        LOG_I("IPv4 address: %s\r\n", ip4addr_ntoa(netif_ip4_addr(netif)));
+        usb_debugf("IPv4 address: %s\r\n", ip4addr_ntoa(netif_ip4_addr(netif)));
     }
 }
 #endif
@@ -156,13 +156,13 @@ static void usbh_cdc_ecm_int_callback(void *arg, int nbytes)
     struct usbh_cdc_ecm *cdc_ecm_class = ctx->cdc_ecm_class;
 
     if (nbytes < 0) {
-        USB_LOG_ERR("USBH int error,ret:%d\r\n", nbytes);
+        usb_debugf("USBH int error,ret:%d\r\n", nbytes);
     } else if (g_cdc_ecm_inttx_buffer[1] == CDC_ECM_NOTIFY_CODE_NETWORK_CONNECTION) {
         if (g_cdc_ecm_inttx_buffer[2] == CDC_ECM_NET_CONNECTED && cdc_ecm_class->connect_status == false) {
-            USB_LOG_INFO("CDC ECM link up\r\n");
+            usb_debugf("CDC ECM link up\r\n");
             cdc_ecm_class->connect_status = true;
         } else if (g_cdc_ecm_inttx_buffer[2] == CDC_ECM_NET_DISCONNECTED && cdc_ecm_class->connect_status == true) {
-            USB_LOG_INFO("CDC ECM link down\r\n");
+            usb_debugf("CDC ECM link down\r\n");
             cdc_ecm_class->connect_status = false;
             cdc_ecm_class->speed[0] = 0;
             cdc_ecm_class->speed[1] = 0;
@@ -170,7 +170,7 @@ static void usbh_cdc_ecm_int_callback(void *arg, int nbytes)
     } else if (g_cdc_ecm_inttx_buffer[1] == CDC_ECM_NOTIFY_CODE_CONNECTION_SPEED_CHANGE) {
         if (memcmp(&g_cdc_ecm_inttx_buffer[8], cdc_ecm_class->speed, 8) != 0) {
             memcpy(cdc_ecm_class->speed, &g_cdc_ecm_inttx_buffer[8], 8);
-            USB_LOG_INFO("CDC ECM speed change, up: %uMbps, down:%uMbps\r\n", cdc_ecm_class->speed[0] / 1000000, cdc_ecm_class->speed[1] / 1000000);
+            usb_debugf("CDC ECM speed change, up: %uMbps, down:%uMbps\r\n", cdc_ecm_class->speed[0] / 1000000, cdc_ecm_class->speed[1] / 1000000);
         }
     }
 
@@ -190,10 +190,10 @@ static void usbh_cdc_ecm_in_callback(void *arg, int nbytes)
     struct usbh_cdc_ecm_lwip_context *ctx = (struct usbh_cdc_ecm_lwip_context *)arg;
 
     if (nbytes < 0) {
-        USB_LOG_ERR("USBH bulk in error,ret:%d\r\n", nbytes);
+        usb_debugf("USBH bulk in error,ret:%d\r\n", nbytes);
         ctx->in_size = 0;
     } else {
-        USB_LOG_DBG("in len:%d\r\n", nbytes);
+        usb_debugf("in len:%d\r\n", nbytes);
         ctx->in_size = nbytes;
     }
 
@@ -212,9 +212,9 @@ static void usbh_cdc_ecm_out_callback(void *arg, int nbytes)
     struct usbh_cdc_ecm_lwip_context *ctx = (struct usbh_cdc_ecm_lwip_context *)arg;
 
     if (nbytes < 0) {
-        USB_LOG_ERR("USBH bulk out error,ret:%d\r\n", nbytes);
+        usb_debugf("USBH bulk out error,ret:%d\r\n", nbytes);
     } else {
-        USB_LOG_DBG("out len:%d\r\n", nbytes);
+        usb_debugf("out len:%d\r\n", nbytes);
     }
 
     ctx->out_busy = false;
@@ -241,7 +241,7 @@ static err_t usbh_cdc_ecm_output(struct netif *netif, struct pbuf *p)
 
     ret = usb_osal_sem_take(g_ecm_ctx.tx_sem, 100);
     if (ret < 0) {
-        USB_LOG_ERR("ecm out busy timeout\r\n");
+        usb_debugf("ecm out busy timeout\r\n");
         return ERR_TIMEOUT;
     }
 
@@ -260,7 +260,7 @@ static err_t usbh_cdc_ecm_output(struct netif *netif, struct pbuf *p)
     if (byte_copy != p->tot_len) {
         usb_osal_mutex_give(g_ecm_ctx.state_mutex);
         usb_osal_sem_give(g_ecm_ctx.tx_sem);
-        LOG_E("tx copy failed\r\n");
+        usb_debugf("tx copy failed\r\n");
         return ERR_BUF;
     }
 
@@ -269,7 +269,7 @@ static err_t usbh_cdc_ecm_output(struct netif *netif, struct pbuf *p)
                        g_cdc_ecm_out_buffer, byte_copy, 0, usbh_cdc_ecm_out_callback, &g_ecm_ctx);
     ret = usbh_submit_urb(&cdc_ecm_class->bulkout_urb);
     if (ret < 0) {
-        USB_LOG_RAW("bulk out submit error,ret:%d\r\n", ret);
+        usb_debugf("bulk out submit error,ret:%d\r\n", ret);
         g_ecm_ctx.out_busy = false;
         usbh_cdc_ecm_request_stop_locked(USBH_CDC_ECM_STOP_TX_ERROR);
         usb_osal_mutex_give(g_ecm_ctx.state_mutex);
@@ -331,21 +331,21 @@ static int usbh_cdc_ecm_poll_status(struct usbh_cdc_ecm_lwip_context *ctx,
 
     if (cdc_ecm_class->connect_status == false) {
         if (*netif_link_up) {
-            USB_LOG_RAW("CDC ECM netif link down\r\n");
+            usb_debugf("CDC ECM netif link down\r\n");
             err = netifapi_netif_set_link_down(netif);
             if (err == ERR_OK) {
                 *netif_link_up = false;
             } else {
-                LOG_E("netifapi_netif_set_link_down failed: %d\r\n", err);
+                usb_debugf("netifapi_netif_set_link_down failed: %d\r\n", err);
             }
         }
     } else if (*netif_link_up == false) {
-        USB_LOG_RAW("CDC ECM netif link up\r\n");
+        usb_debugf("CDC ECM netif link up\r\n");
         err = netifapi_netif_set_link_up(netif);
         if (err == ERR_OK) {
             *netif_link_up = true;
         } else {
-            LOG_E("netifapi_netif_set_link_up failed: %d\r\n", err);
+            usb_debugf("netifapi_netif_set_link_up failed: %d\r\n", err);
         }
     }
 
@@ -360,7 +360,7 @@ static int usbh_cdc_ecm_poll_status(struct usbh_cdc_ecm_lwip_context *ctx,
                           g_cdc_ecm_inttx_buffer, 16, 0, usbh_cdc_ecm_int_callback, ctx);
         ret = usbh_submit_urb(&cdc_ecm_class->intin_urb);
         if (ret < 0) {
-            USB_LOG_ERR("bulk int submit error,ret:%d\r\n", ret);
+            usb_debugf("bulk int submit error,ret:%d\r\n", ret);
             ctx->int_busy = false;
             usbh_cdc_ecm_request_stop(USBH_CDC_ECM_STOP_INT_ERROR);
         }
@@ -393,7 +393,7 @@ static void usbh_cdc_ecm_input_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
     err_t err;
     int ret;
 
-    USB_LOG_RAW("USBH CDC ECM LWIP test start\r\n");
+    usb_debugf("USBH CDC ECM LWIP test start\r\n");
 
     cdc_ecm_class->connect_status = false;
     usb_osal_msleep(10);
@@ -413,7 +413,7 @@ static void usbh_cdc_ecm_input_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
         err = netifapi_netif_add(netif, ip_2_ip4(&g_ipaddr), ip_2_ip4(&g_netmask), ip_2_ip4(&g_gateway),
                                  NULL, usbh_cdc_ecm_if_init, tcpip_input);
         if (err != ERR_OK) {
-            LOG_E("netifapi_netif_add failed: %d\r\n", err);
+            usb_debugf("netifapi_netif_add failed: %d\r\n", err);
             usbh_cdc_ecm_request_stop(USBH_CDC_ECM_STOP_INIT_ERROR);
             goto exit;
         }
@@ -421,7 +421,7 @@ static void usbh_cdc_ecm_input_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
 
         err = netifapi_netif_set_default(netif);
         if (err != ERR_OK) {
-            LOG_E("netifapi_netif_set_default failed: %d\r\n", err);
+            usb_debugf("netifapi_netif_set_default failed: %d\r\n", err);
             usbh_cdc_ecm_request_stop(USBH_CDC_ECM_STOP_INIT_ERROR);
             goto exit;
         }
@@ -429,11 +429,11 @@ static void usbh_cdc_ecm_input_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
 #if LWIP_DHCP
         err = netifapi_dhcp_start(netif);
         if (err != ERR_OK) {
-            LOG_E("netifapi_dhcp_start failed: %d\r\n", err);
+            usb_debugf("netifapi_dhcp_start failed: %d\r\n", err);
             usbh_cdc_ecm_request_stop(USBH_CDC_ECM_STOP_INIT_ERROR);
             goto exit;
         }
-        LOG_I("DHCP client started\r\n");
+        usb_debugf("DHCP client started\r\n");
 #endif
     }
 
@@ -484,7 +484,7 @@ static void usbh_cdc_ecm_input_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
                                    g_cdc_ecm_in_buffer, CONFIG_USBHOST_CDC_ECM_ETH_MAX_SIZE, 0, usbh_cdc_ecm_in_callback, ctx);
                 ret = usbh_submit_urb(&cdc_ecm_class->bulkin_urb);
                 if (ret < 0) {
-                    USB_LOG_ERR("bulk in submit error,ret:%d\r\n", ret);
+                    usb_debugf("bulk in submit error,ret:%d\r\n", ret);
                     ctx->in_busy = false;
                     usbh_cdc_ecm_request_stop(USBH_CDC_ECM_STOP_RX_ERROR);
                 }
@@ -510,7 +510,7 @@ exit:
     if (netif_added) {
         err = netifapi_netif_common(netif, usbh_cdc_ecm_netif_cleanup, NULL);
         if (err != ERR_OK) {
-            LOG_E("CDC ECM netif cleanup failed: %d\r\n", err);
+            usb_debugf("CDC ECM netif cleanup failed: %d\r\n", err);
         }
     }
 
@@ -538,13 +538,13 @@ exit:
  */
 void usbh_cdc_ecm_run(struct usbh_cdc_ecm *cdc_ecm_class)
 {
-    USB_LOG_INFO("USBH CDC ECM run\r\n");
+    usb_debugf("USBH CDC ECM run\r\n");
 
     usbh_cdc_ecm_context_init();
     usb_osal_mutex_take(g_ecm_ctx.state_mutex);
     if (g_ecm_ctx.state != USBH_CDC_ECM_STOPPED) {
         usb_osal_mutex_give(g_ecm_ctx.state_mutex);
-        USB_LOG_ERR("USBH CDC ECM test already running\r\n");
+        usb_debugf("USBH CDC ECM test already running\r\n");
         return;
     }
 
@@ -574,7 +574,7 @@ void usbh_cdc_ecm_run(struct usbh_cdc_ecm *cdc_ecm_class)
  */
 void usbh_cdc_ecm_stop(struct usbh_cdc_ecm *cdc_ecm_class)
 {
-    USB_LOG_INFO("USBH CDC ECM stop\r\n");
+    usb_debugf("USBH CDC ECM stop\r\n");
 
     if (g_ecm_ctx.state_mutex == NULL) {
         return;
