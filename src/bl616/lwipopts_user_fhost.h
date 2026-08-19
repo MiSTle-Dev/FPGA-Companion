@@ -34,6 +34,7 @@
 
 #define LWIP_NETIF_API     1
 #define LWIP_DEBUG         1
+#define LWIP_STATS         1
 #define LWIP_STATS_DISPLAY 1
 #define SOCKETS_DEBUG      LWIP_DBG_OFF
 #ifdef BL616_DHCP_DEBUG
@@ -124,6 +125,7 @@
 #define LWIP_SOCKET_SET_ERRNO     1
 
 #define LWIP_DHCP                 1
+#define LWIP_SNTP                 1
 #define LWIP_DNS                  1
 #define LWIP_DNS_SERVER           0
 #define LWIP_IGMP                 0
@@ -135,7 +137,12 @@
 extern int *__errno(void);
 #define errno                         (*__errno())
 #define LWIP_NETIF_STATUS_CALLBACK    1
+#define LWIP_NETIF_LINK_CALLBACK      1
 #define LWIP_NETIF_API                1
+#define LWIP_DHCP_GET_NTP_SRV         1
+#define LWIP_DHCP_MAX_NTP_SERVERS     2
+#define SNTP_SET_SYSTEM_TIME           sntp_set_system_time
+#define MEMP_NUM_SYS_TIMEOUT          (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 2)
 
 #define ETHARP_SUPPORT_STATIC_ENTRIES 1
 
