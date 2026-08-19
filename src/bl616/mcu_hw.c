@@ -54,6 +54,9 @@
 #include "netif/etharp.h"
 #include "lwip/netif.h"
 #include "lwip/dhcp.h"
+#include "lwip/prot/dhcp.h"
+#include "usbh_rtl8152.h"
+#include "usbh_asix.h"
 
 #include <lwip/tcpip.h>
 #include <lwip/sockets.h>
@@ -2492,3 +2495,215 @@ bool mcu_hw_usb_msc_present(void) {
 /* GPIO 12 access at button S3, Capacitor C22 need to be removed */
 /* GPIO 20 access at LED6, not usable for UART, unknown reason */
 
+ip_addr_t g_ipaddr;
+ip_addr_t g_netmask;
+ip_addr_t g_gateway;
+
+void usbh_lwip_eth_output_common(struct pbuf *p, uint8_t *buf)
+{
+    struct pbuf *q;
+    uint8_t *buffer;
+
+    buffer = buf;
+    for (q = p; q != NULL; q = q->next) {
+        usb_memcpy(buffer, q->payload, q->len);
+        buffer += q->len;
+    }
+}
+
+void usbh_lwip_eth_input_common(struct netif *netif, uint8_t *buf, uint32_t len)
+{
+#if LWIP_TCPIP_CORE_LOCKING_INPUT
+    pbuf_type type = PBUF_REF;
+#else
+    pbuf_type type = PBUF_POOL;
+#endif
+    err_t err;
+    struct pbuf *p;
+
+    p = pbuf_alloc(PBUF_RAW, len, type);
+    if (p != NULL) {
+#if LWIP_TCPIP_CORE_LOCKING_INPUT
+        p->payload = buf;
+#else
+        usb_memcpy(p->payload, buf, len);
+#endif
+        err = netif->input(p, netif);
+        if (err != ERR_OK) {
+            pbuf_free(p);
+        }
+    } else {
+        USB_LOG_ERR("No memory to alloc pbuf\r\n");
+    }
+}
+
+struct usb_osal_timer *dhcp_handle;
+
+static void dhcp_timeout(void *arg)
+{
+    struct netif *netif = (struct netif *)arg;
+    struct dhcp *dhcp;
+    if (netif_is_up(netif)) {
+
+        dhcp = netif_dhcp_data(netif);
+
+        if (dhcp && (dhcp->state == DHCP_STATE_BOUND)) {
+
+            USB_LOG_INFO("IPv4 Address     : %s\r\n", ipaddr_ntoa(&netif->ip_addr));
+            USB_LOG_INFO("IPv4 Subnet mask : %s\r\n", ipaddr_ntoa(&netif->netmask));
+            USB_LOG_INFO("IPv4 Gateway     : %s\r\n\r\n", ipaddr_ntoa(&netif->gw));
+
+            usb_osal_timer_stop(dhcp_handle);
+        }
+    } else {
+    }
+}
+
+struct netif g_rtl8152_netif;
+
+static err_t usbh_rtl8152_linkoutput(struct netif *netif, struct pbuf *p)
+{
+    int ret;
+    (void)netif;
+
+    usbh_lwip_eth_output_common(p, usbh_rtl8152_get_eth_txbuf());
+    ret = usbh_rtl8152_eth_output(p->tot_len);
+    if (ret < 0) {
+        return ERR_BUF;
+    } else {
+        return ERR_OK;
+    }
+}
+
+void usbh_rtl8152_eth_input(uint8_t *buf, uint32_t buflen)
+{
+    usbh_lwip_eth_input_common(&g_rtl8152_netif, buf, buflen);
+}
+
+static err_t usbh_rtl8152_if_init(struct netif *netif)
+{
+    LWIP_ASSERT("netif != NULL", (netif != NULL));
+
+    netif->mtu = 1500;
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_UP;
+    netif->state = NULL;
+    netif->name[0] = 'E';
+    netif->name[1] = 'X';
+    netif->output = etharp_output;
+    netif->linkoutput = usbh_rtl8152_linkoutput;
+    return ERR_OK;
+}
+
+void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
+{
+    struct netif *netif = &g_rtl8152_netif;
+
+    netif->hwaddr_len = 6;
+    memcpy(netif->hwaddr, rtl8152_class->mac, 6);
+
+    IP4_ADDR(&g_ipaddr, 0, 0, 0, 0);
+    IP4_ADDR(&g_netmask, 0, 0, 0, 0);
+    IP4_ADDR(&g_gateway, 0, 0, 0, 0);
+
+    netif = netif_add(netif, &g_ipaddr, &g_netmask, &g_gateway, NULL, usbh_rtl8152_if_init, tcpip_input);
+    netif_set_default(netif);
+    while (!netif_is_up(netif)) {
+    }
+
+    dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
+    if (dhcp_handle == NULL) {
+        USB_LOG_ERR("timer creation failed! \r\n");
+        while (1) {
+        }
+    }
+
+    usb_osal_thread_create("usbh_rtl8152_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_rtl8152_rx_thread, NULL);
+    dhcp_start(netif);
+    usb_osal_timer_start(dhcp_handle);
+}
+
+void usbh_rtl8152_stop(struct usbh_rtl8152 *rtl8152_class)
+{
+    struct netif *netif = &g_rtl8152_netif;
+    (void)rtl8152_class;
+
+    dhcp_stop(netif);
+    dhcp_cleanup(netif);
+    usb_osal_timer_delete(dhcp_handle);
+    netif_set_down(netif);
+    netif_remove(netif);
+}
+
+struct netif g_asix_netif;
+
+static err_t usbh_asix_linkoutput(struct netif *netif, struct pbuf *p)
+{
+    int ret;
+    (void)netif;
+
+    usbh_lwip_eth_output_common(p, usbh_asix_get_eth_txbuf());
+    ret = usbh_asix_eth_output(p->tot_len);
+    if (ret < 0) {
+        return ERR_BUF;
+    } else {
+        return ERR_OK;
+    }
+}
+
+void usbh_asix_eth_input(uint8_t *buf, uint32_t buflen)
+{
+    usbh_lwip_eth_input_common(&g_asix_netif, buf, buflen);
+}
+
+static err_t usbh_asix_if_init(struct netif *netif)
+{
+    LWIP_ASSERT("netif != NULL", (netif != NULL));
+
+    netif->mtu = 1500;
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_UP;
+    netif->state = NULL;
+    netif->name[0] = 'E';
+    netif->name[1] = 'X';
+    netif->output = etharp_output;
+    netif->linkoutput = usbh_asix_linkoutput;
+    return ERR_OK;
+}
+
+void usbh_asix_run(struct usbh_asix *asix_class)
+{
+    struct netif *netif = &g_asix_netif;
+
+    netif->hwaddr_len = 6;
+    memcpy(netif->hwaddr, asix_class->mac, 6);
+
+    IP4_ADDR(&g_ipaddr, 0, 0, 0, 0);
+    IP4_ADDR(&g_netmask, 0, 0, 0, 0);
+    IP4_ADDR(&g_gateway, 0, 0, 0, 0);
+
+    netif = netif_add(netif, &g_ipaddr, &g_netmask, &g_gateway, NULL, usbh_asix_if_init, tcpip_input);
+    netif_set_default(netif);
+    while (!netif_is_up(netif)) {
+    }
+
+    dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
+    if (dhcp_handle == NULL) {
+        USB_LOG_ERR("timer creation failed! \r\n");
+        while (1) {
+        }
+    }
+
+    usb_osal_thread_create("usbh_asix_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_asix_rx_thread, NULL);
+    dhcp_start(netif);
+    usb_osal_timer_start(dhcp_handle);
+}
+
+void usbh_asix_stop(struct usbh_asix *asix_class)
+{
+    struct netif *netif = &g_asix_netif;
+    (void)asix_class;
+    dhcp_stop(netif);
+    dhcp_cleanup(netif);
+    usb_osal_timer_delete(dhcp_handle);
+    netif_set_down(netif);
+    netif_remove(netif);
+}

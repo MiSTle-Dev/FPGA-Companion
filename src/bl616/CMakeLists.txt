@@ -15,12 +15,10 @@ set(CONFIG_CHERRYUSB_HOST 1)
 set(CONFIG_CHERRYUSB_HOST_HID 1)
 set(CONFIG_CHERRYUSB_HOST_MSC 1)
 set(CONFIG_CHERRYUSB_HOST_XBOX 1)
-set(CONFIG_CHERRYUSB_HOST_CDC_ECM 1)
-#set(CONFIG_CHERRYUSB_HOST_RTL8152 1)
-#set(CONFIG_CHERRYUSB_HOST_ASIX 1)
+set(CONFIG_CHERRYUSB_HOST_RTL8152 1)
+set(CONFIG_CHERRYUSB_HOST_ASIX 1)
 set(CONFIG_CHERRYUSB_DEVICE 1)
 set(CONFIG_CHERRYUSB_DEVICE_HID 1)
-#set(CONFIG_CHERRYUSB_DEVICE_CDC_ACM 1)
 set(CONFIG_BSP_SDH_SD 1)
 set(CONFIG_BSP_SDH_SDCARD 1)
 set(CONFIG_BSP_SDH_OSAL_POLLING_MODE 0)
@@ -83,6 +81,8 @@ endif()
 
 find_package(bouffalo_sdk REQUIRED HINTS $ENV{BL_SDK_BASE})
 
+sdk_add_compile_definitions(-DPBUF_POOL_SIZE=16 -DPBUF_POOL_BUFSIZE=1600)
+
 sdk_add_include_directories(. ../u8g2/csrc)
 
 target_sources(app PRIVATE
@@ -100,7 +100,6 @@ target_sources(app PRIVATE
     ../puff.c
     ../jtag.c
     hid_keyboard_template.c
-    cdc_ecm_lwip_template.c
     ../gowin.c
     sdc_direct.c
     ../ps2helper.c
