@@ -2701,7 +2701,7 @@ void usbh_lwip_eth_input_common(struct netif *netif, uint8_t *buf, uint32_t len)
             pbuf_free(p);
         }
     } else {
-        USB_LOG_ERR("No memory to alloc pbuf\r\n");
+        debugf("No memory to alloc pbuf");
     }
 }
 
@@ -2717,9 +2717,9 @@ static void dhcp_timeout(void *arg)
 
         if (dhcp && (dhcp->state == DHCP_STATE_BOUND)) {
 
-            USB_LOG_INFO("IPv4 Address     : %s\r\n", ipaddr_ntoa(&netif->ip_addr));
-            USB_LOG_INFO("IPv4 Subnet mask : %s\r\n", ipaddr_ntoa(&netif->netmask));
-            USB_LOG_INFO("IPv4 Gateway     : %s\r\n\r\n", ipaddr_ntoa(&netif->gw));
+            debugf("IPv4 Address     : %s", ipaddr_ntoa(&netif->ip_addr));
+            debugf("IPv4 Subnet mask : %s", ipaddr_ntoa(&netif->netmask));
+            debugf("IPv4 Gateway     : %s", ipaddr_ntoa(&netif->gw));
 
             usb_osal_timer_stop(dhcp_handle);
         }
@@ -2767,7 +2767,7 @@ void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
     struct netif *netif = &g_rtl8152_netif;
 
   if (active_network_interface != NETWORK_INTERFACE_NONE) {
-    USB_LOG_INFO("Ignoring RTL8152 since another network interface is active\r\n");
+    debugf("Ignoring RTL8152 since another network interface is active");
     return;
   }
 
@@ -2792,7 +2792,7 @@ void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
 
     dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
     if (dhcp_handle == NULL) {
-        USB_LOG_ERR("timer creation failed! \r\n");
+        debugf("timer creation failed!");
         while (1) {
         }
     }
@@ -2859,7 +2859,7 @@ void usbh_asix_run(struct usbh_asix *asix_class)
     struct netif *netif = &g_asix_netif;
 
   if (active_network_interface != NETWORK_INTERFACE_NONE) {
-    USB_LOG_INFO("Ignoring ASIX since another network interface is active\r\n");
+    debugf("Ignoring ASIX since another network interface is active");
     return;
   }
 
@@ -2884,7 +2884,7 @@ void usbh_asix_run(struct usbh_asix *asix_class)
 
     dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
     if (dhcp_handle == NULL) {
-        USB_LOG_ERR("timer creation failed! \r\n");
+        debugf("timer creation failed!");
         while (1) {
         }
     }
