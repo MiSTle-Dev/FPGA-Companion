@@ -15,9 +15,6 @@ set(CONFIG_CHERRYUSB_HOST 1)
 set(CONFIG_CHERRYUSB_HOST_HID 1)
 set(CONFIG_CHERRYUSB_HOST_MSC 1)
 set(CONFIG_CHERRYUSB_HOST_XBOX 1)
-# SDK correction needed for RTL8152 driver
-#        //    tp->rx_buf_sz = 16 * 1024;
-#              tp->rx_buf_sz = 2 * 1024;
 set(CONFIG_CHERRYUSB_HOST_RTL8152 1)
 set(CONFIG_CHERRYUSB_HOST_ASIX 1)
 set(CONFIG_CHERRYUSB_DEVICE 1)
