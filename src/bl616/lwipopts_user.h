@@ -36,8 +36,8 @@
 #define LWIP_DHCP_MAX_NTP_SERVERS     2
 #define SNTP_SET_SYSTEM_TIME           sntp_set_system_time
 #define MEMP_NUM_SYS_TIMEOUT          (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 2)
-#define LWIP_NETIF_LINK_CALLBACK      1
-
+#define SNTP_GET_SERVERS_FROM_DHCP    1
+#define SNTP_DEBUG LWIP_DBG_ON
 
 #define LWIP_NETIF_API     1
 #define LWIP_DEBUG         1
@@ -90,7 +90,6 @@
 #define TCP_QUEUE_OOSEQ               1
 #define MEMP_NUM_TCP_SEG              ((4 * TCP_SND_BUF) / TCP_MSS)
 #define MEMP_NUM_PBUF                 (TCP_SND_BUF / TCP_MSS)
-#define PBUF_POOL_SIZE                0
 #define LWIP_WND_SCALE                1
 #define TCP_RCV_SCALE                 2
 #define TCP_SNDLOWAT                  LWIP_MIN(LWIP_MAX(((TCP_SND_BUF) / 4), (2 * TCP_MSS) + 1), (TCP_SND_BUF)-1)
@@ -121,6 +120,7 @@
 #define LWIP_SOCKET_SET_ERRNO     1
 
 #define LWIP_DHCP                 1
+#define LWIP_SNTP                 1
 #define LWIP_DNS                  1
 #define LWIP_DNS_SERVER           0
 #define LWIP_IGMP                 0
@@ -131,10 +131,14 @@
 
 extern int *__errno(void);
 #define errno                         (*__errno())
-#define LWIP_NETIF_STATUS_CALLBACK    1
 #define LWIP_NETIF_API                1
-
+#define LWIP_NETIF_HOSTNAME           1
+#define LWIP_NETIF_STATUS_CALLBACK    1
+#define LWIP_NETIF_LINK_CALLBACK      1
 #define ETHARP_SUPPORT_STATIC_ENTRIES 1
+#define LWIP_IPV4                   1
+#define LWIP_TCP                    1
+#define LWIP_UDP                    1
 
 #define LWIP_SUPPORT_CUSTOM_PBUF      1
 #ifdef HIGH_PERFORMANCE_PBUF

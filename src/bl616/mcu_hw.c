@@ -1182,6 +1182,8 @@ void bflb_wfa_init(void)
 #endif
 
 static void wifi_init(void);
+static void sntp_enable_dhcp_servers(void);
+static void sntp_start_from_task(void);
 
 // local board_init used as a replacemement for global board_init
 static void mn_board_init(void) {
@@ -1480,6 +1482,31 @@ enum network_interface {
 static enum network_interface active_network_interface = NETWORK_INTERFACE_NONE;
 static struct netif *active_network_netif = NULL;
 
+static void sntp_enable_dhcp_servers_callback(void *arg)
+{
+  (void)arg;
+  sntp_servermode_dhcp(1);
+}
+
+static void sntp_enable_dhcp_servers(void)
+{
+  tcpip_callback_with_block(sntp_enable_dhcp_servers_callback, NULL, 1);
+}
+
+static void sntp_start_callback(void *arg)
+{
+  (void)arg;
+  if (!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
+    network_status |= NETWORK_STATUS_SNTP_STARTED;
+    sntp_init();
+  }
+}
+
+static void sntp_start_from_task(void)
+{
+  tcpip_callback_with_block(sntp_start_callback, NULL, 1);
+}
+
 uint8_t mcu_hw_network_status(void)
 {
   return network_status;
@@ -1536,10 +1563,13 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   } break;
   case CODE_WIFI_ON_GOT_IP: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_GOT_IP", __func__);
-    if (active_network_interface != NETWORK_INTERFACE_WIFI) {
+    if (active_network_interface != NETWORK_INTERFACE_NONE &&
+        active_network_interface != NETWORK_INTERFACE_WIFI) {
       break;
     }
+    active_network_interface = NETWORK_INTERFACE_WIFI;
     network_status |= NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
+    sntp_start_from_task();
     unsigned char evt = 4; 
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
@@ -1575,6 +1605,8 @@ void wifi_start_firmware_task(void *param)
     /* network init */
     network_status |= NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI;
     debugf("Starting wifi ...");
+
+    sntp_enable_dhcp_servers();
 
     if (0 != rfparam_init(0, NULL, 0)) {
       debugf("PHY RF init failed!");
@@ -2723,6 +2755,7 @@ void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
     }
 
     usb_osal_thread_create("usbh_rtl8152_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_rtl8152_rx_thread, NULL);
+    sntp_enable_dhcp_servers();
     dhcp_start(netif);
     usb_osal_timer_start(dhcp_handle);
 }
@@ -2815,6 +2848,7 @@ void usbh_asix_run(struct usbh_asix *asix_class)
     }
 
     usb_osal_thread_create("usbh_asix_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_asix_rx_thread, NULL);
+    sntp_enable_dhcp_servers();
     dhcp_start(netif);
     usb_osal_timer_start(dhcp_handle);
 }
