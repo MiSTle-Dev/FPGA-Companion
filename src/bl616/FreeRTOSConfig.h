@@ -39,16 +39,28 @@
  *
  * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
+#if defined(BL602) || defined(BL702) || defined(BL702L)
+#define configMTIME_BASE_ADDRESS    (0x02000000UL + 0xBFF8UL)
+#define configMTIMECMP_BASE_ADDRESS (0x02000000UL + 0x4000UL)
+#else
+#if __riscv_xlen == 64
+#define configMTIME_BASE_ADDRESS    (0)
+#define configMTIMECMP_BASE_ADDRESS ((0xE4000000UL) + 0x4000UL)
+#else
+#define configMTIME_BASE_ADDRESS    ((0xE0000000UL) + 0xBFF8UL)
+#define configMTIMECMP_BASE_ADDRESS ((0xE0000000UL) + 0x4000UL)
+#endif
+#endif
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configUSE_PREEMPTION                    1
 #define configUSE_IDLE_HOOK                     0
 #define configUSE_TICK_HOOK                     0
 #define configCPU_CLOCK_HZ                      ((uint32_t)(1 * 1000 * 1000))
 #define configTICK_RATE_HZ                      ((TickType_t)1000)
-#define configMAX_PRIORITIES                    (31)
-#define configMINIMAL_STACK_SIZE                ((unsigned short)256) /* Only needs to be this high as some demo tasks also use this constant.  In production only the idle task would use this. */
-#define configTOTAL_HEAP_SIZE                   ((size_t)24 * 1024)
-#define configMAX_TASK_NAME_LEN                 (31)
+#define configMAX_PRIORITIES                    (32)
+#define configMINIMAL_STACK_SIZE                ((unsigned short)128) /* Only needs to be this high as some demo tasks also use this constant.  In production only the idle task would use this. */
+#define configTOTAL_HEAP_SIZE                   ((size_t)100 * 1024)
+#define configMAX_TASK_NAME_LEN                 (16)
 #define configUSE_TRACE_FACILITY                1
 #define configUSE_STATS_FORMATTING_FUNCTIONS    1
 #define configUSE_16_BIT_TICKS                  0
@@ -74,10 +86,10 @@
 #define configMAX_CO_ROUTINE_PRIORITIES         (2)
 
 /* Software timer definitions. */
-#define configUSE_TIMERS                        1
-#define configTIMER_TASK_PRIORITY               (configMAX_PRIORITIES - 1)
-#define configTIMER_QUEUE_LENGTH                8
-#define configTIMER_TASK_STACK_DEPTH            (512)
+#define configUSE_TIMERS             1
+#define configTIMER_TASK_PRIORITY    (configMAX_PRIORITIES - 1)
+#define configTIMER_QUEUE_LENGTH     4
+#define configTIMER_TASK_STACK_DEPTH (1024)
 
 /* Task priorities.  Allow these to be overridden. */
 #ifndef uartPRIMARY_PRIORITY

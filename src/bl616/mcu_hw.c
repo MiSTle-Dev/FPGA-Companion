@@ -908,7 +908,6 @@ void usb_host(void) {
   }
 
   usbh_initialize(0, usb_dev->reg_base, NULL);
-  return 0;
 }
 
 uint8_t usbh_get_hport_active_config_index(struct usbh_hubport *hport)
@@ -1350,17 +1349,9 @@ void mcu_hw_init(void) {
   shell_init_with_task(uart0);
 #endif
 
-#ifdef M0S_DOCK
-//  wifi_init(); // debug
   tcpip_init(NULL, NULL);
-#elif TANG_CONSOLE60K
+#if defined(M0S_DOCK)|| defined(TANG_CONSOLE60K)|| defined(TANG_MEGA60K)
   wifi_init();
-#elif TANG_MEGA60K
-  wifi_init();
-#endif
-
-#if defined(TANG_NANO20K) || defined(TANG_PRIMER25K)
-  tcpip_init(NULL, NULL);
 #endif
 
 #ifdef ENABLE_JTAG
@@ -1369,8 +1360,12 @@ void mcu_hw_init(void) {
   usb_host();
 
   xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
+/*
   debugf("[OS] start scheduler");
   vTaskStartScheduler();
+  while (1) {
+    }
+*/
 }
 
 void stop_hid(void) {
@@ -1530,8 +1525,12 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
         active_network_interface != NETWORK_INTERFACE_WIFI) {
       break;
     }
-    active_network_interface = NETWORK_INTERFACE_WIFI;
-    network_status |= NETWORK_STATUS_WIFI | NETWORK_STATUS_UP;
+    /*
+     * Do not mark WiFi as the active interface on plain association.
+     * A WiFi link without an IP address should not block USB Ethernet,
+     * which may already be up and have a valid IPv4 lease.
+     */
+    network_status |= NETWORK_STATUS_WIFI;
     unsigned char evt = 3; 
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
@@ -1574,7 +1573,6 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
 void wifi_start_firmware_task(void *param)
 {
     /* network init */
-    tcpip_init(NULL, NULL);
     network_status |= NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI;
     debugf("Starting wifi ...");
 
@@ -1775,7 +1773,7 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
     debugf("\r\nWiFI: STA failed!");
   } else {
     wait4event(4, 4);
-    if (wifi_mgmr_sta_state_get() == 1 ) {
+    if (wifi_mgmr_sta_state_get() == 1 && (network_status & NETWORK_STATUS_HAS_ADDR)) {
       active_network_interface = NETWORK_INTERFACE_WIFI;
       network_status |= NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
       at_wifi_puts("\r\nWiFI: Connected\r\n");
@@ -1791,15 +1789,16 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
 }
 
 static bool network_available(void) {
-  // refuse to scan wifi stack has not been initialized or it's
-  // not a wifi setup (but usb ethernet)
+  // Require TCP/IP init and either a link-up indication or a valid IP address.
   if(!(network_status & NETWORK_STATUS_TCPIP_INIT) ||
-     !(network_status & NETWORK_STATUS_UP)) {
+     !((network_status & NETWORK_STATUS_UP) ||
+       (network_status & NETWORK_STATUS_HAS_ADDR))) {
 
     if(!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
       debugf("Ignoring command since TCP stack is not initialized");
       at_wifi_puts("TCPIP not available\r\n");
-    } else if(!(network_status & NETWORK_STATUS_UP)) {
+    } else if(!((network_status & NETWORK_STATUS_UP) ||
+                (network_status & NETWORK_STATUS_HAS_ADDR))) {
       debugf("Ignoring command since network is down or disconnected");
       at_wifi_puts("Network not available\r\n");
     }    
@@ -2522,80 +2521,6 @@ bool mcu_hw_usb_msc_present(void) {
   return usb_msc_mounted;
 }
 
-// M0S_DOCK
-/* GPIO  0 TMS, M0S solder point */
-/* GPIO  1 TCK, M0S solder point */
-/* GPIO  2 TDO, M0S solder point */
-/* GPIO  3 TDI, M0S solder point */
-/* GPIO 12 CSN */
-/* GPIO 13 SCK */
-/* GPIO 10 MISO */
-/* GPIO 11 MOSI */
-/* GPIO 14 IRQn */
-/* GPIO 21 UART TX */
-/* GPIO 22 UART RX */
-/* GPIO 27 LED1 */
-/* GPIO 28 LED2 */
-
-// TANG_NANO20K e.g 3921
-/* GPIO 0 CSN */
-/* GPIO 1 SCK */
-/* GPIO 2 MISO */
-/* GPIO 3 MOSI */
-/* GPIO 10 TCK */
-/* GPIO 11 default UART TX */
-/* GPIO 12 TDI */
-/* GPIO 13 default UART RX, SPI IRQn */
-/* GPIO 14 TDO */
-/* GPIO 16 TMS */
-/* GPIO 21 SDA */
-/* GPIO 22 SCL */
-
-// TANG_NANO20K_V3923
-/* GPIO 0 CSN */
-/* GPIO 1 SCK */
-/* GPIO 2 unused */
-/* GPIO 3 unused */
-/* GPIO 10 TCK */
-/* GPIO 11 default UART TX */
-/* GPIO 12 TDI */
-/* GPIO 13 default UART RX, SPI IRQn */
-/* GPIO 14 TDO */
-/* GPIO 16 TMS */
-/* GPIO 21 SDA */
-/* GPIO 22 SCL */
-/* GPIO 27 MOSI */
-/* GPIO 30 MISO */
-
-// TANG_CONSOLE60K
-/* GPIO 27 default UART RX, FPGA U15 TX */
-/* GPIO 28 default UART TX, FPGA V15 RX */
-/* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
-/* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK */
-/* GPIO 21 USB-C SBU1 */
-/* GPIO 22 USB-C SBU2 */
-
-// TANG_MEGA138KPRO
-/* GPIO 10 default UART TX, FPGA N16, RX */
-/* GPIO 11 default UART RX, FPGA P15, TX */
-/* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
-/* GPIO 28 default PLL1_TWI SCL, FPGA K25, SCL */
-
-// TANG_MEGA60K
-/* GPIO 27 default UART RX, FPGA U15 TX */
-/* GPIO 28 default UART TX, FPGA V15 RX */
-/* GPIO 16 PWR_KEY, no FPGA connection, re-use possible */
-/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, re-use possible */
-/* GPIO 20 I2C INT, no FPGA connection */
-/* GPIO 21 I2C SDA, no FPGA connection */
-/* GPIO 22 I2C CLK, no FPGA connection, re-use possible */
-
-// TANG_PRIMER25K
-/* GPIO 11 default UART TX */
-/* GPIO 10 default UART RX */
-/* GPIO 12 access at button S3, Capacitor C22 need to be removed */
-/* GPIO 20 access at LED6, not usable for UART, unknown reason */
-
 /* Number of seconds between 1970 and Feb 7, 2036 06:28:16 UTC (epoch 1) */
 #define DIFF_SEC_1970_2036          ((u32_t)2085978496L)
 
@@ -2909,3 +2834,78 @@ void usbh_asix_stop(struct usbh_asix *asix_class)
     active_network_interface = NETWORK_INTERFACE_NONE;
     network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
 }
+
+// M0S_DOCK
+/* GPIO  0 TMS, M0S solder point */
+/* GPIO  1 TCK, M0S solder point */
+/* GPIO  2 TDO, M0S solder point */
+/* GPIO  3 TDI, M0S solder point */
+/* GPIO 12 CSN */
+/* GPIO 13 SCK */
+/* GPIO 10 MISO */
+/* GPIO 11 MOSI */
+/* GPIO 14 IRQn */
+/* GPIO 21 UART TX */
+/* GPIO 22 UART RX */
+/* GPIO 27 LED1 */
+/* GPIO 28 LED2 */
+
+// TANG_NANO20K e.g 3921
+/* GPIO 0 CSN */
+/* GPIO 1 SCK */
+/* GPIO 2 MISO */
+/* GPIO 3 MOSI */
+/* GPIO 10 TCK */
+/* GPIO 11 default UART TX */
+/* GPIO 12 TDI */
+/* GPIO 13 default UART RX, SPI IRQn */
+/* GPIO 14 TDO */
+/* GPIO 16 TMS */
+/* GPIO 21 SDA */
+/* GPIO 22 SCL */
+
+// TANG_NANO20K_V3923
+/* GPIO 0 CSN */
+/* GPIO 1 SCK */
+/* GPIO 2 unused */
+/* GPIO 3 unused */
+/* GPIO 10 TCK */
+/* GPIO 11 default UART TX */
+/* GPIO 12 TDI */
+/* GPIO 13 default UART RX, SPI IRQn */
+/* GPIO 14 TDO */
+/* GPIO 16 TMS */
+/* GPIO 21 SDA */
+/* GPIO 22 SCL */
+/* GPIO 27 MOSI */
+/* GPIO 30 MISO */
+
+// TANG_CONSOLE60K
+/* GPIO 27 default UART RX, FPGA U15 TX */
+/* GPIO 28 default UART TX, FPGA V15 RX */
+/* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
+/* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK */
+/* GPIO 21 USB-C SBU1 */
+/* GPIO 22 USB-C SBU2 */
+
+// TANG_MEGA138KPRO
+/* GPIO 10 default UART TX, FPGA N16, RX */
+/* GPIO 11 default UART RX, FPGA P15, TX */
+/* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
+/* GPIO 28 default PLL1_TWI SCL, FPGA K25, SCL */
+
+// TANG_MEGA60K
+/* GPIO 27 default UART RX, FPGA U15 TX */
+/* GPIO 28 default UART TX, FPGA V15 RX */
+/* GPIO 16 PWR_KEY, no FPGA connection, re-use possible */
+/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, re-use possible */
+/* GPIO 20 I2C INT, no FPGA connection */
+/* GPIO 21 I2C SDA, no FPGA connection */
+/* GPIO 22 I2C CLK, no FPGA connection, re-use possible */
+
+// TANG_PRIMER25K
+/* GPIO 11 default UART TX */
+/* GPIO 10 default UART RX */
+/* GPIO 12 access at button S3, Capacitor C22 need to be removed */
+/* GPIO 20 access at LED6, not usable for UART, unknown reason */
+
