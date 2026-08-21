@@ -81,7 +81,7 @@ endif()
 
 find_package(bouffalo_sdk REQUIRED HINTS $ENV{BL_SDK_BASE})
 
-sdk_add_compile_definitions(-DPBUF_POOL_SIZE=32 -DPBUF_POOL_BUFSIZE=1600)
+#sdk_add_compile_definitions(-DPBUF_POOL_SIZE=32 -DPBUF_POOL_BUFSIZE=1600)
 
 sdk_add_include_directories(. ../u8g2/csrc)
 

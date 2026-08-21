@@ -90,6 +90,7 @@
 #define TCP_QUEUE_OOSEQ               1
 #define MEMP_NUM_TCP_SEG              ((4 * TCP_SND_BUF) / TCP_MSS)
 #define MEMP_NUM_PBUF                 (TCP_SND_BUF / TCP_MSS)
+#define PBUF_POOL_SIZE                0
 #define LWIP_WND_SCALE                1
 #define TCP_RCV_SCALE                 2
 #define TCP_SNDLOWAT                  LWIP_MIN(LWIP_MAX(((TCP_SND_BUF) / 4), (2 * TCP_MSS) + 1), (TCP_SND_BUF)-1)

@@ -1362,12 +1362,6 @@ void mcu_hw_init(void) {
   usb_host();
 
   xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
-/*
-  debugf("[OS] start scheduler");
-  vTaskStartScheduler();
-  while (1) {
-    }
-*/
 }
 
 void stop_hid(void) {
@@ -1504,7 +1498,7 @@ static void sntp_start_callback(void *arg)
 
 static void sntp_start_from_task(void)
 {
-  tcpip_callback_with_block(sntp_start_callback, NULL, 1);
+  tcpip_callback_with_block(sntp_start_callback, NULL, 0);
 }
 
 uint8_t mcu_hw_network_status(void)

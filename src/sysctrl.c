@@ -55,9 +55,15 @@ int sys_status_is_valid(void) {
       // check colboot status
       sys_debugf("Coldboot status is %02x", coldboot);
     }
-  } else
-    sys_debugf("Unexpected status reply: %02x/%02x/%02x/%02x", b0, b1, core_id, coldboot);
-  
+  } else {
+    static bool warned = false;
+    if(!warned) {
+      sys_debugf("Unexpected status reply: %02x/%02x/%02x/%02x", b0, b1, core_id, coldboot);
+      warned = true;
+    }
+    return 0;
+  }
+
   return((b0 == 0x5c) && (b1 == 0x42));
 }
 
