@@ -285,7 +285,7 @@ static void sys_handle_event(bool ignore_coldboot) {
 
     // the second button controls the OSD, so it can be used in conjunction
     // with 
-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)||(MISTLE_BOARD == 6)
+#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)||(MISTLE_BOARD == 6)
     if(!mcu_hw_jtag_is_active())
 #endif
 
@@ -300,7 +300,7 @@ static void sys_handle_event(bool ignore_coldboot) {
     else {
       sys_debugf("FPGA cold boot detected, reseting MCU ...");
 
-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)||(MISTLE_BOARD == 6)
+#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)||(MISTLE_BOARD == 6)
       // Check for USB-JTAG activity and don't reset (and thus break
       // the JTAG activity)
       if(mcu_hw_jtag_is_active()) {

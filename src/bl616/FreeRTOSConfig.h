@@ -24,8 +24,10 @@
  *
  * 1 tab == 4 spaces!
  */
+
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
+
 /*-----------------------------------------------------------
  * Application specific definitions.
  *
@@ -75,7 +77,9 @@
 #define configUSE_TICKLESS_IDLE                 0
 #define configUSE_POSIX_ERRNO                   1
 
-#define configTHREAD_LOCAL_STORAGE_DELETE_CALLBACKS 0
+/* Required by LWIP_NETCONN_SEM_PER_THREAD. */
+#define configNUM_THREAD_LOCAL_STORAGE_POINTERS     1
+#define configTHREAD_LOCAL_STORAGE_DELETE_CALLBACKS 1
 
 /* Co-routine definitions. */
 #define configUSE_CO_ROUTINES                   0
@@ -91,6 +95,7 @@
 #ifndef uartPRIMARY_PRIORITY
 #define uartPRIMARY_PRIORITY (configMAX_PRIORITIES - 3)
 #endif
+
 /* Set the following definitions to 1 to include the API function, or zero
 to exclude the API function. */
 #define INCLUDE_vTaskPrioritySet         1
@@ -105,6 +110,7 @@ to exclude the API function. */
 #define INCLUDE_xTaskAbortDelay          1
 #define INCLUDE_xTaskGetHandle           1
 #define INCLUDE_xSemaphoreGetMutexHolder 1
+
 /* Normal assert() semantics without relying on the provision of an assert.h
 header file. */
 void vApplicationMallocFailedHook(void);
@@ -120,9 +126,12 @@ void vAssertCalled(void);
         printf("%s\r\n", (const char *)(#x));  \
         vAssertCalled();                       \
     }
+
 #if (configUSE_TICKLESS_IDLE != 0)
 void vApplicationSleep(uint32_t xExpectedIdleTime);
 #define portSUPPRESS_TICKS_AND_SLEEP(xExpectedIdleTime) vApplicationSleep(xExpectedIdleTime)
 #endif
+
 // #define portUSING_MPU_WRAPPERS
+
 #endif /* FREERTOS_CONFIG_H */

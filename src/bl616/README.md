@@ -285,6 +285,8 @@ or alternatively a shell based tool:
 ```shell
 cd %HOMEPATH%/Documents\FPGA-Companion\src\bl616
 BLFlashCommand.exe --interface=uart --baudrate=2000000 --port=COM_tbd --chipname=bl616 --cpu_id= --config %HOMEPATH%/Documents\FPGA-Companion\src\bl616\buildall\flash_nano20k.ini
+
+~/Downloads/bouffalo_sdk/tools/bflb_tools/bouffalo_flash_cube/BLFlashCommand-ubuntu --interface=uart --baudrate=2000000 --port=/dev/ttyACM0 --chipname=bl616 --cpu_id= --config ~/Dokumente/fork/FPGA-Companion/src/bl616/buildall/flash_m0sdock_cfg.ini
 ```
 
 After successful download you need to unplug the device again and reinsert it *without* the BOOT button pressed to boot into the newly installed firmware.

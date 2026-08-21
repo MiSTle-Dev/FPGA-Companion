@@ -49,15 +49,23 @@
 #include "bflb_sf_ctrl.h"
 #include "board_flash_psram.h"
 
+#include "lwip/opt.h"
+#include "lwip/init.h"
+#include "netif/etharp.h"
+#include "lwip/netif.h"
+#include "lwip/dhcp.h"
+#include "lwip/prot/dhcp.h"
+#include "lwip/apps/sntp.h"
+#include "usbh_rtl8152.h"
+#include "usbh_asix.h"
+
 #include <lwip/tcpip.h>
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
 #include <lwip/dns.h>
-#include "fhost_api.h"
 #include "wifi_mgmr_ext.h"
-#include "wifi_mgmr.h"
 #include "rfparam_adapter.h"
 
 #include "bflb_rtc.h" 
@@ -899,7 +907,7 @@ void usb_host(void) {
     usb_config.xbox_info[i].sem = xSemaphoreCreateBinary();
   }
 
-  usbh_initialize(0, usb_dev->reg_base);
+  usbh_initialize(0, usb_dev->reg_base, NULL);
 }
 
 uint8_t usbh_get_hport_active_config_index(struct usbh_hubport *hport)
@@ -1174,6 +1182,8 @@ void bflb_wfa_init(void)
 #endif
 
 static void wifi_init(void);
+static void sntp_enable_dhcp_servers(void);
+static void sntp_start_from_task(void);
 
 // local board_init used as a replacemement for global board_init
 static void mn_board_init(void) {
@@ -1341,11 +1351,8 @@ void mcu_hw_init(void) {
   shell_init_with_task(uart0);
 #endif
 
-#ifdef M0S_DOCK
-  wifi_init();
-#elif TANG_CONSOLE60K
-  wifi_init();
-#elif TANG_MEGA60K
+  tcpip_init(NULL, NULL);
+#if defined(M0S_DOCK)|| defined(TANG_CONSOLE60K)|| defined(TANG_MEGA60K)
   wifi_init();
 #endif
 
@@ -1355,6 +1362,12 @@ void mcu_hw_init(void) {
   usb_host();
 
   xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
+/*
+  debugf("[OS] start scheduler");
+  vTaskStartScheduler();
+  while (1) {
+    }
+*/
 }
 
 void stop_hid(void) {
@@ -1445,9 +1458,59 @@ void mcu_hw_port_byte(unsigned char byte) {
 }
 
 extern int wifi_mgmr_task_start(void);
-extern int fhost_init(void);
 extern int wifi_mgmr_sta_scanlist(void);
 extern int wifi_mgmr_sta_quickconnect(const char *ssid, const char *key, uint16_t freq1, uint16_t freq2);
+
+// the network connection state
+#define NETWORK_STATUS_UNINITIALIZED        (0)
+#define NETWORK_STATUS_TCPIP_INIT         (1<<0) // lwip has been initialized
+#define NETWORK_STATUS_WIFI               (1<<1) // current setup is wifi based
+#define NETWORK_STATUS_UP                 (1<<2) // wifi connected or ethernet up
+#define NETWORK_STATUS_HAS_ADDR           (1<<3) // IP address is valid
+#define NETWORK_STATUS_SNTP_STARTED       (1<<4) // sntp app is running
+#define NETWORK_STATUS_TCP_CONNECTED      (1<<5) // the at wifi tcp connection is established
+
+static uint8_t network_status = NETWORK_STATUS_UNINITIALIZED;
+
+enum network_interface {
+  NETWORK_INTERFACE_NONE,
+  NETWORK_INTERFACE_WIFI,
+  NETWORK_INTERFACE_RTL8152,
+  NETWORK_INTERFACE_ASIX
+};
+
+static enum network_interface active_network_interface = NETWORK_INTERFACE_NONE;
+static struct netif *active_network_netif = NULL;
+
+static void sntp_enable_dhcp_servers_callback(void *arg)
+{
+  (void)arg;
+  sntp_servermode_dhcp(1);
+}
+
+static void sntp_enable_dhcp_servers(void)
+{
+  tcpip_callback_with_block(sntp_enable_dhcp_servers_callback, NULL, 1);
+}
+
+static void sntp_start_callback(void *arg)
+{
+  (void)arg;
+  if (!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
+    network_status |= NETWORK_STATUS_SNTP_STARTED;
+    sntp_init();
+  }
+}
+
+static void sntp_start_from_task(void)
+{
+  tcpip_callback_with_block(sntp_start_callback, NULL, 1);
+}
+
+uint8_t mcu_hw_network_status(void)
+{
+  return network_status;
+}
 
 #define WIFI_STACK_SIZE  (1536)
 #define TASK_PRIORITY_FW (16)
@@ -1485,16 +1548,38 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   } break;
   case CODE_WIFI_ON_CONNECTED: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_CONNECTED", __func__);
+    if (active_network_interface != NETWORK_INTERFACE_NONE &&
+        active_network_interface != NETWORK_INTERFACE_WIFI) {
+      break;
+    }
+    /*
+     * Do not mark WiFi as the active interface on plain association.
+     * A WiFi link without an IP address should not block USB Ethernet,
+     * which may already be up and have a valid IPv4 lease.
+     */
+    network_status |= NETWORK_STATUS_WIFI;
     unsigned char evt = 3; 
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_GOT_IP: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_GOT_IP", __func__);
+    if (active_network_interface != NETWORK_INTERFACE_NONE &&
+        active_network_interface != NETWORK_INTERFACE_WIFI) {
+      break;
+    }
+    active_network_interface = NETWORK_INTERFACE_WIFI;
+    network_status |= NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
+    sntp_start_from_task();
     unsigned char evt = 4; 
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_DISCONNECT: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_DISCONNECT", __func__);
+    if (active_network_interface != NETWORK_INTERFACE_WIFI) {
+      break;
+    }
+    active_network_interface = NETWORK_INTERFACE_NONE;
+    network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
     unsigned char evt = 2; 
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
@@ -1518,8 +1603,10 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
 void wifi_start_firmware_task(void *param)
 {
     /* network init */
-    tcpip_init(NULL, NULL);
+    network_status |= NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI;
     debugf("Starting wifi ...");
+
+    sntp_enable_dhcp_servers();
 
     if (0 != rfparam_init(0, NULL, 0)) {
       debugf("PHY RF init failed!");
@@ -1622,6 +1709,18 @@ static void wifi_scan_item_cb(void *env, void *arg, wifi_mgmr_scan_item_t *item)
 }  
 
 void mcu_hw_wifi_scan(void) {
+  if (!(network_status & NETWORK_STATUS_TCPIP_INIT) ||
+      !(network_status & NETWORK_STATUS_WIFI)) {
+    if (!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
+      debugf("Ignoring WiFi command since TCP stack is not initialized");
+      at_wifi_puts("TCPIP not available\r\n");
+    } else {
+      debugf("Ignoring WiFi command since network hardware is not WiFi");
+      at_wifi_puts("WiFi not available\r\n");
+    }
+    return;
+  }
+
   debugf("WiFi: Performing scan");
 
   static wifi_mgmr_scan_params_t config;
@@ -1674,6 +1773,19 @@ static void wifi_info()
 }
 
 void mcu_hw_wifi_connect(char *ssid, char *key) {
+  if (active_network_interface == NETWORK_INTERFACE_RTL8152 ||
+      active_network_interface == NETWORK_INTERFACE_ASIX) {
+    debugf("Ignoring WiFi command since USB Ethernet is active");
+    at_wifi_puts("WiFi not available\r\n");
+    return;
+  }
+
+  if (!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
+    debugf("Ignoring WiFi command since TCP stack is not initialized");
+    at_wifi_puts("TCPIP not available\r\n");
+    return;
+  }
+
   debugf("WiFI: connect to %s/%s", ssid, key);
   
   at_wifi_puts("WiFI: Connecting...");
@@ -1693,14 +1805,38 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
     debugf("\r\nWiFI: STA failed!");
   } else {
     wait4event(4, 4);
-    if (wifi_mgmr_sta_state_get() == 1 ) {
+    if (wifi_mgmr_sta_state_get() == 1 && (network_status & NETWORK_STATUS_HAS_ADDR)) {
+      active_network_interface = NETWORK_INTERFACE_WIFI;
+      network_status |= NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
       at_wifi_puts("\r\nWiFI: Connected\r\n");
       wifi_info();
     } else {
       debugf("\r\nWiFI: Connection failed!");
       at_wifi_puts("\r\nWiFI: Connection failed!\r\n");
+      network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
+      if (active_network_interface == NETWORK_INTERFACE_WIFI)
+        active_network_interface = NETWORK_INTERFACE_NONE;
       }
     }
+}
+
+static bool network_available(void) {
+  // Require TCP/IP init and either a link-up indication or a valid IP address.
+  if(!(network_status & NETWORK_STATUS_TCPIP_INIT) ||
+     !((network_status & NETWORK_STATUS_UP) ||
+       (network_status & NETWORK_STATUS_HAS_ADDR))) {
+
+    if(!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
+      debugf("Ignoring command since TCP stack is not initialized");
+      at_wifi_puts("TCPIP not available\r\n");
+    } else if(!((network_status & NETWORK_STATUS_UP) ||
+                (network_status & NETWORK_STATUS_HAS_ADDR))) {
+      debugf("Ignoring command since network is down or disconnected");
+      at_wifi_puts("Network not available\r\n");
+    }    
+    return false;
+  }  
+  return true;
 }
 
 static struct tcp_pcb *tcp_pcb = NULL;
@@ -1713,7 +1849,7 @@ static err_t mcu_tcp_connected( __attribute__((unused)) void *arg, __attribute__
   
   debugf("Connected");
   at_wifi_puts("Connected\r\n");
-  wifi_state = WIFI_STATE_CONNECTED;  // connected
+  network_status |= NETWORK_STATUS_TCP_CONNECTED;
   return ERR_OK;
 }
 
@@ -1721,11 +1857,13 @@ static void mcu_tcp_err(__attribute__((unused)) void *arg, err_t err) {
   if( err == ERR_RST) {
     debugf("tcp connection reset");
     at_wifi_puts("\r\nNO CARRIER\r\n");
-    wifi_state = WIFI_STATE_DISCONNECTED;      
+    wifi_state = WIFI_STATE_DISCONNECTED;
+    network_status &= ~NETWORK_STATUS_TCP_CONNECTED;
   } else if (err == ERR_ABRT) {
     debugf("err abort");
     at_wifi_puts("Connection failed\r\n");
-    wifi_state = WIFI_STATE_DISCONNECTED;    
+    wifi_state = WIFI_STATE_DISCONNECTED;
+    network_status &= ~NETWORK_STATUS_TCP_CONNECTED;
   } else {
     debugf("tcp_err %d", err);
   }
@@ -1735,7 +1873,8 @@ err_t mcu_tcp_recv(__attribute__((unused)) void *arg, struct tcp_pcb *tpcb, stru
   if (!p) {
     debugf("No data, disconnected?");
     at_wifi_puts("\r\nNO CARRIER\r\n");
-    wifi_state = WIFI_STATE_DISCONNECTED;    
+    wifi_state = WIFI_STATE_DISCONNECTED;
+    network_status &= ~NETWORK_STATUS_TCP_CONNECTED;
     return ERR_OK;
   }
 
@@ -1751,8 +1890,9 @@ err_t mcu_tcp_recv(__attribute__((unused)) void *arg, struct tcp_pcb *tpcb, stru
 }
 
 static void mcu_tcp_connect(const ip_addr_t *ipaddr, int port) {
+  if(!network_available()) return;
+
   debugf("Connecting to IP %s %d", ipaddr_ntoa(ipaddr), port);
-  
   // the address was resolved and we can connect
   tcp_pcb = tcp_new_ip_type(IP_GET_TYPE(ipaddr));
   if (!tcp_pcb) {    
@@ -1773,7 +1913,11 @@ static void mcu_tcp_connect(const ip_addr_t *ipaddr, int port) {
 }
 
 void mcu_hw_tcp_disconnect(void) {
-  if(wifi_state == WIFI_STATE_CONNECTED)
+  if(!network_available()) return;
+
+  if(!(network_status & NETWORK_STATUS_TCP_CONNECTED))
+    at_wifi_puts("Not connected!\r\n");
+  else
     tcp_close(tcp_pcb);
 }
 
@@ -1792,6 +1936,8 @@ static void dns_found(__attribute__((unused)) const char *hostname, const ip_add
 void mcu_hw_tcp_connect(char *host, int port) {
   static int lport;
   static ip_addr_t address;
+
+  if(!network_available()) return;
 
   lport = port;
   debugf("connecting to %s %d", host, lport);
@@ -1812,7 +1958,7 @@ void mcu_hw_tcp_connect(char *host, int port) {
 }
 
 bool mcu_hw_tcp_data(unsigned char byte) {
-  if(wifi_state == WIFI_STATE_CONNECTED) {
+  if(network_status & NETWORK_STATUS_TCP_CONNECTED) {
     err_t err = tcp_write(tcp_pcb, &byte, 1, TCP_WRITE_FLAG_COPY);
     if (err != ERR_OK) debugf("Failed to write data %d", err);
 
@@ -2405,6 +2551,322 @@ void mcu_hw_upload_core(char *name) {
 
 bool mcu_hw_usb_msc_present(void) {
   return usb_msc_mounted;
+}
+
+/* Number of seconds between 1970 and Feb 7, 2036 06:28:16 UTC (epoch 1) */
+#define DIFF_SEC_1970_2036          ((u32_t)2085978496L)
+
+void sntp_set_system_time(u32_t sec) {
+  debugf("%s(%lu)", __FUNCTION__, sec);
+
+  time_t ut = sec;
+  struct tm* timeinfo = gmtime(&ut);
+
+  // TODO: handle time zone
+  // (needs to be read from config or the like)
+  
+  // time is UTC ...
+  debugf(" YEAR:     %u", 1900 + timeinfo->tm_year);
+  debugf(" MONTH:    %u", 1 + timeinfo->tm_mon);
+  debugf(" DAY:      %u", timeinfo->tm_mday);
+  debugf(" WEEK DAY: %u", timeinfo->tm_wday);
+  debugf(" HOUR:     %u", timeinfo->tm_hour);
+  debugf(" MINUTE:   %u", timeinfo->tm_min);
+  debugf(" SECOND:   %u", timeinfo->tm_sec);
+  debugf(" DST:      %s", timeinfo->tm_isdst?"true":"false");
+
+  // send time into core
+  sys_set_time(SYS_TIME_FLAGS_NTP | ( timeinfo->tm_isdst?SYS_TIME_FLAGS_DST:0),
+	       timeinfo->tm_year, timeinfo->tm_mon, timeinfo->tm_mday + (timeinfo->tm_wday << 5),
+	       timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+}
+
+ip_addr_t g_ipaddr;
+ip_addr_t g_netmask;
+ip_addr_t g_gateway;
+
+static void usbh_lwip_netif_link_callback(struct netif *netif)
+{
+  if (netif != active_network_netif) return;
+
+  debugf("USB netif link status changed %s", netif_is_link_up(netif) ? "up" : "down");
+  if (netif_is_link_up(netif)) {
+    network_status |= NETWORK_STATUS_UP;
+  } else {
+    network_status &= ~NETWORK_STATUS_UP;
+  }
+}
+
+static void usbh_lwip_netif_status_callback(struct netif *netif)
+{
+  if (netif != active_network_netif) return;
+
+  debugf("USB netif status changed %s", ip4addr_ntoa(netif_ip4_addr(netif)));
+
+  if (!ip4_addr_isany_val(*netif_ip4_addr(netif))) {
+    if (!(network_status & NETWORK_STATUS_HAS_ADDR)) {
+      debugf("just got an ip address");
+#if LWIP_SNTP
+      if (!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
+        network_status |= NETWORK_STATUS_SNTP_STARTED;
+        sntp_init();
+      } else {
+        debugf("sntp already started");
+      }
+#else
+      network_status |= NETWORK_STATUS_SNTP_STARTED;
+#endif
+    }
+
+    network_status |= NETWORK_STATUS_HAS_ADDR;
+  } else {
+    network_status &= ~NETWORK_STATUS_HAS_ADDR;
+  }
+}
+
+void usbh_lwip_eth_output_common(struct pbuf *p, uint8_t *buf)
+{
+    struct pbuf *q;
+    uint8_t *buffer;
+
+    buffer = buf;
+    for (q = p; q != NULL; q = q->next) {
+        usb_memcpy(buffer, q->payload, q->len);
+        buffer += q->len;
+    }
+}
+
+void usbh_lwip_eth_input_common(struct netif *netif, uint8_t *buf, uint32_t len)
+{
+#if LWIP_TCPIP_CORE_LOCKING_INPUT
+    pbuf_type type = PBUF_REF;
+#else
+    pbuf_type type = PBUF_POOL;
+#endif
+    err_t err;
+    struct pbuf *p;
+
+    p = pbuf_alloc(PBUF_RAW, len, type);
+    if (p != NULL) {
+#if LWIP_TCPIP_CORE_LOCKING_INPUT
+        p->payload = buf;
+#else
+        usb_memcpy(p->payload, buf, len);
+#endif
+        err = netif->input(p, netif);
+        if (err != ERR_OK) {
+            pbuf_free(p);
+        }
+    } else {
+        debugf("No memory to alloc pbuf");
+    }
+}
+
+struct usb_osal_timer *dhcp_handle;
+
+static void dhcp_timeout(void *arg)
+{
+    struct netif *netif = (struct netif *)arg;
+    struct dhcp *dhcp;
+    if (netif_is_up(netif)) {
+
+        dhcp = netif_dhcp_data(netif);
+
+        if (dhcp && (dhcp->state == DHCP_STATE_BOUND)) {
+
+            debugf("IPv4 Address     : %s", ipaddr_ntoa(&netif->ip_addr));
+            debugf("IPv4 Subnet mask : %s", ipaddr_ntoa(&netif->netmask));
+            debugf("IPv4 Gateway     : %s", ipaddr_ntoa(&netif->gw));
+
+            usb_osal_timer_stop(dhcp_handle);
+        }
+    } else {
+    }
+}
+
+struct netif g_rtl8152_netif;
+
+static err_t usbh_rtl8152_linkoutput(struct netif *netif, struct pbuf *p)
+{
+    int ret;
+    (void)netif;
+
+    usbh_lwip_eth_output_common(p, usbh_rtl8152_get_eth_txbuf());
+    ret = usbh_rtl8152_eth_output(p->tot_len);
+    if (ret < 0) {
+        return ERR_BUF;
+    } else {
+        return ERR_OK;
+    }
+}
+
+void usbh_rtl8152_eth_input(uint8_t *buf, uint32_t buflen)
+{
+    usbh_lwip_eth_input_common(&g_rtl8152_netif, buf, buflen);
+}
+
+static err_t usbh_rtl8152_if_init(struct netif *netif)
+{
+    LWIP_ASSERT("netif != NULL", (netif != NULL));
+
+    netif->mtu = 1500;
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_UP;
+    netif->state = NULL;
+    netif->name[0] = 'E';
+    netif->name[1] = 'X';
+    netif->output = etharp_output;
+    netif->linkoutput = usbh_rtl8152_linkoutput;
+    return ERR_OK;
+}
+
+void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
+{
+    struct netif *netif = &g_rtl8152_netif;
+
+  if (active_network_interface != NETWORK_INTERFACE_NONE) {
+    debugf("Ignoring RTL8152 since another network interface is active");
+    return;
+  }
+
+    netif->hwaddr_len = 6;
+    memcpy(netif->hwaddr, rtl8152_class->mac, 6);
+
+    IP4_ADDR(&g_ipaddr, 0, 0, 0, 0);
+    IP4_ADDR(&g_netmask, 0, 0, 0, 0);
+    IP4_ADDR(&g_gateway, 0, 0, 0, 0);
+
+    network_status |= NETWORK_STATUS_TCPIP_INIT;
+
+    netif = netif_add(netif, &g_ipaddr, &g_netmask, &g_gateway, NULL, usbh_rtl8152_if_init, tcpip_input);
+    active_network_interface = NETWORK_INTERFACE_RTL8152;
+    active_network_netif = netif;
+    network_status &= ~NETWORK_STATUS_WIFI;
+    netif_set_link_callback(netif, usbh_lwip_netif_link_callback);
+    netif_set_status_callback(netif, usbh_lwip_netif_status_callback);
+    netif_set_default(netif);
+    while (!netif_is_up(netif)) {
+    }
+
+    dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
+    if (dhcp_handle == NULL) {
+        debugf("timer creation failed!");
+        while (1) {
+        }
+    }
+
+    usb_osal_thread_create("usbh_rtl8152_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_rtl8152_rx_thread, NULL);
+    sntp_enable_dhcp_servers();
+    dhcp_start(netif);
+    usb_osal_timer_start(dhcp_handle);
+}
+
+void usbh_rtl8152_stop(struct usbh_rtl8152 *rtl8152_class)
+{
+    struct netif *netif = &g_rtl8152_netif;
+    (void)rtl8152_class;
+
+  if (active_network_netif != netif) return;
+
+    dhcp_stop(netif);
+    dhcp_cleanup(netif);
+    usb_osal_timer_delete(dhcp_handle);
+    netif_set_down(netif);
+    netif_remove(netif);
+    active_network_netif = NULL;
+    active_network_interface = NETWORK_INTERFACE_NONE;
+    network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
+}
+
+struct netif g_asix_netif;
+
+static err_t usbh_asix_linkoutput(struct netif *netif, struct pbuf *p)
+{
+    int ret;
+    (void)netif;
+
+    usbh_lwip_eth_output_common(p, usbh_asix_get_eth_txbuf());
+    ret = usbh_asix_eth_output(p->tot_len);
+    if (ret < 0) {
+        return ERR_BUF;
+    } else {
+        return ERR_OK;
+    }
+}
+
+void usbh_asix_eth_input(uint8_t *buf, uint32_t buflen)
+{
+    usbh_lwip_eth_input_common(&g_asix_netif, buf, buflen);
+}
+
+static err_t usbh_asix_if_init(struct netif *netif)
+{
+    LWIP_ASSERT("netif != NULL", (netif != NULL));
+
+    netif->mtu = 1500;
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_UP;
+    netif->state = NULL;
+    netif->name[0] = 'E';
+    netif->name[1] = 'X';
+    netif->output = etharp_output;
+    netif->linkoutput = usbh_asix_linkoutput;
+    return ERR_OK;
+}
+
+void usbh_asix_run(struct usbh_asix *asix_class)
+{
+    struct netif *netif = &g_asix_netif;
+
+  if (active_network_interface != NETWORK_INTERFACE_NONE) {
+    debugf("Ignoring ASIX since another network interface is active");
+    return;
+  }
+
+    netif->hwaddr_len = 6;
+    memcpy(netif->hwaddr, asix_class->mac, 6);
+
+    IP4_ADDR(&g_ipaddr, 0, 0, 0, 0);
+    IP4_ADDR(&g_netmask, 0, 0, 0, 0);
+    IP4_ADDR(&g_gateway, 0, 0, 0, 0);
+
+    network_status |= NETWORK_STATUS_TCPIP_INIT;
+
+    netif = netif_add(netif, &g_ipaddr, &g_netmask, &g_gateway, NULL, usbh_asix_if_init, tcpip_input);
+    active_network_interface = NETWORK_INTERFACE_ASIX;
+    active_network_netif = netif;
+    network_status &= ~NETWORK_STATUS_WIFI;
+    netif_set_link_callback(netif, usbh_lwip_netif_link_callback);
+    netif_set_status_callback(netif, usbh_lwip_netif_status_callback);
+    netif_set_default(netif);
+    while (!netif_is_up(netif)) {
+    }
+
+    dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
+    if (dhcp_handle == NULL) {
+        debugf("timer creation failed!");
+        while (1) {
+        }
+    }
+
+    usb_osal_thread_create("usbh_asix_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_asix_rx_thread, NULL);
+    sntp_enable_dhcp_servers();
+    dhcp_start(netif);
+    usb_osal_timer_start(dhcp_handle);
+}
+
+void usbh_asix_stop(struct usbh_asix *asix_class)
+{
+    struct netif *netif = &g_asix_netif;
+    (void)asix_class;
+
+  if (active_network_netif != netif) return;
+    dhcp_stop(netif);
+    dhcp_cleanup(netif);
+    usb_osal_timer_delete(dhcp_handle);
+    netif_set_down(netif);
+    netif_remove(netif);
+    active_network_netif = NULL;
+    active_network_interface = NETWORK_INTERFACE_NONE;
+    network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
 }
 
 // M0S_DOCK
