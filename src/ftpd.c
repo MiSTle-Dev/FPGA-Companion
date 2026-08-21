@@ -337,6 +337,7 @@ static void do_stor(ftps_t *fs, const char *path)
         return;
     }
     bool ok = true;
+    uint32_t total = restart_at;        /* track offset to pinpoint a bad write */
     for (;;) {
         int r = lwip_recv(dfd, fs->xbuf, XFER_CHUNK, 0);
         if (r == 0)
@@ -346,17 +347,21 @@ static void do_stor(ftps_t *fs, const char *path)
             break;
         }
         UINT bw = 0;
-        if (f_write(&f, fs->xbuf, (UINT)r, &bw) != FR_OK || bw != (UINT)r) {
-            ok = false;               /* volume full? */
+        FRESULT wr = f_write(&f, fs->xbuf, (UINT)r, &bw);
+        if (wr != FR_OK || bw != (UINT)r) {
+            debugf("FTP: STOR write failed at offset %lu (recv=%d written=%u fr=%d)",
+                   (unsigned long)total, r, bw, wr);
+            ok = false;               /* volume full or card write failure */
             break;
         }
+        total += (uint32_t)bw;
     }
     f_close(&f);
     sdc_unlock();
     lwip_close(dfd);
     reply(fs, ok ? "226 Transfer complete." : "426 Transfer aborted.");
     if (ok)
-        debugf("FTP: STORED %s", path);
+        debugf("FTP: STORED %s (%lu bytes)", path, (unsigned long)total);
 }
 
 /* ---- command loop ---------------------------------------------------------- */
