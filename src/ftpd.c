@@ -8,7 +8,7 @@
  * PORT gets 502).
  *
  * Implemented: USER PASS SYST FEAT PWD CWD CDUP TYPE PASV LIST NLST RETR
- * STOR DELE MKD RMD RNFR RNTO SIZE NOOP QUIT. All paths are relative to
+ * STOR DELE MKD RMD RNFR RNTO SIZE REST NOOP QUIT. All paths are relative to
  * CARD_MOUNTPOINT and accessed directly via FatFs, serialized with
  * sdc_lock()/sdc_unlock() the same way sdc.c guards the card. Files
  * currently mounted as a disk/rom image on any drive are protected from
@@ -48,6 +48,7 @@ typedef struct {
     int     pasv;                     /* passive listener          */
     char    cwd[CWD_MAX];             /* "" = volume root          */
     char    rnfr[CWD_MAX];            /* pending RNFR source       */
+    uint32_t restart_at;               /* pending REST offset, 0 = none */
     uint8_t xbuf[XFER_CHUNK];
     volatile bool in_use;
 } ftps_t;
@@ -253,11 +254,20 @@ static void do_retr(ftps_t *fs, const char *path)
     char full[FPATH_MAX];
     full_path(path, full, sizeof(full));
 
+    uint32_t restart_at = fs->restart_at;
+    fs->restart_at = 0;                 /* REST only applies to the next transfer */
+
     FIL f;
     sdc_lock();
     if (f_open(&f, full, FA_OPEN_EXISTING | FA_READ) != FR_OK) {
         sdc_unlock();
         reply(fs, "550 Not found.");
+        return;
+    }
+    if (restart_at && f_lseek(&f, restart_at) != FR_OK) {
+        f_close(&f);
+        sdc_unlock();
+        reply(fs, "550 Bad restart offset.");
         return;
     }
     reply(fs, "150 Opening data connection.");
@@ -299,11 +309,23 @@ static void do_stor(ftps_t *fs, const char *path)
     char full[FPATH_MAX];
     full_path(path, full, sizeof(full));
 
+    uint32_t restart_at = fs->restart_at;
+    fs->restart_at = 0;                 /* REST only applies to the next transfer */
+
+    /* a resumed upload must keep the existing bytes up to the restart
+     * offset; only a fresh upload (no REST) truncates the file */
     FIL f;
     sdc_lock();
-    if (f_open(&f, full, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
+    if (f_open(&f, full, restart_at ? (FA_OPEN_EXISTING | FA_WRITE)
+                                     : (FA_CREATE_ALWAYS | FA_WRITE)) != FR_OK) {
         sdc_unlock();
         reply(fs, "550 Cannot create file.");
+        return;
+    }
+    if (restart_at && f_lseek(&f, restart_at) != FR_OK) {
+        f_close(&f);
+        sdc_unlock();
+        reply(fs, "550 Bad restart offset.");
         return;
     }
     reply(fs, "150 Opening data connection.");
@@ -344,6 +366,7 @@ static void session(ftps_t *fs)
     int  len = 0;
     fs->cwd[0] = 0;
     fs->rnfr[0] = 0;
+    fs->restart_at = 0;
 
     reply(fs, "220 A2FPGA a2n20v2-Enhanced FTP ready.");
 
@@ -501,6 +524,15 @@ static void session(ftps_t *fs)
                     }
                 }
                 reply(fs, "550 Rmdir failed (not empty?).");
+            } else if (!strcmp(line, "REST")) {
+                char *end;
+                unsigned long off = strtoul(arg, &end, 10);
+                if (*arg && !*end) {
+                    fs->restart_at = (uint32_t)off;
+                    replyf(fs, "350 Restarting at %lu.", off);
+                } else {
+                    reply(fs, "501 Invalid restart offset.");
+                }
             } else if (!strcmp(line, "RNFR")) {
                 if (resolve(fs, arg, fs->rnfr, sizeof(fs->rnfr)))
                     reply(fs, "350 Ready for RNTO.");
