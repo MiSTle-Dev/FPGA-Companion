@@ -27,6 +27,7 @@
 #include "../inifile.h"
 #include "../menu.h"
 #include "../gowin.h"
+#include "../ftpd.h"
 
 #include <bl616_hbn.h>
 #include "bl616_glb.h"
@@ -1362,6 +1363,8 @@ void mcu_hw_init(void) {
   usb_host();
 
   xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
+
+  ftpd_init();
 }
 
 void stop_hid(void) {

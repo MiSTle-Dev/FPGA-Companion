@@ -86,7 +86,8 @@ sdk_add_include_directories(. ../u8g2/csrc)
 target_sources(app PRIVATE
    	mcu_hw.c
     $ENV{BL_SDK_BASE}/components/net/lwip/lwip/src/apps/sntp/sntp.c
-   	../hidparser.c
+    ../ftpd.c
+    ../hidparser.c
    	../hid.c
    	../inifile.c
    	../menu.c
