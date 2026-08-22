@@ -46,6 +46,13 @@ static void sdc_spi_begin(void) {
   mcu_hw_spi_tx_u08(SPI_TARGET_SDC);
 }
 
+// max time to wait for the fpga/sd card to leave the busy state, and for a
+// single sector read/write to complete once issued. Without these bounds a
+// stalled fpga/card hangs the MCU forever and, worse, the caller currently
+// has no way to notice a sector that never really finished
+#define SDC_BUSY_TIMEOUT_MS   1000
+#define SDC_READY_TIMEOUT_MS  500
+
 static LBA_t clst2sect(DWORD clst) {
   clst -= 2;
   if (clst >= fs.n_fatent - 2)   return 0;
@@ -58,12 +65,20 @@ int sdc_read_sector(unsigned long sector, unsigned char *buffer) {
   // may change the data direction from core to mcu while
   // the core is still reading
   unsigned char status;
+  TickType_t t0 = xTaskGetTickCount();
   do {
     sdc_spi_begin();  
     mcu_hw_spi_tx_u08(SPI_SDC_STATUS);
     status = mcu_hw_spi_tx_u08(0);
     mcu_hw_spi_end();  
-  } while(status & 0x02);   // card busy?
+    if(status & 0x02) vTaskDelay(1);
+  } while((status & 0x02) &&
+          (xTaskGetTickCount() - t0) < pdMS_TO_TICKS(SDC_BUSY_TIMEOUT_MS));
+
+  if(status & 0x02) {
+    sdc_debugf("SDC: card busy timeout reading sector %lu", sector);
+    return -1;
+  }
 
   sdc_spi_begin();  
   mcu_hw_spi_tx_u08(SPI_SDC_MCU_READ);
@@ -72,8 +87,15 @@ int sdc_read_sector(unsigned long sector, unsigned char *buffer) {
   mcu_hw_spi_tx_u08((sector >> 8) & 0xff);
   mcu_hw_spi_tx_u08(sector & 0xff);
 
-  // todo: add timeout
-  while(mcu_hw_spi_tx_u08(0));  // wait for ready
+  // wait for ready, bounded so a stalled fpga can't hang the mcu forever
+  t0 = xTaskGetTickCount();
+  while(mcu_hw_spi_tx_u08(0)) {
+    if((xTaskGetTickCount() - t0) > pdMS_TO_TICKS(SDC_READY_TIMEOUT_MS)) {
+      mcu_hw_spi_end();
+      sdc_debugf("SDC: read timeout on sector %lu", sector);
+      return -1;
+    }
+  }
 
   // read 512 bytes sector data
   for(int i=0;i<512;i++) buffer[i] = mcu_hw_spi_tx_u08(0);
@@ -90,12 +112,20 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
   // check if sd card is still busy as it may
   // be reading a sector for the core.
   unsigned char status;
+  TickType_t t0 = xTaskGetTickCount();
   do {
     sdc_spi_begin();  
     mcu_hw_spi_tx_u08(SPI_SDC_STATUS);
     status = mcu_hw_spi_tx_u08(0);
     mcu_hw_spi_end();  
-  } while(status & 0x02);   // card busy?
+    if(status & 0x02) vTaskDelay(1);
+  } while((status & 0x02) &&
+          (xTaskGetTickCount() - t0) < pdMS_TO_TICKS(SDC_BUSY_TIMEOUT_MS));
+
+  if(status & 0x02) {
+    sdc_debugf("SDC: card busy timeout writing sector %lu", sector);
+    return -1;
+  }
 
   sdc_spi_begin();  
   mcu_hw_spi_tx_u08(SPI_SDC_MCU_WRITE);
@@ -107,8 +137,16 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
   // write sector data
   for(int i=0;i<512;i++) mcu_hw_spi_tx_u08(buffer[i]);  
 
-  // todo: add timeout
-  while(mcu_hw_spi_tx_u08(0));  // wait for ready
+  // wait for ready, bounded so a stalled fpga can't hang the mcu forever
+  // and so a sector that never completes is reported instead of assumed ok
+  t0 = xTaskGetTickCount();
+  while(mcu_hw_spi_tx_u08(0)) {
+    if((xTaskGetTickCount() - t0) > pdMS_TO_TICKS(SDC_READY_TIMEOUT_MS)) {
+      mcu_hw_spi_end();
+      sdc_debugf("SDC: write timeout on sector %lu", sector);
+      return -1;
+    }
+  }
 
   mcu_hw_spi_end();
 
@@ -134,7 +172,8 @@ static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, UINT count) {
 #endif
 
   while(count--) {
-    sdc_read_sector(sector, buff);
+    if(sdc_read_sector(sector, buff))
+      return -1;
     buff += 512;
     sector++;
   }
@@ -151,7 +190,8 @@ static SDC_RESULT sdc_write(const BYTE *buff, LBA_t sector, UINT count) {
 #endif
 
   while(count--) {
-    sdc_write_sector(sector, buff);
+    if(sdc_write_sector(sector, buff))
+      return -1;
     buff += 512;
     sector++;
   }

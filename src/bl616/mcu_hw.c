@@ -27,6 +27,7 @@
 #include "../inifile.h"
 #include "../menu.h"
 #include "../gowin.h"
+#include "../ftpd.h"
 
 #include <bl616_hbn.h>
 #include "bl616_glb.h"
@@ -1362,6 +1363,8 @@ void mcu_hw_init(void) {
   usb_host();
 
   xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
+
+  ftpd_init();
 }
 
 void stop_hid(void) {
@@ -2632,21 +2635,13 @@ void usbh_lwip_eth_output_common(struct pbuf *p, uint8_t *buf)
 
 void usbh_lwip_eth_input_common(struct netif *netif, uint8_t *buf, uint32_t len)
 {
-#if LWIP_TCPIP_CORE_LOCKING_INPUT
-    pbuf_type type = PBUF_REF;
-#else
-    pbuf_type type = PBUF_POOL;
-#endif
+    pbuf_type type = PBUF_RAM;
     err_t err;
     struct pbuf *p;
 
     p = pbuf_alloc(PBUF_RAW, len, type);
     if (p != NULL) {
-#if LWIP_TCPIP_CORE_LOCKING_INPUT
-        p->payload = buf;
-#else
         usb_memcpy(p->payload, buf, len);
-#endif
         err = netif->input(p, netif);
         if (err != ERR_OK) {
             pbuf_free(p);

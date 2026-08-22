@@ -5,7 +5,7 @@ based retro computing projects like [MiSTeryNano
 project](https://github.com/MiSTle-Dev/MiSTeryNano). While the FPGA
 typically implements the hardware of the retro machine itself the
 Companion uses a microcontroller to add support for modern peripherals
-like USB keyboards, mice and SD cards. It also implements an
+like USB keyboards, mice, SD cards and USB LAN dongle. It also implements an
 on-screen-display menu to allow the user to configure the retro
 machine.
 
@@ -48,11 +48,11 @@ disadvantages.
     - Very powerful Risc-V CPU
     - USB 2.0 highspeed host support
     - WiFi 6 support
-    - Bluetooth BLE 5.2 support
+    - Built-in Bluetooth and WiFi
     - [CherryUSB](https://github.com/cherry-embedded/CherryUSB) stack
   - Cons
     - Limited SDK support
-      - No classic Bluetooth support
+    - Many Tang boards do not have WiFi or Bluetooth antennas (only M0S Dock)
 
 ### RP2040
 
