@@ -630,6 +630,7 @@ static int menu_wrap_text(int y_in, const char *msg) {
 // draw a dialog box
 static bool dialog_opened_osd = false;
 static TimerHandle_t dialog_disappear_timer = NULL;  
+static char network_ipaddr[16];
 
 static bool menu_dialog_is_open(void) {
   if(!dialog_disappear_timer) return false;  // no timer -> no dialog
@@ -647,12 +648,13 @@ static void menu_dialog_close(void) {
   menu_dialog_timeout(NULL);
 }
   
-void menu_draw_dialog(const char *title,  const char *msg) {
+static void menu_draw_dialog_for(const char *title, const char *msg,
+                                  TickType_t duration) {
   // check if osd is already visible
   dialog_opened_osd = !osd_is_visible();
   if(dialog_opened_osd) osd_enable(OSD_VISIBLE);
 
-  dialog_disappear_timer = xTimerCreate( "Dialog timer", pdMS_TO_TICKS(2000), pdFALSE,
+  dialog_disappear_timer = xTimerCreate("Dialog timer", duration, pdFALSE,
 					 NULL, menu_dialog_timeout);	  
   xTimerStart(dialog_disappear_timer, 0);
   
@@ -675,6 +677,10 @@ void menu_draw_dialog(const char *title,  const char *msg) {
   menu_wrap_text(y+23, msg);
   
   u8g2_SendBuffer(&u8g2);
+}
+
+void menu_draw_dialog(const char *title, const char *msg) {
+  menu_draw_dialog_for(title, msg, pdMS_TO_TICKS(2000));
 }
 
 static void menu_draw(const config_menu_t *menu, int selected, int scroll) {
@@ -1189,8 +1195,13 @@ static void menu_task(__attribute__((unused)) void *parms) {
       menu_draw_dialog("Bluetooth", "Please enter pin '123456'");
     } else
 #endif
-      
-    if(cmd == MENU_EVENT_USB_MOUNTED) {
+
+    if(cmd == MENU_EVENT_NETWORK_GOT_IP) {
+      char message[32];
+      snprintf(message, sizeof(message), "IP: %s", network_ipaddr);
+      menu_draw_dialog_for("Network", message, pdMS_TO_TICKS(5000));
+    } else
+  if(cmd == MENU_EVENT_USB_MOUNTED) {
       menu_debugf("USB mount event");
 
       vTaskDelay(100);
@@ -1270,6 +1281,11 @@ void menu_notify(unsigned long msg) {
     xQueueSendToBackFromISR(menu_queue, &msg,  ( TickType_t ) 0);
   else
     menu_debugf("menu_notify(): queue/menu task not ready!");
+}
+
+void menu_notify_ip(const char *ipaddr) {
+  snprintf(network_ipaddr, sizeof(network_ipaddr), "%s", ipaddr);
+  menu_notify(MENU_EVENT_NETWORK_GOT_IP);
 }
 
 void menu_joystick_state(unsigned char state) {
