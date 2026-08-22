@@ -2635,12 +2635,6 @@ void usbh_lwip_eth_output_common(struct pbuf *p, uint8_t *buf)
 
 void usbh_lwip_eth_input_common(struct netif *netif, uint8_t *buf, uint32_t len)
 {
-    /* Always copy: the RTL8152/ASIX drivers reuse a single static RX buffer
-     * for the next USB transfer as soon as this call returns, but with
-     * LWIP_TCPIP_CORE_LOCKING_INPUT a PBUF_REF would point straight at that
-     * buffer with no lifetime guarantee, letting the next frame clobber data
-     * still queued/unread by lwIP (seen corrupting SD card file uploads).
-     * PBUF_POOL_SIZE is 0 in lwipopts_user.h, so use PBUF_RAM (heap). */
     pbuf_type type = PBUF_RAM;
     err_t err;
     struct pbuf *p;

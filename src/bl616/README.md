@@ -98,7 +98,7 @@ git submodule update
 CROSS_COMPILE=<where you downloaded the toolchain>/toolchain_gcc_t-head_linux/bin/riscv64-unknown-elf- BL_SDK_BASE=<where you downloaded the sdk>/bouffalo_sdk/ make
 ```
 
-for a specific board select in between: m0sdock nano20k console60k mega60k mega138kpro primer25k
+for a specific board select in between: m0sdock nano20k console60k mega60k mega138kpro primer25k console138k nano20k_v3923
 
 ```shell
 BL_SDK_BASE=<where you downloaded the sdk>/bouffalo_sdk/ make TANG_BOARD=console60k

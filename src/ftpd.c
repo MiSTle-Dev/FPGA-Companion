@@ -1,5 +1,5 @@
 /*
- * ftpd — minimal FTP server for the SDCard volume (port 21, one client).
+ * ftpd — minimal FTP server for the SD card volume (port 21).
  *
  * Purpose: copy disk images on/off the SD card over the LAN with a
  * mature client (Cyberduck, FileZilla, lftp) instead of shuttling the
@@ -373,7 +373,7 @@ static void session(ftps_t *fs)
     fs->rnfr[0] = 0;
     fs->restart_at = 0;
 
-    reply(fs, "220 A2FPGA a2n20v2-Enhanced FTP ready.");
+    reply(fs, "220 MiSTle FPGA Companion FTP ready.");
 
     for (;;) {
         char c;
