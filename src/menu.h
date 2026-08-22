@@ -29,6 +29,7 @@
 #define MENU_EVENT_BLUETOOTH_DISCONNECTED  15
 #define MENU_EVENT_BLUETOOTH_SCAN  16
 #define MENU_EVENT_BLUETOOTH_PIN_CODE_REQUEST 17
+#define MENU_EVENT_NETWORK_GOT_IP       18
 
 #define MENU_EVENT_KEY_LATIN1    256  // 256..511
 
@@ -45,6 +46,7 @@ menu_variable_t *menu_get_variables(void);
 void menu_set_value(unsigned char id, int8_t value);
 void menu_do(int);
 void menu_notify(unsigned long msg);
+void menu_notify_ip(const char *ipaddr);
 void menu_joystick_state(unsigned char state);
 void menu_button_state(unsigned char state);
 void menu_run_current_image_action(void);

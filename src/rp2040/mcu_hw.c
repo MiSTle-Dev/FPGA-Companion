@@ -654,6 +654,7 @@ static void netif_status_callback(struct netif *netif) {
     if(!(network_status & NETWORK_STATUS_HAS_ADDR)) {
       // just got an ip address, start services
       usb_debugf("just got an ip address");
+      menu_notify_ip(ip4addr_ntoa(netif_ip4_addr(netif)));
 
       // start ntp client
       if(!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
