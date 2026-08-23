@@ -229,6 +229,7 @@ static int16_t sys_port_get(unsigned char port) {
 
 // a timer to handle delayed reboot if the MCU detects that the core has changed but
 // USB/JTAG needs to finish cleanly before reboot fires
+#ifdef ENABLE_JTAG
 static TimerHandle_t sys_reboot_timer = NULL;  
 
 static void sys_reboot(__attribute__((unused)) TimerHandle_t arg) {
@@ -241,6 +242,7 @@ static void sys_reboot(__attribute__((unused)) TimerHandle_t arg) {
     mcu_hw_reset();
   }
 }
+#endif
 
 static void sys_handle_event(bool ignore_coldboot) {
   // the FPGAs cold boot flag was set indicating that the
