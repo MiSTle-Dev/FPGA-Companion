@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 // See https://www.nongnu.org/lwip/2_1_x/group__lwip__opts.html for details.
 // Also, see https://gitlab.com/slimhazard/picow_http/-/wikis/Configuring-lwipopts.h
 
@@ -70,6 +72,7 @@
 
 #define LWIP_DHCP_GET_NTP_SRV       1
 #define LWIP_DHCP_MAX_NTP_SERVERS   2
+void sntp_set_system_time(uint32_t sec);
 #define SNTP_SET_SYSTEM_TIME        sntp_set_system_time
 #define MEMP_NUM_SYS_TIMEOUT        (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 2)
 

@@ -12,6 +12,9 @@
 #include "../menu.h"
 #include "../inifile.h"
 #include "../debug.h"
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
+#include "../ftpd.h"
+#endif
 #include "../xml.h"
 #include "../at_wifi.h"
 
@@ -89,6 +92,10 @@ static void com_task(__attribute__((unused)) void *p ) {
       else     sys_run_action_by_name("ready");
     } else
       debugf("Image upload in progress, delaying ready action");
+
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
+    ftpd_init();
+#endif
     
     // finally prepare for wifi communication
     at_wifi_init();

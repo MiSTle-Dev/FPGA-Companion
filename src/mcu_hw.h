@@ -81,6 +81,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 void mcu_hw_fpga_reconfig(bool state);
 bool mcu_hw_jtag_is_active(void);
 void mcu_hw_jtag_toggleClk(uint32_t);
+void mcu_hw_jtag_set_clock(uint32_t);
 #define ENABLE_JTAG
 #define FPGA_BOOT_TIMEOUT 5000    /* give FPGA 5 seconds to boot */
 #endif
@@ -94,6 +95,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 void mcu_hw_fpga_reconfig(bool state);
 bool mcu_hw_jtag_is_active(void);
 void mcu_hw_jtag_toggleClk(uint32_t);
+void mcu_hw_jtag_set_clock(uint32_t);
 
 // this board also has the ability to boot the FPGA from SD card
 #include "sdio.h"
@@ -112,6 +114,7 @@ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 void mcu_hw_fpga_reconfig(bool state);
 bool mcu_hw_jtag_is_active(void);
 void mcu_hw_jtag_toggleClk(uint32_t);
+void mcu_hw_jtag_set_clock(uint32_t);
 
 #define ENABLE_JTAG
 #define FPGA_BOOT_TIMEOUT 5000    /* give FPGA 5 seconds to boot */

@@ -89,7 +89,8 @@ add_executable(${PROJECT}
 	../config.c
 	../freertos_callbacks.c
 	../xml.c
-   	../ps2helper.c
+	../ps2helper.c
+#	../ftpd.c
 )
 
 family_add_pico_pio_usb(${PROJECT})
