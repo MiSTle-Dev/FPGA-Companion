@@ -642,7 +642,10 @@ static err_t netif_asix_low_init(struct netif *netif) {
 static void netif_asix_link_callback(struct netif *netif) {
   usb_debugf("ASIX: netif link status changed %s", netif_is_link_up(netif) ? "up" : "down");
   if(netif_is_link_up(netif)) network_status |=  NETWORK_STATUS_UP;
-  else                        network_status &= ~NETWORK_STATUS_UP;
+  else {
+    network_status &= ~NETWORK_STATUS_UP;
+    menu_notify_network_disconnected();
+  }
 }
 
 // this is actually called by axis _and_ the wifi
@@ -665,8 +668,10 @@ static void netif_status_callback(struct netif *netif) {
     }
     
     network_status |=  NETWORK_STATUS_HAS_ADDR;
-  } else
+  } else {
     network_status &= ~NETWORK_STATUS_HAS_ADDR;
+    menu_notify_network_disconnected();
+  }
 }
   
 // re-use parts of the existing PICO/WIFI integration

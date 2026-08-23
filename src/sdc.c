@@ -10,6 +10,13 @@
 #include <diskio.h>
 #include <string.h>
 #include <inttypes.h>
+#ifdef ESP_PLATFORM
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#else
+#include <FreeRTOS.h>
+#include <task.h>
+#endif
 #include "sdc.h"
 #include "menu.h"
 #include "sysctrl.h"
@@ -52,6 +59,7 @@ static void sdc_spi_begin(void) {
 // has no way to notice a sector that never really finished
 #define SDC_BUSY_TIMEOUT_MS   1000
 #define SDC_READY_TIMEOUT_MS  500
+#define SDC_CORE_RW_TIMEOUT_MS 1000
 
 static LBA_t clst2sect(DWORD clst) {
   clst -= 2;
@@ -560,8 +568,17 @@ int sdc_handle_event(void) {
 
     // wait while core is busy to make sure we don't start
     // requesting data for ourselves while the core is still
-    // doing its own io
-    while(mcu_hw_spi_tx_u08(0) & 1);
+    // doing its own io. A stalled core must not starve FTP and
+    // every other filesystem user while holding the SD lock.
+    TickType_t t0 = xTaskGetTickCount();
+    while(mcu_hw_spi_tx_u08(0) & 1) {
+      if((xTaskGetTickCount() - t0) > pdMS_TO_TICKS(SDC_CORE_RW_TIMEOUT_MS)) {
+        mcu_hw_spi_end();
+        sdc_unlock();
+        sdc_debugf("SDC: core request timeout");
+        return -1;
+      }
+    }
     
     mcu_hw_spi_end();
 

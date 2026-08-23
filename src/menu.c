@@ -631,6 +631,7 @@ static int menu_wrap_text(int y_in, const char *msg) {
 static bool dialog_opened_osd = false;
 static TimerHandle_t dialog_disappear_timer = NULL;  
 static char network_ipaddr[16];
+static bool network_was_connected = false;
 
 static bool menu_dialog_is_open(void) {
   if(!dialog_disappear_timer) return false;  // no timer -> no dialog
@@ -1200,6 +1201,8 @@ static void menu_task(__attribute__((unused)) void *parms) {
       char message[32];
       snprintf(message, sizeof(message), "IP: %s", network_ipaddr);
       menu_draw_dialog_for("Network", message, pdMS_TO_TICKS(5000));
+    } else if(cmd == MENU_EVENT_NETWORK_DISCONNECTED) {
+      menu_draw_dialog_for("Network", "disconnected", pdMS_TO_TICKS(3000));
     } else
   if(cmd == MENU_EVENT_USB_MOUNTED) {
       menu_debugf("USB mount event");
@@ -1285,7 +1288,15 @@ void menu_notify(unsigned long msg) {
 
 void menu_notify_ip(const char *ipaddr) {
   snprintf(network_ipaddr, sizeof(network_ipaddr), "%s", ipaddr);
+  network_was_connected = true;
   menu_notify(MENU_EVENT_NETWORK_GOT_IP);
+}
+
+void menu_notify_network_disconnected(void) {
+  // only report a disconnect if we had reported an ip address before
+  if(!network_was_connected) return;
+  network_was_connected = false;
+  menu_notify(MENU_EVENT_NETWORK_DISCONNECTED);
 }
 
 void menu_joystick_state(unsigned char state) {

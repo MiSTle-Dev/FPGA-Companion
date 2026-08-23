@@ -302,7 +302,9 @@ static void do_retr(ftps_t *fs, const char *path)
 
 static void do_stor(ftps_t *fs, const char *path)
 {
+    sdc_lock();
     if (disk_path_mounted(path)) {
+        sdc_unlock();
         reply(fs, "550 File is a mounted disk image; eject it first.");
         return;
     }
@@ -315,7 +317,6 @@ static void do_stor(ftps_t *fs, const char *path)
     /* a resumed upload must keep the existing bytes up to the restart
      * offset; only a fresh upload (no REST) truncates the file */
     FIL f;
-    sdc_lock();
     if (f_open(&f, full, restart_at ? (FA_OPEN_EXISTING | FA_WRITE)
                                      : (FA_CREATE_ALWAYS | FA_WRITE)) != FR_OK) {
         sdc_unlock();
@@ -490,14 +491,14 @@ static void session(ftps_t *fs)
                 else
                     reply(fs, "550 Bad path.");
             } else if (!strcmp(line, "DELE")) {
-                if (resolve(fs, arg, path, sizeof(path)) &&
-                    !disk_path_mounted(path)) {
+                if (resolve(fs, arg, path, sizeof(path))) {
                     char full[FPATH_MAX];
                     full_path(path, full, sizeof(full));
                     sdc_lock();
-                    FRESULT r = f_unlink(full);
+                    bool mounted = disk_path_mounted(path);
+                    FRESULT r = mounted ? FR_DENIED : f_unlink(full);
                     sdc_unlock();
-                    if (r == FR_OK) {
+                    if (!mounted && r == FR_OK) {
                         reply(fs, "250 Deleted.");
                         continue;
                     }
@@ -544,15 +545,15 @@ static void session(ftps_t *fs)
                 else
                     reply(fs, "550 Bad path.");
             } else if (!strcmp(line, "RNTO")) {
-                if (fs->rnfr[0] && resolve(fs, arg, path, sizeof(path)) &&
-                    !disk_path_mounted(fs->rnfr) && !disk_path_mounted(path)) {
+                if (fs->rnfr[0] && resolve(fs, arg, path, sizeof(path))) {
                     char full_from[FPATH_MAX], full_to[FPATH_MAX];
                     full_path(fs->rnfr, full_from, sizeof(full_from));
                     full_path(path, full_to, sizeof(full_to));
                     sdc_lock();
-                    FRESULT r = f_rename(full_from, full_to);
+                    bool mounted = disk_path_mounted(fs->rnfr) || disk_path_mounted(path);
+                    FRESULT r = mounted ? FR_DENIED : f_rename(full_from, full_to);
                     sdc_unlock();
-                    if (r == FR_OK) {
+                    if (!mounted && r == FR_OK) {
                         reply(fs, "250 Renamed.");
                         fs->rnfr[0] = 0;
                         continue;
