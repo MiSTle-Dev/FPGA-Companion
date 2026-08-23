@@ -1478,6 +1478,10 @@ enum network_interface {
 
 static enum network_interface active_network_interface = NETWORK_INTERFACE_NONE;
 static struct netif *active_network_netif = NULL;
+static struct usbh_rtl8152 *active_rtl8152 = NULL;
+static struct usbh_asix *active_asix = NULL;
+static TaskHandle_t network_link_task = NULL;
+static struct usb_osal_timer *dhcp_handle = NULL;
 
 static void sntp_enable_dhcp_servers_callback(void *arg)
 {
@@ -2589,8 +2593,15 @@ static void usbh_lwip_netif_link_callback(struct netif *netif)
   debugf("USB netif link status changed %s", netif_is_link_up(netif) ? "up" : "down");
   if (netif_is_link_up(netif)) {
     network_status |= NETWORK_STATUS_UP;
+    dhcp_start(netif);
+    if (dhcp_handle)
+      usb_osal_timer_start(dhcp_handle);
   } else {
-    network_status &= ~NETWORK_STATUS_UP;
+    network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR |
+                        NETWORK_STATUS_TCP_CONNECTED);
+    dhcp_stop(netif);
+    dhcp_cleanup(netif);
+    menu_notify_network_disconnected();
   }
 }
 
@@ -2619,6 +2630,7 @@ static void usbh_lwip_netif_status_callback(struct netif *netif)
     network_status |= NETWORK_STATUS_HAS_ADDR;
   } else {
     network_status &= ~NETWORK_STATUS_HAS_ADDR;
+    menu_notify_network_disconnected();
   }
 }
 
@@ -2652,8 +2664,6 @@ void usbh_lwip_eth_input_common(struct netif *netif, uint8_t *buf, uint32_t len)
     }
 }
 
-struct usb_osal_timer *dhcp_handle;
-
 static void dhcp_timeout(void *arg)
 {
     struct netif *netif = (struct netif *)arg;
@@ -2672,6 +2682,39 @@ static void dhcp_timeout(void *arg)
         }
     } else {
     }
+}
+
+static void network_link_monitor(void *arg)
+{
+    struct netif *netif = (struct netif *)arg;
+    enum network_interface interface = active_network_interface;
+
+    while (active_network_netif == netif) {
+      int ret;
+      bool connected;
+
+      if (interface == NETWORK_INTERFACE_RTL8152)
+        ret = usbh_rtl8152_get_connect_status(active_rtl8152);
+      else
+        ret = usbh_asix_get_connect_status(active_asix);
+
+      if (ret == 0) {
+        connected = interface == NETWORK_INTERFACE_RTL8152
+                          ? active_rtl8152->connect_status
+                          : active_asix->connect_status;
+        if (connected != netif_is_link_up(netif)) {
+          if (connected)
+            netif_set_link_up(netif);
+          else
+            netif_set_link_down(netif);
+        }
+      }
+
+      vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    network_link_task = NULL;
+    vTaskDelete(NULL);
 }
 
 struct netif g_rtl8152_netif;
@@ -2700,7 +2743,7 @@ static err_t usbh_rtl8152_if_init(struct netif *netif)
     LWIP_ASSERT("netif != NULL", (netif != NULL));
 
     netif->mtu = 1500;
-    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_UP;
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_UP;
     netif->state = NULL;
     netif->name[0] = 'E';
     netif->name[1] = 'X';
@@ -2745,6 +2788,9 @@ void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
     }
 
     usb_osal_thread_create("usbh_rtl8152_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_rtl8152_rx_thread, NULL);
+    active_rtl8152 = rtl8152_class;
+    xTaskCreate(network_link_monitor, "net link", 1536, netif,
+            CONFIG_USBHOST_PSC_PRIO + 1, &network_link_task);
     sntp_enable_dhcp_servers();
     dhcp_start(netif);
     usb_osal_timer_start(dhcp_handle);
@@ -2757,6 +2803,11 @@ void usbh_rtl8152_stop(struct usbh_rtl8152 *rtl8152_class)
 
   if (active_network_netif != netif) return;
 
+    if (network_link_task) {
+        vTaskDelete(network_link_task);
+        network_link_task = NULL;
+    }
+
     dhcp_stop(netif);
     dhcp_cleanup(netif);
     usb_osal_timer_delete(dhcp_handle);
@@ -2764,6 +2815,7 @@ void usbh_rtl8152_stop(struct usbh_rtl8152 *rtl8152_class)
     netif_remove(netif);
     active_network_netif = NULL;
     active_network_interface = NETWORK_INTERFACE_NONE;
+    active_rtl8152 = NULL;
     network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
 }
 
@@ -2793,7 +2845,7 @@ static err_t usbh_asix_if_init(struct netif *netif)
     LWIP_ASSERT("netif != NULL", (netif != NULL));
 
     netif->mtu = 1500;
-    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP | NETIF_FLAG_UP;
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_UP;
     netif->state = NULL;
     netif->name[0] = 'E';
     netif->name[1] = 'X';
@@ -2838,6 +2890,9 @@ void usbh_asix_run(struct usbh_asix *asix_class)
     }
 
     usb_osal_thread_create("usbh_asix_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_asix_rx_thread, NULL);
+    active_asix = asix_class;
+    xTaskCreate(network_link_monitor, "net link", 1536, netif,
+            CONFIG_USBHOST_PSC_PRIO + 1, &network_link_task);
     sntp_enable_dhcp_servers();
     dhcp_start(netif);
     usb_osal_timer_start(dhcp_handle);
@@ -2849,6 +2904,12 @@ void usbh_asix_stop(struct usbh_asix *asix_class)
     (void)asix_class;
 
   if (active_network_netif != netif) return;
+
+    if (network_link_task) {
+        vTaskDelete(network_link_task);
+        network_link_task = NULL;
+    }
+
     dhcp_stop(netif);
     dhcp_cleanup(netif);
     usb_osal_timer_delete(dhcp_handle);
@@ -2856,80 +2917,51 @@ void usbh_asix_stop(struct usbh_asix *asix_class)
     netif_remove(netif);
     active_network_netif = NULL;
     active_network_interface = NETWORK_INTERFACE_NONE;
+    active_asix = NULL;
     network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
 }
 
-// M0S_DOCK
-/* GPIO  0 TMS, M0S solder point */
-/* GPIO  1 TCK, M0S solder point */
-/* GPIO  2 TDO, M0S solder point */
-/* GPIO  3 TDI, M0S solder point */
-/* GPIO 12 CSN */
-/* GPIO 13 SCK */
-/* GPIO 10 MISO */
-/* GPIO 11 MOSI */
-/* GPIO 14 IRQn */
-/* GPIO 21 UART TX */
-/* GPIO 22 UART RX */
-/* GPIO 27 LED1 */
-/* GPIO 28 LED2 */
-
-// TANG_NANO20K e.g 3921
-/* GPIO 0 CSN */
-/* GPIO 1 SCK */
-/* GPIO 2 MISO */
-/* GPIO 3 MOSI */
-/* GPIO 10 TCK */
-/* GPIO 11 default UART TX */
-/* GPIO 12 TDI */
-/* GPIO 13 default UART RX, SPI IRQn */
-/* GPIO 14 TDO */
-/* GPIO 16 TMS */
-/* GPIO 21 SDA */
-/* GPIO 22 SCL */
-
-// TANG_NANO20K_V3923
-/* GPIO 0 CSN */
-/* GPIO 1 SCK */
-/* GPIO 2 unused */
-/* GPIO 3 unused */
-/* GPIO 10 TCK */
-/* GPIO 11 default UART TX */
-/* GPIO 12 TDI */
-/* GPIO 13 default UART RX, SPI IRQn */
-/* GPIO 14 TDO */
-/* GPIO 16 TMS */
-/* GPIO 21 SDA */
-/* GPIO 22 SCL */
-/* GPIO 27 MOSI */
-/* GPIO 30 MISO */
-
-// TANG_CONSOLE60K
-/* GPIO 27 default UART RX, FPGA U15 TX */
-/* GPIO 28 default UART TX, FPGA V15 RX */
-/* GPIO 29 default TWI.SDA, FPGA L13 DDC DAT */
-/* GPIO 30 default TWI.SCL, FPGA M13 DDC CLK */
-/* GPIO 21 USB-C SBU1 */
-/* GPIO 22 USB-C SBU2 */
-
-// TANG_MEGA138KPRO
-/* GPIO 10 default UART TX, FPGA N16, RX */
-/* GPIO 11 default UART RX, FPGA P15, TX */
-/* GPIO 27 default PLL1_TWI SDA, FPGA K26, SDA */
-/* GPIO 28 default PLL1_TWI SCL, FPGA K25, SCL */
-
-// TANG_MEGA60K
-/* GPIO 27 default UART RX, FPGA U15 TX */
-/* GPIO 28 default UART TX, FPGA V15 RX */
-/* GPIO 16 PWR_KEY, no FPGA connection, re-use possible */
-/* GPIO 17 BL616_IO17_ModeSel, no FPGA connection, re-use possible */
-/* GPIO 20 I2C INT, no FPGA connection */
-/* GPIO 21 I2C SDA, no FPGA connection */
-/* GPIO 22 I2C CLK, no FPGA connection, re-use possible */
-
-// TANG_PRIMER25K
-/* GPIO 11 default UART TX */
-/* GPIO 10 default UART RX */
-/* GPIO 12 access at button S3, Capacitor C22 need to be removed */
-/* GPIO 20 access at LED6, not usable for UART, unknown reason */
+// BL616 MPU pinmapping
+//
+// GPIO | M0S_DOCK | NANO20K  |NANO20K_3923| CONSOLE60K  | MEGA138KPRO | MEGA60K     | PRIMER25K
+// -----+----------+----------+-----------+-------------+-------------+-------------+------------
+//    0 | TMS      | CSN      | CSN       | TMS/CSN     | TMS/CSN     | TMS/CSN     | TMS/CSN
+//    1 | TCK      | SCK      | SCK       | TCK/SCK     | TCK/SCK     | TCK/SCK     | TCK/SCK
+//    2 | TDO      | MISO     | -         | TDO/MISO    | TDO/MISO    | TDO/MISO    | TDO/MISO
+//    3 | TDI      | MOSI     | -         | TDI/MOSI    | TDI/MOSI    | TDI/MOSI    | TDI/MOSI
+//    4 | -        | -        | -         | -           | -           | -           | -
+//    5 | -        | -        | -         | -           | -           | -           | -
+//    6 | -        | -        | -         | -           | -           | -           | -
+//    7 | -        | -        | -         | -           | -           | -           | -
+//    8 | -        | -        | -         | -           | -           | -           | -
+//    9 | -        | -        | -         | -           | -           | -           | -
+//   10 | MISO     | TCK      | TCK       | -           | JTAGSEL     | -           | SPI IRQn
+//   11 | MOSI     | UART TX  | UART TX   | -           | SPI IRQn    | -           | JTAGSEL
+//   12 | CSN      | TDI      | TDI       | -           | -           | -           | UART TX (S3)
+//   13 | SCK      | SPI IRQn | SPI IRQn  | -           | -           | -           | -
+//   14 | SPI IRQn | TDO      | TDO       | -           | -           | -           | -
+//   15 | -        | -        | -         | -           | -           | -           | -
+//   16 | -        | TMS      | TMS       | TF_SDIO_SEL | -           | PWR_KEY     | -
+//   17 | -        | -        | -         | -           | -           | ModeSel     | -
+//   18 | -        | -        | -         | -           | -           | -           | -
+//   19 | -        | -        | -         | -           | -           | -           | -
+//   20 | -        | -        | -         | -           | LED6        | I2C INT     | LED6
+//   21 | UART TX  | SDA      | SDA       | USB-C SBU1  | -           | I2C SDA     | -
+//   22 | UART RX  | UART RX  | UART RX   | UART RX     | UART RX     | UART RX     | UART RX
+//   23 | -        | -        | -         | -           | -           | -           | -
+//   24 | -        | -        | -         | -           | -           | -           | -
+//   25 | -        | -        | -         | -           | -           | -           | -
+//   26 | -        | -        | -         | -           | -           | -           | -
+//   27 | LED1     | -        | MOSI      | SPI IRQn    | SDA         | SPI IRQn    | -
+//   28 | LED2     | -        | -         | JTAGSEL     | UART TX     | JTAGSEL     | -
+//   29 | -        | -        | -         | DDC DAT     | -           | -           | -
+//   30 | -        | -        | MISO      | UART TX     | -           | UART TX     | -
+//
+// Notes:
+// - GPIO 13 (NANO20K) and GPIO 10/11/27 (Tang boards) are the default UART pins
+//   of the board and are re-used as SPI IRQn / JTAGSEL, the UART is crossed.
+// - TANG_PRIMER25K GPIO 12 is accessible at button S3, capacitor C22 needs to
+//   be removed.
+// - CONSOLE60K GPIO 29/30 are the default TWI/DDC pins (FPGA L13/M13).
+// - MEGA138KPRO GPIO 27/28 are the default PLL1_TWI pins (FPGA K26/K25).
 
