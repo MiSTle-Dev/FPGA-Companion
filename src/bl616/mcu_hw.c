@@ -2691,15 +2691,21 @@ static void network_link_monitor(void *arg)
       int ret;
       bool connected;
 
-      if (interface == NETWORK_INTERFACE_RTL8152)
+      if (interface == NETWORK_INTERFACE_RTL8152) {
         ret = usbh_rtl8152_get_connect_status(active_rtl8152);
-      else
-        ret = usbh_asix_get_connect_status(active_asix);
+      } else {
+        if (!active_asix || !active_asix->connect_status) {
+          ret = 0;
+          connected = false;
+        } else {
+          ret = usbh_asix_get_connect_status(active_asix);
+          connected = active_asix->connect_status;
+        }
+      }
 
       if (ret == 0) {
-        connected = interface == NETWORK_INTERFACE_RTL8152
-                          ? active_rtl8152->connect_status
-                          : active_asix->connect_status;
+        if (interface == NETWORK_INTERFACE_RTL8152)
+          connected = active_rtl8152->connect_status;
         if (connected != netif_is_link_up(netif)) {
           if (connected)
             netif_set_link_up(netif);
