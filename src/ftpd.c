@@ -24,8 +24,8 @@
 
 #include "lwip/sockets.h"
 #include "lwip/netif.h"
-#include "usb_osal.h"
-#include "usb_config.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #include "debug.h"
 #include "sdc.h"
@@ -582,14 +582,14 @@ static void session_thread(void *arg)
     fs->ctl = -1;
     fs->in_use = false;
     debugf("FTP: CLIENT DISCONNECTED");
-    usb_osal_thread_delete(NULL);
+    vTaskDelete(NULL);
 }
 
 static void ftpd_thread(void *arg)
 {
     (void)arg;
     while (netif_default == NULL)     /* lwIP core init + link (see telnetd) */
-        usb_osal_msleep(200);
+        vTaskDelay(pdMS_TO_TICKS(200));
 
     int lfd = lwip_socket(AF_INET, SOCK_STREAM, 0);
     if (lfd < 0)
@@ -609,7 +609,7 @@ static void ftpd_thread(void *arg)
     for (;;) {
         int fd = lwip_accept(lfd, NULL, NULL);
         if (fd < 0) {
-            usb_osal_msleep(500);
+            vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
         ftps_t *fs = NULL;
@@ -631,13 +631,13 @@ static void ftpd_thread(void *arg)
         debugf("FTP: CLIENT CONNECTED");
         // FF_USE_LFN==2 puts FatFs' LFN working buffer on the stack for every
         // f_opendir/f_readdir/f_stat/... call, so LIST/NLST needs extra room
-        usb_osal_thread_create("ftps", 6144, CONFIG_USBHOST_PSC_PRIO + 1,
-                               session_thread, fs);
+        xTaskCreate(session_thread, "ftps", 6144, fs,
+                configMAX_PRIORITIES - 3, NULL);
     }
 }
 
 void ftpd_init(void)
 {
-    usb_osal_thread_create("ftpd", 3072, CONFIG_USBHOST_PSC_PRIO + 1,
-                           ftpd_thread, NULL);
+    xTaskCreate(ftpd_thread, "ftpd", 3072, NULL,
+                configMAX_PRIORITIES - 3, NULL);
 }

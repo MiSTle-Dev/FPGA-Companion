@@ -90,7 +90,7 @@ add_executable(${PROJECT}
 	../freertos_callbacks.c
 	../xml.c
 	../ps2helper.c
-#	../ftpd.c
+	../ftpd.c
 )
 
 family_add_pico_pio_usb(${PROJECT})

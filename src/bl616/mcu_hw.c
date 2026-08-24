@@ -1478,7 +1478,7 @@ static struct netif *active_network_netif = NULL;
 static struct usbh_rtl8152 *active_rtl8152 = NULL;
 static struct usbh_asix *active_asix = NULL;
 static TaskHandle_t network_link_task = NULL;
-static struct usb_osal_timer *dhcp_handle = NULL;
+static TimerHandle_t dhcp_handle = NULL;
 
 static void sntp_enable_dhcp_servers_callback(void *arg)
 {
@@ -2425,16 +2425,16 @@ void mcu_hw_jtag_toggleClk(uint32_t clk_len)
 #endif
 
 // USB host MSC support
-static usb_osal_thread_t usbh_msc_handle = NULL;
+static TaskHandle_t usbh_msc_handle = NULL;
 static bool usb_msc_mounted = false;
 
 // bouffalo sdk does not expect sd card _and_ usbh msc to be enabled at the same time
 extern void fatfs_usbh_driver_register(struct usbh_msc *msc_class);
 
-static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
+static void usbh_msc_thread(void *arg)
 {
   int ret;
-  struct usbh_msc *msc_class = (struct usbh_msc *)CONFIG_USB_OSAL_THREAD_GET_ARGV;
+  struct usbh_msc *msc_class = (struct usbh_msc *)arg;
 
   while ((msc_class = (struct usbh_msc *)usbh_find_class_instance("/dev/sda")) == NULL) {
       goto delete;
@@ -2452,14 +2452,15 @@ static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
   menu_notify(MENU_EVENT_USB_MOUNTED);
 
     // clang-format off
-delete: 
-    usb_osal_thread_delete(NULL);
+delete:
+    vTaskDelete(NULL);
     // clang-format on
 }
 
 void usbh_msc_run(struct usbh_msc *msc_class)
 {
-  usbh_msc_handle = usb_osal_thread_create("usbh_msc", 2048, CONFIG_USBHOST_PSC_PRIO - 1, usbh_msc_thread, msc_class);
+  xTaskCreate(usbh_msc_thread, "usbh_msc", 2048, msc_class,
+              CONFIG_USBHOST_PSC_PRIO - 1, &usbh_msc_handle);
 }
 
 void usbh_msc_stop(struct usbh_msc *msc_class)
@@ -2592,7 +2593,7 @@ static void usbh_lwip_netif_link_callback(struct netif *netif)
     network_status |= NETWORK_STATUS_UP;
     dhcp_start(netif);
     if (dhcp_handle)
-      usb_osal_timer_start(dhcp_handle);
+      xTimerStart(dhcp_handle, 0);
   } else {
     network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR |
                         NETWORK_STATUS_TCP_CONNECTED);
@@ -2675,7 +2676,7 @@ static void dhcp_timeout(void *arg)
             debugf("IPv4 Subnet mask : %s", ipaddr_ntoa(&netif->netmask));
             debugf("IPv4 Gateway     : %s", ipaddr_ntoa(&netif->gw));
 
-            usb_osal_timer_stop(dhcp_handle);
+            xTimerStop(dhcp_handle, 0);
         }
     } else {
     }
@@ -2777,20 +2778,21 @@ void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
     while (!netif_is_up(netif)) {
     }
 
-    dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
+    dhcp_handle = xTimerCreate("dhcp", pdMS_TO_TICKS(200), pdTRUE, netif, dhcp_timeout);
     if (dhcp_handle == NULL) {
         debugf("timer creation failed!");
         while (1) {
         }
     }
 
-    usb_osal_thread_create("usbh_rtl8152_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_rtl8152_rx_thread, NULL);
+    xTaskCreate(usbh_rtl8152_rx_thread, "usbh_rtl8152_rx", 2048, NULL,
+                CONFIG_USBHOST_PSC_PRIO + 1, NULL);
     active_rtl8152 = rtl8152_class;
     xTaskCreate(network_link_monitor, "net link", 1536, netif,
             CONFIG_USBHOST_PSC_PRIO + 1, &network_link_task);
     sntp_enable_dhcp_servers();
     dhcp_start(netif);
-    usb_osal_timer_start(dhcp_handle);
+    xTimerStart(dhcp_handle, 0);
 }
 
 void usbh_rtl8152_stop(struct usbh_rtl8152 *rtl8152_class)
@@ -2807,7 +2809,10 @@ void usbh_rtl8152_stop(struct usbh_rtl8152 *rtl8152_class)
 
     dhcp_stop(netif);
     dhcp_cleanup(netif);
-    usb_osal_timer_delete(dhcp_handle);
+    if (dhcp_handle) {
+        xTimerDelete(dhcp_handle, 0);
+        dhcp_handle = NULL;
+    }
     netif_set_down(netif);
     netif_remove(netif);
     active_network_netif = NULL;
@@ -2879,20 +2884,21 @@ void usbh_asix_run(struct usbh_asix *asix_class)
     while (!netif_is_up(netif)) {
     }
 
-    dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
+    dhcp_handle = xTimerCreate("dhcp", pdMS_TO_TICKS(200), pdTRUE, netif, dhcp_timeout);
     if (dhcp_handle == NULL) {
         debugf("timer creation failed!");
         while (1) {
         }
     }
 
-    usb_osal_thread_create("usbh_asix_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_asix_rx_thread, NULL);
+    xTaskCreate(usbh_asix_rx_thread, "usbh_asix_rx", 2048, NULL,
+                CONFIG_USBHOST_PSC_PRIO + 1, NULL);
     active_asix = asix_class;
     xTaskCreate(network_link_monitor, "net link", 1536, netif,
             CONFIG_USBHOST_PSC_PRIO + 1, &network_link_task);
     sntp_enable_dhcp_servers();
     dhcp_start(netif);
-    usb_osal_timer_start(dhcp_handle);
+    xTimerStart(dhcp_handle, 0);
 }
 
 void usbh_asix_stop(struct usbh_asix *asix_class)
@@ -2909,7 +2915,10 @@ void usbh_asix_stop(struct usbh_asix *asix_class)
 
     dhcp_stop(netif);
     dhcp_cleanup(netif);
-    usb_osal_timer_delete(dhcp_handle);
+    if (dhcp_handle) {
+        xTimerDelete(dhcp_handle, 0);
+        dhcp_handle = NULL;
+    }
     netif_set_down(netif);
     netif_remove(netif);
     active_network_netif = NULL;
