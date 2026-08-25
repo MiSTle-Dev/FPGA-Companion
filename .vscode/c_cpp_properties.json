@@ -1,0 +1,16 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "BL616",
+      "compileCommands": "${workspaceFolder}/src/bl616/build/compile_commands.json",
+      "cStandard": "c17"
+    },
+    {
+      "name": "RP2040",
+      "compileCommands": "${workspaceFolder}/src/rp2040/build/compile_commands.json",
+      "intelliSenseMode": "linux-gcc-arm",
+      "cStandard": "c11"
+    }
+  ]
+}

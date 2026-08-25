@@ -1480,6 +1480,8 @@ static struct usbh_asix *active_asix = NULL;
 static TaskHandle_t network_link_task = NULL;
 static TimerHandle_t dhcp_handle = NULL;
 
+#define SNTP_FALLBACK_SERVER "pool.ntp.org"
+
 static void sntp_enable_dhcp_servers_callback(void *arg)
 {
   (void)arg;
@@ -1496,6 +1498,10 @@ static void sntp_start_callback(void *arg)
   (void)arg;
   if (!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
     network_status |= NETWORK_STATUS_SNTP_STARTED;
+#if SNTP_SERVER_DNS
+    if (ip_addr_isany(sntp_getserver(0)) && sntp_getservername(0) == NULL)
+      sntp_setservername(0, SNTP_FALLBACK_SERVER);
+#endif
     sntp_init();
   }
 }
@@ -1525,6 +1531,57 @@ static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
 static int s_retry_num = 0;
 static QueueHandle_t wifi_event_queue = NULL;
+static uint32_t wifi_reported_ip = 0;
+
+static void wifi_got_ip(const ip4_addr_t *ip, bool force_notify)
+{
+  if (active_network_interface != NETWORK_INTERFACE_NONE &&
+      active_network_interface != NETWORK_INTERFACE_WIFI) {
+    debugf("WiFi: got IP ignored; active interface is %d",
+           active_network_interface);
+    return;
+  }
+
+  active_network_interface = NETWORK_INTERFACE_WIFI;
+  if (force_notify || wifi_reported_ip != ip->addr) {
+    const char *ipaddr = ip4addr_ntoa(ip);
+    debugf("WiFi: got IP %s, notifying OSD", ipaddr);
+    menu_notify_ip(ipaddr);
+    wifi_reported_ip = ip->addr;
+  }
+  network_status |= NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
+  sntp_start_from_task();
+}
+
+static void wifi_lost_ip(void)
+{
+  if (active_network_interface != NETWORK_INTERFACE_WIFI)
+    return;
+
+  active_network_interface = NETWORK_INTERFACE_NONE;
+  wifi_reported_ip = 0;
+  network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR |
+                      NETWORK_STATUS_TCP_CONNECTED);
+  menu_notify_network_disconnected();
+  unsigned char evt = 2;
+  xQueueSendFromISR(wifi_event_queue, &evt, 0);
+}
+
+static void wifi_ip_monitor(void *arg)
+{
+  (void)arg;
+
+  for (;;) {
+    ip4_addr_t ip, gw, mask, dns;
+    wifi_sta_ip4_addr_get(&ip.addr, &mask.addr, &gw.addr, &dns.addr);
+    if (wifi_mgmr_sta_state_get() != 1 || ip4_addr_isany_val(ip)) {
+      wifi_lost_ip();
+    } else {
+      wifi_got_ip(&ip, false);
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+}
 
 void wifi_event_handler(async_input_event_t ev, void *priv)
 {
@@ -1561,25 +1618,15 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   } break;
   case CODE_WIFI_ON_GOT_IP: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_GOT_IP", __func__);
-    if (active_network_interface != NETWORK_INTERFACE_NONE &&
-        active_network_interface != NETWORK_INTERFACE_WIFI) {
-      break;
-    }
-    active_network_interface = NETWORK_INTERFACE_WIFI;
-    network_status |= NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
-    sntp_start_from_task();
+    ip4_addr_t ip, gw, mask, dns;
+    wifi_sta_ip4_addr_get(&ip.addr, &mask.addr, &gw.addr, &dns.addr);
+    wifi_got_ip(&ip, true);
     unsigned char evt = 4; 
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_DISCONNECT: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_DISCONNECT", __func__);
-    if (active_network_interface != NETWORK_INTERFACE_WIFI) {
-      break;
-    }
-    active_network_interface = NETWORK_INTERFACE_NONE;
-    network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
-    unsigned char evt = 2; 
-    xQueueSendFromISR(wifi_event_queue, &evt, 0);
+    wifi_lost_ip();
   } break;
   case CODE_WIFI_ON_AP_STARTED: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_AP_STARTED", __func__);
@@ -1631,6 +1678,7 @@ static void wifi_init(void) {
   bflb_irq_enable(WIFI_IRQn);
 
   xTaskCreate(wifi_start_firmware_task, "wifi init", 1024, NULL, 10, NULL);
+  xTaskCreate(wifi_ip_monitor, "wifi ip", 1024, NULL, 10, NULL);
 }
 
 static void wait4event(char code, char code2) {
@@ -2616,6 +2664,10 @@ static void usbh_lwip_netif_status_callback(struct netif *netif)
 #if LWIP_SNTP
       if (!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
         network_status |= NETWORK_STATUS_SNTP_STARTED;
+#if SNTP_SERVER_DNS
+        if (ip_addr_isany(sntp_getserver(0)) && sntp_getservername(0) == NULL)
+          sntp_setservername(0, SNTP_FALLBACK_SERVER);
+#endif
         sntp_init();
       } else {
         debugf("sntp already started");
@@ -2694,7 +2746,7 @@ static void network_link_monitor(void *arg)
       if (interface == NETWORK_INTERFACE_RTL8152) {
         ret = usbh_rtl8152_get_connect_status(active_rtl8152);
       } else {
-        if (!active_asix || !active_asix->connect_status) {
+        if (!active_asix) {
           ret = 0;
           connected = false;
         } else {

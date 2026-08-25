@@ -190,7 +190,7 @@ static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, UINT count) {
 }
 
 static SDC_RESULT sdc_write(const BYTE *buff, LBA_t sector, UINT count) {
-  sdc_debugf("sdc_write(%p,%lu,%u)", buff, (unsigned long)sector, count);  
+  // sdc_debugf("sdc_write(%p,%lu,%u)", buff, (unsigned long)sector, count);  
 
 #ifdef SDIO_DIRECT_WRITE
   if(SDIO_DIRECT_WRITE(sector, buff, count))

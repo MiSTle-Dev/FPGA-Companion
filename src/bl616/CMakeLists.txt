@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile commands for tooling" FORCE)
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,6 +61,10 @@ set(CONFIG_STA_MAX 4)
 set(CONFIG_MAC_TXQ_DEPTH 32)
 set(CONFIG_MAC_RXQ_DEPTH 12)
 
+if(NOT DEFINED TANG_BOARD OR "${TANG_BOARD}" STREQUAL "")
+    set(TANG_BOARD "m0sdock")
+endif()
+
 if(TANG_BOARD STREQUAL "mega60k")
     add_definitions(-DTANG_MEGA60K)
 elseif(TANG_BOARD STREQUAL "mega138kpro")
@@ -80,7 +86,7 @@ else()
 endif()
 
 find_package(bouffalo_sdk REQUIRED HINTS $ENV{BL_SDK_BASE})
-
+sdk_add_include_directories($ENV{BL_SDK_BASE}/components/net/lwip/lwip/src/include)
 sdk_add_include_directories(. ../u8g2/csrc)
 
 target_sources(app PRIVATE

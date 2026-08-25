@@ -34,9 +34,10 @@
 
 #define LWIP_DHCP_GET_NTP_SRV         1
 #define LWIP_DHCP_MAX_NTP_SERVERS     2
+#define SNTP_SERVER_DNS               1
+#define SNTP_GET_SERVERS_FROM_DHCP    1
 #define SNTP_SET_SYSTEM_TIME           sntp_set_system_time
 #define MEMP_NUM_SYS_TIMEOUT          (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 2)
-#define SNTP_GET_SERVERS_FROM_DHCP    1
 #define SNTP_DEBUG LWIP_DBG_ON
 
 #define LWIP_NETIF_API     1
