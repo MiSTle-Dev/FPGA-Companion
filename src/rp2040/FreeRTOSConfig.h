@@ -90,7 +90,11 @@
 // TODO: use more ram on rp2350
 #ifdef ENABLE_BLUETOOTH
 // reserve a little more ram outside freertos for bluetooth
+#if PICO_RP2350
 #define configTOTAL_HEAP_SIZE                   (112*1024)
+#else
+#define configTOTAL_HEAP_SIZE                   (110*1024)
+#endif
 #else
 #define configTOTAL_HEAP_SIZE                   (128*1024)
 #endif

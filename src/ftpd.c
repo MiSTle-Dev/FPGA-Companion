@@ -21,21 +21,28 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <errno.h>
 
 #include "lwip/sockets.h"
 #include "lwip/netif.h"
-#include "usb_osal.h"
-#include "usb_config.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #include "debug.h"
 #include "sdc.h"
 
 #include "ftpd.h"
 
-#define FTP_PORT     21
-#define XFER_CHUNK   4096
-#define CWD_MAX      128
-#define FPATH_MAX    (CWD_MAX + 16)   /* CARD_MOUNTPOINT + '/' + relative path */
+#define FTP_PORT             21
+#if defined(PICO_RP2040)
+#define XFER_CHUNK           2048
+#else
+#define XFER_CHUNK           4096
+#endif
+#define CWD_MAX              128
+#define FPATH_MAX            (CWD_MAX + 16)   /* CARD_MOUNTPOINT + '/' + relative path */
+#define FTPD_STACK_WORDS     1024
+#define FTPS_STACK_WORDS     3072
 
 /* Cyberduck (and friends) open a SEPARATE control connection per transfer,
  * so a single-client server times out their uploads. Small session pool;
@@ -103,6 +110,22 @@ static void replyf(ftps_t *fs, const char *fmt, ...)
     vsnprintf(b, sizeof(b), fmt, ap);
     va_end(ap);
     reply(fs, b);
+}
+
+static bool send_all(int fd, const void *buf, size_t len)
+{
+    const uint8_t *ptr = (const uint8_t *)buf;
+    while (len) {
+        int sent = lwip_send(fd, ptr, (int)len, 0);
+        if (sent <= 0) {
+            debugf("FTP: data send failed (fd=%d, sent=%d, remaining=%lu, errno=%d)",
+                   fd, sent, (unsigned long)len, errno);
+            return false;
+        }
+        ptr += sent;
+        len -= (size_t)sent;
+    }
+    return true;
 }
 
 /* Resolve an FTP path argument against the cwd into out (volume-root
@@ -174,8 +197,12 @@ static void cmd_pasv(ftps_t *fs)
     sa.sin_family = AF_INET;
     sa.sin_port = 0;                  /* ephemeral */
     sa.sin_addr.s_addr = PP_HTONL(INADDR_ANY);
-    if (lwip_bind(fs->pasv, (struct sockaddr *)&sa, sizeof(sa)) < 0 ||
-        lwip_listen(fs->pasv, 1) < 0) {
+    if (lwip_bind(fs->pasv, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+        pasv_close(fs);
+        reply(fs, "425 Can't open data connection.");
+        return;
+    }
+    if (lwip_listen(fs->pasv, 1) < 0) {
         pasv_close(fs);
         reply(fs, "425 Can't open data connection.");
         return;
@@ -197,6 +224,10 @@ static int data_accept(ftps_t *fs)
     struct timeval tv = { .tv_sec = 10, .tv_usec = 0 };
     lwip_setsockopt(fs->pasv, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     int fd = lwip_accept(fs->pasv, NULL, NULL);
+    if (fd >= 0) {
+        lwip_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        lwip_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    }
     pasv_close(fs);                   /* one transfer per PASV */
     return fd;
 }
@@ -205,7 +236,13 @@ static int data_accept(ftps_t *fs)
 static const char *k_mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
-static void send_list(int dfd, const char *path, bool names_only)
+typedef enum {
+    LIST_OK,
+    LIST_FILESYSTEM_ERROR,
+    LIST_DATA_ERROR,
+} list_result_t;
+
+static list_result_t send_list(int dfd, const char *path, bool names_only)
 {
     char full[FPATH_MAX];
     full_path(path, full, sizeof(full));
@@ -218,12 +255,22 @@ static void send_list(int dfd, const char *path, bool names_only)
     FILINFO fno;
 
     sdc_lock();
-    if (f_opendir(&dir, full) != FR_OK) {
-        sdc_unlock();
-        return;
+    FRESULT res = f_opendir(&dir, full);
+    sdc_unlock();
+    if (res != FR_OK) {
+        debugf("FTP: cannot open directory %s (FatFs=%d)", full, res);
+        return LIST_FILESYSTEM_ERROR;
     }
+
     for (;;) {
-        if (f_readdir(&dir, &fno) != FR_OK || fno.fname[0] == 0)
+        sdc_lock();
+        res = f_readdir(&dir, &fno);
+        sdc_unlock();
+        if (res != FR_OK) {
+            debugf("FTP: cannot read directory %s (FatFs=%d)", full, res);
+            break;
+        }
+        if (fno.fname[0] == 0)
             break;
         if (fno.fattrib & (AM_HID | AM_SYS))
             continue;
@@ -242,10 +289,20 @@ static void send_list(int dfd, const char *path, bool names_only)
                          (fno.fattrib & AM_DIR) ? 'd' : '-',
                          (unsigned long)fno.fsize, k_mon[mo - 1], dy, yr, fno.fname);
         }
-        lwip_send(dfd, line, n, 0);
+        if (n < 0)
+            continue;
+        if (!send_all(dfd, line, (size_t)n)) {
+            sdc_lock();
+            f_closedir(&dir);
+            sdc_unlock();
+            return LIST_DATA_ERROR;
+        }
     }
+
+    sdc_lock();
     f_closedir(&dir);
     sdc_unlock();
+    return res == FR_OK ? LIST_OK : LIST_FILESYSTEM_ERROR;
 }
 
 /* ---- transfers ------------------------------------------------------------ */
@@ -270,30 +327,39 @@ static void do_retr(ftps_t *fs, const char *path)
         reply(fs, "550 Bad restart offset.");
         return;
     }
+    sdc_unlock();
+
     reply(fs, "150 Opening data connection.");
     int dfd = data_accept(fs);
     if (dfd < 0) {
+        sdc_lock();
         f_close(&f);
         sdc_unlock();
         reply(fs, "425 No data connection.");
         return;
     }
+
     bool ok = true;
     for (;;) {
         UINT br = 0;
-        if (f_read(&f, fs->xbuf, XFER_CHUNK, &br) != FR_OK) {
+        sdc_lock();
+        FRESULT rr = f_read(&f, fs->xbuf, XFER_CHUNK, &br);
+        sdc_unlock();
+        if (rr != FR_OK) {
             ok = false;
             break;
         }
         if (br == 0)
             break;
-        if (lwip_send(dfd, fs->xbuf, (int)br, 0) < 0) {
+        if (!send_all(dfd, fs->xbuf, br)) {
             ok = false;
             break;
         }
         if (br < XFER_CHUNK)
             break;
     }
+
+    sdc_lock();
     f_close(&f);
     sdc_unlock();
     lwip_close(dfd);
@@ -303,11 +369,13 @@ static void do_retr(ftps_t *fs, const char *path)
 static void do_stor(ftps_t *fs, const char *path)
 {
     sdc_lock();
-    if (disk_path_mounted(path)) {
-        sdc_unlock();
+    bool mounted = disk_path_mounted(path);
+    sdc_unlock();
+    if (mounted) {
         reply(fs, "550 File is a mounted disk image; eject it first.");
         return;
     }
+
     char full[FPATH_MAX];
     full_path(path, full, sizeof(full));
 
@@ -317,6 +385,7 @@ static void do_stor(ftps_t *fs, const char *path)
     /* a resumed upload must keep the existing bytes up to the restart
      * offset; only a fresh upload (no REST) truncates the file */
     FIL f;
+    sdc_lock();
     if (f_open(&f, full, restart_at ? (FA_OPEN_EXISTING | FA_WRITE)
                                      : (FA_CREATE_ALWAYS | FA_WRITE)) != FR_OK) {
         sdc_unlock();
@@ -329,14 +398,18 @@ static void do_stor(ftps_t *fs, const char *path)
         reply(fs, "550 Bad restart offset.");
         return;
     }
+    sdc_unlock();
+
     reply(fs, "150 Opening data connection.");
     int dfd = data_accept(fs);
     if (dfd < 0) {
+        sdc_lock();
         f_close(&f);
         sdc_unlock();
         reply(fs, "425 No data connection.");
         return;
     }
+
     bool ok = true;
     uint32_t total = restart_at;        /* track offset to pinpoint a bad write */
     for (;;) {
@@ -348,7 +421,9 @@ static void do_stor(ftps_t *fs, const char *path)
             break;
         }
         UINT bw = 0;
+        sdc_lock();
         FRESULT wr = f_write(&f, fs->xbuf, (UINT)r, &bw);
+        sdc_unlock();
         if (wr != FR_OK || bw != (UINT)r) {
             debugf("FTP: STOR write failed at offset %lu (recv=%d written=%u fr=%d)",
                    (unsigned long)total, r, bw, wr);
@@ -357,6 +432,8 @@ static void do_stor(ftps_t *fs, const char *path)
         }
         total += (uint32_t)bw;
     }
+
+    sdc_lock();
     f_close(&f);
     sdc_unlock();
     lwip_close(dfd);
@@ -463,9 +540,14 @@ static void session(ftps_t *fs)
                     reply(fs, "425 No data connection.");
                     continue;
                 }
-                send_list(dfd, path, nl);
+                list_result_t result = send_list(dfd, path, nl);
                 lwip_close(dfd);
-                reply(fs, "226 Directory send OK.");
+                if (result == LIST_OK)
+                    reply(fs, "226 Directory send OK.");
+                else if (result == LIST_DATA_ERROR)
+                    reply(fs, "426 Directory transfer aborted.");
+                else
+                    reply(fs, "550 Directory listing failed.");
             } else if (!strcmp(line, "SIZE")) {
                 if (resolve(fs, arg, path, sizeof(path))) {
                     char full[FPATH_MAX];
@@ -582,14 +664,14 @@ static void session_thread(void *arg)
     fs->ctl = -1;
     fs->in_use = false;
     debugf("FTP: CLIENT DISCONNECTED");
-    usb_osal_thread_delete(NULL);
+    vTaskDelete(NULL);
 }
 
 static void ftpd_thread(void *arg)
 {
     (void)arg;
     while (netif_default == NULL)     /* lwIP core init + link (see telnetd) */
-        usb_osal_msleep(200);
+        vTaskDelay(pdMS_TO_TICKS(200));
 
     int lfd = lwip_socket(AF_INET, SOCK_STREAM, 0);
     if (lfd < 0)
@@ -609,7 +691,7 @@ static void ftpd_thread(void *arg)
     for (;;) {
         int fd = lwip_accept(lfd, NULL, NULL);
         if (fd < 0) {
-            usb_osal_msleep(500);
+            vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
         ftps_t *fs = NULL;
@@ -628,16 +710,24 @@ static void ftpd_thread(void *arg)
         fs->in_use = true;
         fs->ctl = fd;
         fs->pasv = -1;
+        BaseType_t created = xTaskCreate(session_thread, "ftps", FTPS_STACK_WORDS, fs,
+                configMAX_PRIORITIES - 3, NULL);
+        if (created != pdPASS) {
+            debugf("FTP: failed to create client task");
+            fs->ctl = -1;
+            fs->pasv = -1;
+            fs->in_use = false;
+            lwip_close(fd);
+            continue;
+        }
         debugf("FTP: CLIENT CONNECTED");
-        // FF_USE_LFN==2 puts FatFs' LFN working buffer on the stack for every
-        // f_opendir/f_readdir/f_stat/... call, so LIST/NLST needs extra room
-        usb_osal_thread_create("ftps", 6144, CONFIG_USBHOST_PSC_PRIO + 1,
-                               session_thread, fs);
     }
 }
 
 void ftpd_init(void)
 {
-    usb_osal_thread_create("ftpd", 3072, CONFIG_USBHOST_PSC_PRIO + 1,
-                           ftpd_thread, NULL);
+    BaseType_t created = xTaskCreate(ftpd_thread, "ftpd", FTPD_STACK_WORDS, NULL,
+                configMAX_PRIORITIES - 3, NULL);
+    if (created != pdPASS)
+        debugf("FTP: failed to create server task");
 }

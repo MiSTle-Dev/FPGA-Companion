@@ -645,6 +645,7 @@ static void menu_dialog_timeout(__attribute__((unused)) TimerHandle_t arg) {
 }
 
 static void menu_dialog_close(void) {
+  if(!dialog_disappear_timer) return;
   xTimerStop(dialog_disappear_timer, 0);
   menu_dialog_timeout(NULL);
 }
@@ -652,11 +653,16 @@ static void menu_dialog_close(void) {
 static void menu_draw_dialog_for(const char *title, const char *msg,
                                   TickType_t duration) {
   // check if osd is already visible
-  dialog_opened_osd = !osd_is_visible();
-  if(dialog_opened_osd) osd_enable(OSD_VISIBLE);
+  if(!menu_dialog_is_open()) {
+    dialog_opened_osd = !osd_is_visible();
+    if(dialog_opened_osd) osd_enable(OSD_VISIBLE);
+  }
 
-  dialog_disappear_timer = xTimerCreate("Dialog timer", duration, pdFALSE,
-					 NULL, menu_dialog_timeout);	  
+  if(!dialog_disappear_timer)
+    dialog_disappear_timer = xTimerCreate("Dialog timer", duration, pdFALSE,
+					   NULL, menu_dialog_timeout);
+  else
+    xTimerChangePeriod(dialog_disappear_timer, duration, 0);
   xTimerStart(dialog_disappear_timer, 0);
   
   u8g2_ClearBuffer(&u8g2);
@@ -1171,6 +1177,7 @@ static void menu_task(__attribute__((unused)) void *parms) {
 
     if(cmd == MENU_EVENT_SYSTEM) {
       menu_debugf("system menu requested");
+      menu_dialog_close();
       
       // open osd if it's not open, yet
       if(!osd_is_visible()) osd_enable(OSD_VISIBLE);

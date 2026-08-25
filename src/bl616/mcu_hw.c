@@ -1478,7 +1478,9 @@ static struct netif *active_network_netif = NULL;
 static struct usbh_rtl8152 *active_rtl8152 = NULL;
 static struct usbh_asix *active_asix = NULL;
 static TaskHandle_t network_link_task = NULL;
-static struct usb_osal_timer *dhcp_handle = NULL;
+static TimerHandle_t dhcp_handle = NULL;
+
+#define SNTP_FALLBACK_SERVER "pool.ntp.org"
 
 static void sntp_enable_dhcp_servers_callback(void *arg)
 {
@@ -1496,6 +1498,10 @@ static void sntp_start_callback(void *arg)
   (void)arg;
   if (!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
     network_status |= NETWORK_STATUS_SNTP_STARTED;
+#if SNTP_SERVER_DNS
+    if (ip_addr_isany(sntp_getserver(0)) && sntp_getservername(0) == NULL)
+      sntp_setservername(0, SNTP_FALLBACK_SERVER);
+#endif
     sntp_init();
   }
 }
@@ -1525,6 +1531,57 @@ static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
 static int s_retry_num = 0;
 static QueueHandle_t wifi_event_queue = NULL;
+static uint32_t wifi_reported_ip = 0;
+
+static void wifi_got_ip(const ip4_addr_t *ip, bool force_notify)
+{
+  if (active_network_interface != NETWORK_INTERFACE_NONE &&
+      active_network_interface != NETWORK_INTERFACE_WIFI) {
+    debugf("WiFi: got IP ignored; active interface is %d",
+           active_network_interface);
+    return;
+  }
+
+  active_network_interface = NETWORK_INTERFACE_WIFI;
+  if (force_notify || wifi_reported_ip != ip->addr) {
+    const char *ipaddr = ip4addr_ntoa(ip);
+    debugf("WiFi: got IP %s, notifying OSD", ipaddr);
+    menu_notify_ip(ipaddr);
+    wifi_reported_ip = ip->addr;
+  }
+  network_status |= NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
+  sntp_start_from_task();
+}
+
+static void wifi_lost_ip(void)
+{
+  if (active_network_interface != NETWORK_INTERFACE_WIFI)
+    return;
+
+  active_network_interface = NETWORK_INTERFACE_NONE;
+  wifi_reported_ip = 0;
+  network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR |
+                      NETWORK_STATUS_TCP_CONNECTED);
+  menu_notify_network_disconnected();
+  unsigned char evt = 2;
+  xQueueSendFromISR(wifi_event_queue, &evt, 0);
+}
+
+static void wifi_ip_monitor(void *arg)
+{
+  (void)arg;
+
+  for (;;) {
+    ip4_addr_t ip, gw, mask, dns;
+    wifi_sta_ip4_addr_get(&ip.addr, &mask.addr, &gw.addr, &dns.addr);
+    if (wifi_mgmr_sta_state_get() != 1 || ip4_addr_isany_val(ip)) {
+      wifi_lost_ip();
+    } else {
+      wifi_got_ip(&ip, false);
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+}
 
 void wifi_event_handler(async_input_event_t ev, void *priv)
 {
@@ -1561,25 +1618,15 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   } break;
   case CODE_WIFI_ON_GOT_IP: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_GOT_IP", __func__);
-    if (active_network_interface != NETWORK_INTERFACE_NONE &&
-        active_network_interface != NETWORK_INTERFACE_WIFI) {
-      break;
-    }
-    active_network_interface = NETWORK_INTERFACE_WIFI;
-    network_status |= NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
-    sntp_start_from_task();
+    ip4_addr_t ip, gw, mask, dns;
+    wifi_sta_ip4_addr_get(&ip.addr, &mask.addr, &gw.addr, &dns.addr);
+    wifi_got_ip(&ip, true);
     unsigned char evt = 4; 
     xQueueSendFromISR(wifi_event_queue, &evt, 0);
   } break;
   case CODE_WIFI_ON_DISCONNECT: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_DISCONNECT", __func__);
-    if (active_network_interface != NETWORK_INTERFACE_WIFI) {
-      break;
-    }
-    active_network_interface = NETWORK_INTERFACE_NONE;
-    network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
-    unsigned char evt = 2; 
-    xQueueSendFromISR(wifi_event_queue, &evt, 0);
+    wifi_lost_ip();
   } break;
   case CODE_WIFI_ON_AP_STARTED: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_AP_STARTED", __func__);
@@ -1631,6 +1678,7 @@ static void wifi_init(void) {
   bflb_irq_enable(WIFI_IRQn);
 
   xTaskCreate(wifi_start_firmware_task, "wifi init", 1024, NULL, 10, NULL);
+  xTaskCreate(wifi_ip_monitor, "wifi ip", 1024, NULL, 10, NULL);
 }
 
 static void wait4event(char code, char code2) {
@@ -2425,16 +2473,16 @@ void mcu_hw_jtag_toggleClk(uint32_t clk_len)
 #endif
 
 // USB host MSC support
-static usb_osal_thread_t usbh_msc_handle = NULL;
+static TaskHandle_t usbh_msc_handle = NULL;
 static bool usb_msc_mounted = false;
 
 // bouffalo sdk does not expect sd card _and_ usbh msc to be enabled at the same time
 extern void fatfs_usbh_driver_register(struct usbh_msc *msc_class);
 
-static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
+static void usbh_msc_thread(void *arg)
 {
   int ret;
-  struct usbh_msc *msc_class = (struct usbh_msc *)CONFIG_USB_OSAL_THREAD_GET_ARGV;
+  struct usbh_msc *msc_class = (struct usbh_msc *)arg;
 
   while ((msc_class = (struct usbh_msc *)usbh_find_class_instance("/dev/sda")) == NULL) {
       goto delete;
@@ -2452,14 +2500,15 @@ static void usbh_msc_thread(CONFIG_USB_OSAL_THREAD_SET_ARGV)
   menu_notify(MENU_EVENT_USB_MOUNTED);
 
     // clang-format off
-delete: 
-    usb_osal_thread_delete(NULL);
+delete:
+    vTaskDelete(NULL);
     // clang-format on
 }
 
 void usbh_msc_run(struct usbh_msc *msc_class)
 {
-  usbh_msc_handle = usb_osal_thread_create("usbh_msc", 2048, CONFIG_USBHOST_PSC_PRIO - 1, usbh_msc_thread, msc_class);
+  xTaskCreate(usbh_msc_thread, "usbh_msc", 2048, msc_class,
+              CONFIG_USBHOST_PSC_PRIO - 1, &usbh_msc_handle);
 }
 
 void usbh_msc_stop(struct usbh_msc *msc_class)
@@ -2592,7 +2641,7 @@ static void usbh_lwip_netif_link_callback(struct netif *netif)
     network_status |= NETWORK_STATUS_UP;
     dhcp_start(netif);
     if (dhcp_handle)
-      usb_osal_timer_start(dhcp_handle);
+      xTimerStart(dhcp_handle, 0);
   } else {
     network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR |
                         NETWORK_STATUS_TCP_CONNECTED);
@@ -2615,6 +2664,10 @@ static void usbh_lwip_netif_status_callback(struct netif *netif)
 #if LWIP_SNTP
       if (!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
         network_status |= NETWORK_STATUS_SNTP_STARTED;
+#if SNTP_SERVER_DNS
+        if (ip_addr_isany(sntp_getserver(0)) && sntp_getservername(0) == NULL)
+          sntp_setservername(0, SNTP_FALLBACK_SERVER);
+#endif
         sntp_init();
       } else {
         debugf("sntp already started");
@@ -2675,7 +2728,7 @@ static void dhcp_timeout(void *arg)
             debugf("IPv4 Subnet mask : %s", ipaddr_ntoa(&netif->netmask));
             debugf("IPv4 Gateway     : %s", ipaddr_ntoa(&netif->gw));
 
-            usb_osal_timer_stop(dhcp_handle);
+            xTimerStop(dhcp_handle, 0);
         }
     } else {
     }
@@ -2690,15 +2743,21 @@ static void network_link_monitor(void *arg)
       int ret;
       bool connected;
 
-      if (interface == NETWORK_INTERFACE_RTL8152)
+      if (interface == NETWORK_INTERFACE_RTL8152) {
         ret = usbh_rtl8152_get_connect_status(active_rtl8152);
-      else
-        ret = usbh_asix_get_connect_status(active_asix);
+      } else {
+        if (!active_asix) {
+          ret = 0;
+          connected = false;
+        } else {
+          ret = usbh_asix_get_connect_status(active_asix);
+          connected = active_asix->connect_status;
+        }
+      }
 
       if (ret == 0) {
-        connected = interface == NETWORK_INTERFACE_RTL8152
-                          ? active_rtl8152->connect_status
-                          : active_asix->connect_status;
+        if (interface == NETWORK_INTERFACE_RTL8152)
+          connected = active_rtl8152->connect_status;
         if (connected != netif_is_link_up(netif)) {
           if (connected)
             netif_set_link_up(netif);
@@ -2777,20 +2836,21 @@ void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
     while (!netif_is_up(netif)) {
     }
 
-    dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
+    dhcp_handle = xTimerCreate("dhcp", pdMS_TO_TICKS(200), pdTRUE, netif, dhcp_timeout);
     if (dhcp_handle == NULL) {
         debugf("timer creation failed!");
         while (1) {
         }
     }
 
-    usb_osal_thread_create("usbh_rtl8152_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_rtl8152_rx_thread, NULL);
+    xTaskCreate(usbh_rtl8152_rx_thread, "usbh_rtl8152_rx", 2048, NULL,
+                CONFIG_USBHOST_PSC_PRIO + 1, NULL);
     active_rtl8152 = rtl8152_class;
     xTaskCreate(network_link_monitor, "net link", 1536, netif,
             CONFIG_USBHOST_PSC_PRIO + 1, &network_link_task);
     sntp_enable_dhcp_servers();
     dhcp_start(netif);
-    usb_osal_timer_start(dhcp_handle);
+    xTimerStart(dhcp_handle, 0);
 }
 
 void usbh_rtl8152_stop(struct usbh_rtl8152 *rtl8152_class)
@@ -2807,7 +2867,10 @@ void usbh_rtl8152_stop(struct usbh_rtl8152 *rtl8152_class)
 
     dhcp_stop(netif);
     dhcp_cleanup(netif);
-    usb_osal_timer_delete(dhcp_handle);
+    if (dhcp_handle) {
+        xTimerDelete(dhcp_handle, 0);
+        dhcp_handle = NULL;
+    }
     netif_set_down(netif);
     netif_remove(netif);
     active_network_netif = NULL;
@@ -2879,20 +2942,21 @@ void usbh_asix_run(struct usbh_asix *asix_class)
     while (!netif_is_up(netif)) {
     }
 
-    dhcp_handle = usb_osal_timer_create("dhcp", 200, dhcp_timeout, netif, true);
+    dhcp_handle = xTimerCreate("dhcp", pdMS_TO_TICKS(200), pdTRUE, netif, dhcp_timeout);
     if (dhcp_handle == NULL) {
         debugf("timer creation failed!");
         while (1) {
         }
     }
 
-    usb_osal_thread_create("usbh_asix_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_asix_rx_thread, NULL);
+    xTaskCreate(usbh_asix_rx_thread, "usbh_asix_rx", 2048, NULL,
+                CONFIG_USBHOST_PSC_PRIO + 1, NULL);
     active_asix = asix_class;
     xTaskCreate(network_link_monitor, "net link", 1536, netif,
             CONFIG_USBHOST_PSC_PRIO + 1, &network_link_task);
     sntp_enable_dhcp_servers();
     dhcp_start(netif);
-    usb_osal_timer_start(dhcp_handle);
+    xTimerStart(dhcp_handle, 0);
 }
 
 void usbh_asix_stop(struct usbh_asix *asix_class)
@@ -2909,7 +2973,10 @@ void usbh_asix_stop(struct usbh_asix *asix_class)
 
     dhcp_stop(netif);
     dhcp_cleanup(netif);
-    usb_osal_timer_delete(dhcp_handle);
+    if (dhcp_handle) {
+        xTimerDelete(dhcp_handle, 0);
+        dhcp_handle = NULL;
+    }
     netif_set_down(netif);
     netif_remove(netif);
     active_network_netif = NULL;

@@ -612,6 +612,7 @@ usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count){
 #define NETWORK_STATUS_TCP_CONNECTED      (1<<5) // the at wifi tcp connection is established
 
 static uint8_t network_status = NETWORK_STATUS_UNINITIALIZED;
+static bool asix_unmount_in_progress = false;
 
 /* ======================================================================= */
 /* ======                   ASIX ethernet                        ========= */
@@ -641,10 +642,22 @@ static err_t netif_asix_low_init(struct netif *netif) {
 
 static void netif_asix_link_callback(struct netif *netif) {
   usb_debugf("ASIX: netif link status changed %s", netif_is_link_up(netif) ? "up" : "down");
-  if(netif_is_link_up(netif)) network_status |=  NETWORK_STATUS_UP;
-  else {
+  if(netif_is_link_up(netif)) {
+    network_status |= NETWORK_STATUS_UP;
+
+    // If status callback was missed/raced, still surface IP once link is up.
+    if(!ip4_addr_isany_val(*netif_ip4_addr(netif))) {
+      if(!(network_status & NETWORK_STATUS_HAS_ADDR)) {
+        usb_debugf("ASIX: link up with existing ip address");
+        menu_notify_ip(ip4addr_ntoa(netif_ip4_addr(netif)));
+      }
+      network_status |= NETWORK_STATUS_HAS_ADDR;
+    }
+  } else {
     network_status &= ~NETWORK_STATUS_UP;
-    menu_notify_network_disconnected();
+    network_status &= ~NETWORK_STATUS_HAS_ADDR;
+    if(!asix_unmount_in_progress)
+      menu_notify_network_disconnected();
   }
 }
 
@@ -670,7 +683,8 @@ static void netif_status_callback(struct netif *netif) {
     network_status |=  NETWORK_STATUS_HAS_ADDR;
   } else {
     network_status &= ~NETWORK_STATUS_HAS_ADDR;
-    menu_notify_network_disconnected();
+    if(!asix_unmount_in_progress)
+      menu_notify_network_disconnected();
   }
 }
   
@@ -791,10 +805,17 @@ void tuh_asix_umount_cb(asixh_interface_t *itf) {
     return;
   }
   
+  asix_unmount_in_progress = true;
+
   netif_set_down(&itf->netif);
 
   // unregister netif from stack
   netif_remove(&itf->netif);
+
+  asix_unmount_in_progress = false;
+
+  // On USB unplug, always show a network-down OSD message.
+  menu_notify(MENU_EVENT_NETWORK_DISCONNECTED);
 }
 
 static void asix_net_task(__attribute__((unused)) void *parms) {
