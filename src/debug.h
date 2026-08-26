@@ -3,7 +3,12 @@
 
 #include <stdio.h>
 
+#if defined(M0S_DOCK)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)
+void telnetd_printf(const char *fmt, ...);
+#define debugf(x, ...)  do { printf(x "\r\n", ##__VA_ARGS__); telnetd_printf(x "\r\n", ##__VA_ARGS__); } while (0)
+#else
 #define debugf(x, ...)  printf(x "\r\n", ##__VA_ARGS__)
+#endif
 
 /* ansi color codes: 
    31m 	Red

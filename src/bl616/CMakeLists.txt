@@ -93,6 +93,7 @@ target_sources(app PRIVATE
    	mcu_hw.c
     $ENV{BL_SDK_BASE}/components/net/lwip/lwip/src/apps/sntp/sntp.c
     ../ftpd.c
+    ../telnetd.c
     ../hidparser.c
    	../hid.c
    	../inifile.c

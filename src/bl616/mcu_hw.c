@@ -18,6 +18,7 @@
 #include "ff.h"
 #include "fatfs_diskio_register.h"
 
+#include "../telnetd.h"
 #include "../spi.h"
 #include "../hid.h"
 #include "../sdc.h"
@@ -1362,6 +1363,10 @@ void mcu_hw_init(void) {
   usb_host();
 
   xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
+  telnetd_init();
+#ifndef CONFIG_CONSOLE_WO
+  telnetd_monitor_shell();
+#endif
 }
 
 void stop_hid(void) {
