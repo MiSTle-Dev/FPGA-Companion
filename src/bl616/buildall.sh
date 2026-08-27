@@ -7,7 +7,7 @@ mkdir -p buildall
 rm -f buildall/*
 
 # List of boards to build
-boards=("m0sdock" )
+boards=("m0sdock" "nano20k" "nano20k_v3923" "console60k" "mega60k" "mega138kpro" "primer25k")
 
 for b in "${boards[@]}"; do
     echo "Building for board: $b"
