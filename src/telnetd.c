@@ -136,11 +136,7 @@ static void session(int fd)
     /* char-at-a-time: WILL ECHO, WILL SGA, DO SGA */
     static const uint8_t nego[] = { 255, 251, 1, 255, 251, 3, 255, 253, 3 };
     tn_send(fd, nego, sizeof(nego));
-#if defined(PICO_RP2040) || defined(PICO_RP2350)
-    tn_puts(fd, "\r\nRP2040 console monitor\r\n");
-#else
-    tn_puts(fd, "\r\nBL616 shell monitor\r\n");
-#endif
+    tn_puts(fd, "\r\nMiSTle FPGA Companion monitor\r\n");
 
     xSemaphoreTake(s_tee_lock, portMAX_DELAY);
     s_tee_rd = s_tee_wr;               /* drop the backlog, mirror from here on */
