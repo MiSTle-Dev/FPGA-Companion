@@ -11,7 +11,7 @@ M0S Dock consists of a M0S PCBA subassembly that is mounted on a carrier PCBA as
 |------|------------- |--------|--------------|
 |20    |JTAG TMS[^1]  |GPIO  0 |              |
 |21    |JTAG TCK[^1]  |GPIO  1 |              |
-|22    |              |GPIO  2 |EN_CHIP BL616 |
+|22    |              |GPIO  2 |Bootstrap |
 |23    |JTAG TDI[^1]  |GPIO  3 |              |
 |IO 12 |CSN           |GPIO 12 |              |
 |IO 13 |SCK           |GPIO 13 |              |
@@ -40,35 +40,35 @@ JTAG signals, UART RX and TX are re-purposed as SPI and control interface. MPU i
 
 **Tang Nano 20k**
 
-|BL616 GPIO    |Nano 20k 3921 |Nano 20k 3923|re-use|Note|
-|-----   |------------- |----|--------  |-----|
-|GPIO0   |SPI _SS       |SPI _SS|-   |  |
-|GPIO1   |SPI SCK       |SPI SCK|-   |  |
-|GPIO2   |SPI MISO      |unused|-  | EN_CHIP BL616 |
-|GPIO3   |SPI MOSI      |unused|-  |  |
-|GPIO 13 |BL616 UART RX |BL616 UART RX|SPI _IRQ  |  |
-|GPIO 11 |BL616 UART TX |BL616 UART TX|- | debug console |
-|GPIO 16 |JTAG TMS      |JTAG TMS|-   |  |
-|GPIO 10 |JTAG TCK      |JTAG TCK |-  |  |
-|GPIO 14 |JTAG TDO      |JTAG TDO |-  |  |
-|GPIO 12 |JTAG TDI      |JTAG TDI |-  |  |
-|GPIO 22 |unused        |unused  |UART RX  | debug console  |
-|GPIO 27 |unused        | SPI MOSI   |-  |  |
-|GPIO 30 |unused        | SPI MISO   |-  |  |
+| BL616 GPIO | Nano 20k 3921 | Nano 20k 3923 | re-use   | Note          |
+|------------|---------------|---------------|----------|---------------|
+| GPIO 0     | SPI _SS       | SPI _SS       | -        |               |
+| GPIO 1     | SPI SCK       | SPI SCK       | -        |               |
+| GPIO 2     | SPI MISO      | unused        | -        | Bootstrap     |
+| GPIO 3     | SPI MOSI      | unused        | -        |               |
+| GPIO 10    | JTAG TCK      | JTAG TCK      | -        |               |
+| GPIO 11    | BL616 UART TX | BL616 UART TX | -        | debug console |
+| GPIO 12    | JTAG TDI      | JTAG TDI      | -        |               |
+| GPIO 13    | BL616 UART RX | BL616 UART RX | SPI _IRQ |               |
+| GPIO 14    | JTAG TDO      | JTAG TDO      | -        |               |
+| GPIO 16    | JTAG TMS      | JTAG TMS      | -        |               |
+| GPIO 20    | unused        | unused        | UART RX  | debug console |
+| GPIO 27    | unused        | SPI MOSI      | -        |               |
+| GPIO 30    | unused        | SPI MISO      | -        |               |
 
 Nano20k uses default BL616 UART TX for the debug console.  
 
 **Primer / Console / Mega**
 
-|BL616 GPIO|Tang Board wiring BL616|re-use|Note|
-|----- |------------- |--------  |-----|
-|GPIO0 |JTAG TMS      |SPI _SS   |  |
-|GPIO1 |JTAG TCK      |SPI SCK   |  |
-|GPIO2 |JTAG TDO      |SPI MISO  | EN_CHIP BL616 |
-|GPIO3 |JTAG TDI      |SPI MOSI  |  |
-|GPIO x|BL616 UART RX |SPI _IRQ  |  |
-|GPIO x|BL616 UART TX |V_JTAGSELN| 1=JTAG, 0=SPI |
-|GPIO x|BL616 TWI SCL[^1] |UART TX   | debug console |
+| BL616 GPIO | Tang Board wiring BL616 | re-use     | Note          |
+|------------|-------------------------|------------|---------------|
+| GPIO 0     | JTAG TMS                | SPI _SS    |               |
+| GPIO 1     | JTAG TCK                | SPI SCK    |               |
+| GPIO 2     | JTAG TDO                | SPI MISO   | Bootstrap     |
+| GPIO 3     | JTAG TDI                | SPI MOSI   |               |
+| GPIO x     | BL616 UART RX           | SPI _IRQ   |               |
+| GPIO x     | BL616 UART TX           | V_JTAGSELN | 1=JTAG, 0=SPI |
+| GPIO x     | BL616 TWI SCL[^1]       | UART TX    | debug console |
 
 [^1]: The extra TWI SCL connection is only available for Console60k/138k and Mega138k Pro.  
 
@@ -287,7 +287,7 @@ or alternatively a shell based tool:
 cd %HOMEPATH%/Documents\FPGA-Companion\src\bl616
 BLFlashCommand.exe --interface=uart --baudrate=2000000 --port=COM_tbd --chipname=bl616 --cpu_id= --config %HOMEPATH%/Documents\FPGA-Companion\src\bl616\buildall\flash_nano20k.ini
 
-~/Downloads/bouffalo_sdk/tools/bflb_tools/bouffalo_flash_cube/BLFlashCommand-ubuntu --interface=uart --baudrate=2000000 --port=/dev/ttyACM0 --chipname=bl616 --cpu_id= --config ~/Dokumente/fork/FPGA-Companion/src/bl616/buildall/flash_m0sdock_cfg.ini
+~/bouffalo_sdk/tools/bflb_tools/bouffalo_flash_cube/BLFlashCommand-ubuntu --interface=uart --baudrate=2000000 --port=/dev/ttyACM0 --chipname=bl616 --cpu_id= --config ~/FPGA-Companion/src/bl616/buildall/flash_m0sdock_cfg.ini
 ```
 
 After successful download you need to unplug the device again and reinsert it *without* the BOOT button pressed to boot into the newly installed firmware.
