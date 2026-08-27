@@ -13,6 +13,8 @@
 #include "usb_controller_maps.h"
 #include "ps2helper.h"
 
+#include "hid2latin1.h"
+
 // keep a map of joysticks to be able to report
 // them individually
 static uint8_t joystick_map = 0;
@@ -175,7 +177,6 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
 
     return false;
   }
-
   
   // we expect boot mode packets which are exactly 8 bytes long
   if(nbytes != 8) return;
@@ -187,15 +188,13 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       
       // modifier released?
       if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
-        //kbd_tx(0x80 | (i+0x68));
         kbd_tx_hid_ps2_break(i, 1);
 
       // modifier pressed?
       if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
-        //kbd_tx(i+0x68);
         kbd_tx_hid_ps2_make(i, 1);
     }
-  } 
+  }
   
   // check if regular keys have changed
   // key released?
@@ -209,7 +208,6 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
         // check if the reported key is the OSD activation hotkey
         // and suppress reporting it to the core
         if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY))
-          //kbd_tx(0x80 | state->last_report[2+i]);
           kbd_tx_hid_ps2_break(state->last_report[2+i], 0);
       } else
         menu_notify(MENU_EVENT_KEY_RELEASE);
@@ -251,6 +249,8 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
           if(buffer[2+i] == 0x4b) msg = MENU_EVENT_PGUP;
           if((buffer[2+i] == 0x2c) || (buffer[2+i] == 0x28))
             msg = MENU_EVENT_SELECT;
+
+	  hid_process_latin1(buffer[0], buffer[2+i]);
         }
       }
 

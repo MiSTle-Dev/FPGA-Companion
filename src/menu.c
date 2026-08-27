@@ -58,6 +58,24 @@
 #define MENU_ENTRY_INDEX_OPTIONS  2
 #define MENU_ENTRY_INDEX_VARIABLE 3
 
+// menu types
+#define MENU_TYPE_MENU          0
+#define MENU_TYPE_FILESELECTOR  1
+#define MENU_TYPE_CUSTOM        2  // only internally used
+
+typedef struct config_custom_S {
+  char *label;
+
+  // Pointer to function the returns the number of active entries in
+  // this custom dialog. This is the number of "lines" that can be
+  // selected with the up and down keys
+  int (*length)(void); 
+  
+  // Pointer to function that draws the custom contents
+  void (*draw)(void); 
+  
+} config_custom_t;
+
 /* new menu state */
 typedef struct menu_state {
   int type;
@@ -66,6 +84,7 @@ typedef struct menu_state {
   union {
     const config_menu_t *menu;  
     const char *label;             // used for file/image selector, only
+    const config_custom_t *custom;  
   };
   
   // file selector related
@@ -257,7 +276,7 @@ static void menu_fs_scroll_entry(void) {
   if(fs_scroll_cur < 0) return;
   
   // don't scroll anything else
-  if(menu_state->type != CONFIG_MENU_ENTRY_FILESELECTOR) return;
+  if(menu_state->type != MENU_TYPE_FILESELECTOR) return;
   
   int row = menu_state->selected - 1;
   int y =  MENU_LINE_Y + MENU_ENTRY_H * (row-menu_state->scroll+1);
@@ -354,10 +373,13 @@ static int menu_len(const config_menu_t *menu) {
 static int menu_count_entries(void) {
   int entries = 0;
 
-  if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
+  if(menu_state->type == MENU_TYPE_MENU)
     entries = menu_len(menu_state->menu);
-  else if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR)
+  else if(menu_state->type == MENU_TYPE_FILESELECTOR)
     entries = dir_len(menu_state->dir);
+  else if(menu_state->type == MENU_TYPE_CUSTOM)
+    if(menu_state->custom->length)
+      entries = menu_state->custom->length();
     
   return entries+1;  // title is also an entry
 }
@@ -377,7 +399,7 @@ static int menu_entry_is_usable(void) {
 
 static config_menu_entry_t *menu_get_selected_entry(void) {
   // first check if there's a menu at all  
-  if(menu_state->type != CONFIG_MENU_ENTRY_MENU)
+  if(menu_state->type != MENU_TYPE_MENU)
     return NULL;
   
   config_menu_entry_t *entry = menu_state->menu->entries;
@@ -725,6 +747,21 @@ static void menu_fsel_draw(const char *label, sdc_dir_entry_t *dir, int selected
   u8g2_SendBuffer(&u8g2);
 }
 
+static void menu_custom_draw(config_custom_t *custom, int selected, int scroll) {
+  u8g2_ClearBuffer(&u8g2);
+
+  // =============== draw a custom dialog =================    
+  menu_debugf("drawing custom '%s' (%d)", custom->label, selected);
+
+  // title is a regular entry
+  menu_draw_title(custom->label, true, selected == 0);
+
+  if(custom->draw)
+    custom->draw();
+  
+  u8g2_SendBuffer(&u8g2);
+}
+
 void menu_goto(const config_menu_t *menu) {
   menu_push();
   
@@ -732,7 +769,7 @@ void menu_goto(const config_menu_t *menu) {
   menu_state->menu = menu;
   menu_state->selected = 1;
   menu_state->scroll = 0;
-  menu_state->type = CONFIG_MENU_ENTRY_MENU;
+  menu_state->type = MENU_TYPE_MENU;
 }
 
 static void menu_file_selector_open(config_menu_entry_t *entry) {
@@ -779,7 +816,7 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
   menu_state->label = (entry->type == CONFIG_MENU_ENTRY_IMAGE)?entry->image->label:entry->fsel->label;
   menu_state->selected = 1;
   menu_state->scroll = 0;
-  menu_state->type = CONFIG_MENU_ENTRY_FILESELECTOR;
+  menu_state->type = MENU_TYPE_FILESELECTOR;
   
   // scan file system
   menu_state->dir = sdc_readdir(fsel_state.index, NULL, (void*)fsel_state.ext);
@@ -901,7 +938,7 @@ void menu_run_current_image_action(void) {
 
   // the current menu state will be a open file selector if the image transfer
   // has been started through the OSD by the user
-  if(menu_state->type != CONFIG_MENU_ENTRY_FILESELECTOR) {
+  if(menu_state->type != MENU_TYPE_FILESELECTOR) {
     menu_debugf("finished download was ini file triggered during boot");
 
     if(!sdc_check_for_pending_image_uploads()) {
@@ -940,7 +977,7 @@ static void menu_back(void) {
     osd_enable(OSD_INVISIBLE);
   else {
     // are we in fileselector?
-    if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR) {
+    if(menu_state->type == MENU_TYPE_FILESELECTOR) {
       // search for ".." in current dir
       sdc_dir_entry_t *entry = NULL;
       for(int i=0;i<dir_len(menu_state->dir);i++)
@@ -971,7 +1008,7 @@ static void menu_select(void) {
   }
 
   // in fileselector
-  if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR) {
+  if(menu_state->type == MENU_TYPE_FILESELECTOR) {
     menu_fileselector_select(dir_entry(menu_state->dir, menu_state->selected-1));
     return;
   }
@@ -1042,10 +1079,12 @@ static void menu_key_repeat(__attribute__((unused)) TimerHandle_t arg) {
     if(menu_key_last_event == MENU_EVENT_PGUP)   menu_entry_go(-4);
     if(menu_key_last_event == MENU_EVENT_PGDOWN) menu_entry_go( 4);
 
-    if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
+    if(menu_state->type == MENU_TYPE_MENU)
       menu_draw(menu_state->menu, menu_state->selected, menu_state->scroll);
-    else
+    else if(menu_state->type == MENU_TYPE_FILESELECTOR)
       menu_fsel_draw(menu_state->label, menu_state->dir, menu_state->selected, menu_state->scroll);
+    else if(menu_state->type == MENU_TYPE_CUSTOM)
+      menu_custom_draw(menu_state->custom, menu_state->selected, menu_state->scroll);
   
     xTimerChangePeriod( menu_key_repeat_timer, pdMS_TO_TICKS(100), 0);
     xTimerStart( menu_key_repeat_timer, 0 );
@@ -1071,7 +1110,7 @@ void menu_do(int event) {
   // for the OSD
   if(event < 0) {
     if(cfg) {
-      if(menu_state->type == CONFIG_MENU_ENTRY_FILESELECTOR)
+      if(menu_state->type == MENU_TYPE_FILESELECTOR)
 	menu_fs_scroll_entry();
     }
       
@@ -1120,10 +1159,12 @@ void menu_do(int event) {
 
   // if no dialog is open, then draw menu/fsel
   if(!menu_dialog_is_open()) {  
-    if(menu_state->type == CONFIG_MENU_ENTRY_MENU)
+    if(menu_state->type == MENU_TYPE_MENU)
       menu_draw(menu_state->menu, menu_state->selected, menu_state->scroll);
-    else
+    else if(menu_state->type == MENU_TYPE_FILESELECTOR)
       menu_fsel_draw(menu_state->label, menu_state->dir, menu_state->selected, menu_state->scroll);  
+    else if(menu_state->type == MENU_TYPE_CUSTOM)
+      menu_custom_draw(menu_state->custom, menu_state->selected, menu_state->scroll);
   }
 }
 
@@ -1160,9 +1201,10 @@ static bool menu_is_systemmenu(void) {
 }  
 
 static void menu_handle_latin1(uint8_t code) {
+  // this function receives lagtin1 encoded keyboard events and
+  // is meant to be used for complex text input in custom dialogs  
   if(code > 31) menu_debugf("menu_handle_latin1(%d/%c)", code, code);
   else          menu_debugf("menu_handle_latin1(%d)", code);
-
 }
 
 static void menu_task(__attribute__((unused)) void *parms) {
@@ -1398,6 +1440,57 @@ void menu_button_state(unsigned char state) {
 
 /* ================= system menu =================== */
 
+/*  For simplicity and flexibility, the system menu is
+    not strictly bound to use the menu structures. Instead
+    it can use programmatically designed dialogs.
+
+    Its about box is an example for this.
+*/
+
+static int about_length(void) {
+  // return the number of selectable items inside the about dialog.
+  return 0;
+}
+
+static void about_draw(void) {
+  u8g2_DrawStr(&u8g2, 20, MENU_LINE_Y + 1*MENU_ENTRY_H, "FPGA Companion");
+  u8g2_DrawStr(&u8g2, 5, MENU_LINE_Y + 2*MENU_ENTRY_H, "(c) 2026 the MiSTle Team");
+  u8g2_DrawStr(&u8g2, 0, MENU_LINE_Y + 3*MENU_ENTRY_H, "http://github.com/mistle-dev");
+}
+
+const static config_custom_t about = {
+  .label = "About",
+  .length = about_length,
+  .draw = about_draw
+};
+
+static void about_func(void) {
+  menu_debugf("About");
+
+  // push a custom menu
+  menu_push();
+  menu_state->type = MENU_TYPE_CUSTOM;
+  menu_state->custom = &about;
+  menu_state->selected = 0;
+  menu_state->scroll = 0;
+}
+
+static const config_action_command_t about_exec = {
+  .code = CONFIG_ACTION_COMMAND_EXEC,
+  .exec = about_func
+};
+
+static const config_action_t about_action = {
+  .name = "about",
+  .commands = (config_action_command_t*)&about_exec
+};
+
+static const config_button_t about_btn = {
+  .label = "About",
+  .action = (config_action_t*)&about_action
+};
+
+
 // the system menu is hard coded as it doesn't need to
 // be modified by the running core
 
@@ -1461,7 +1554,7 @@ static const config_fsel_t usb_core_fsel = {
   .ext = (char**)core_exts
 };
 
-// first entry in main system menu
+// second entry in main system menu
 static const config_menu_entry_t system_menu_usb_core_fsel = {
   .type = CONFIG_MENU_ENTRY_FILESELECTOR,
   .fsel = (config_fsel_t*)&usb_core_fsel,
@@ -1474,9 +1567,16 @@ static const config_menu_entry_t system_menu_usb_core_fsel = {
 #endif
 };
 
+// first entry in main system menu
+static const config_menu_entry_t system_menu_about = {
+  .type = CONFIG_MENU_ENTRY_BUTTON,
+  .button = (config_button_t*)&about_btn,
+  .next = (config_menu_entry_t*)&system_menu_usb_core_fsel
+};
+
 // the main system menu
 static const config_menu_t system_menu_main = {
   .label = "Companion",
-  .entries = (config_menu_entry_t*)&system_menu_usb_core_fsel
+  .entries = (config_menu_entry_t*)&system_menu_about
 };
 
