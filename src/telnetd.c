@@ -31,6 +31,12 @@ extern void shell_exe_cmd(unsigned char *cmd, int len);
 extern int shell_set_echo(bool enabled);
 #endif
 
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+#define TELNETD_IN_ISR() false
+#else
+#define TELNETD_IN_ISR() xPortIsInsideInterrupt()
+#endif
+
 /* ---- console tee ring (written from any thread that prints) ------------- */
 static char     s_tee[TEE_BUF_LEN];
 static volatile uint32_t s_tee_wr;        /* total bytes ever written  */
@@ -42,7 +48,7 @@ static void tee_write(const void *data, size_t size)
 {
     const char *p = data;
 
-    if (s_client_up && s_tee_lock && data && !xPortIsInsideInterrupt()) {
+    if (s_client_up && s_tee_lock && data && !TELNETD_IN_ISR()) {
         static char prev;
         xSemaphoreTake(s_tee_lock, portMAX_DELAY);
         for (size_t i = 0; i < size; i++) {
@@ -101,13 +107,9 @@ static void tn_puts(int fd, const char *s)
     tn_send(fd, s, (int)strlen(s));
 }
 
-static void telnetd_execute_command(int fd, uint8_t *command, size_t *length)
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
+static void telnetd_execute_command(uint8_t *command, size_t *length)
 {
-#if defined(PICO_RP2040) || defined(PICO_RP2350)
-    (void)command;
-    tn_puts(fd, "\r\nRP2040 has no command shell\r\n");
-    *length = 0;
-#else
     /* an empty line still goes to the shell: that is what redraws the prompt */
     command[(*length)++] = '\r';
     command[(*length)++] = '\n';
@@ -117,14 +119,16 @@ static void telnetd_execute_command(int fd, uint8_t *command, size_t *length)
     shell_exe_cmd(command, *length);
     shell_set_echo(true);
     *length = 0;
-#endif
 }
+#endif
 
 /* ---- session ------------------------------------------------------------- */
 static void session(int fd)
 {
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
     uint8_t command[SHELL_COMMAND_LEN];
     size_t command_length = 0;
+#endif
     bool telnet_command = false;
     bool telnet_option = false;
 
@@ -142,12 +146,53 @@ static void session(int fd)
     s_tee_rd = s_tee_wr;               /* drop the backlog, mirror from here on */
     xSemaphoreGive(s_tee_lock);
 
-    telnetd_execute_command(fd, command, &command_length);
-
     for (;;) {
         if (s_peer_dead)
             return;                        /* send timed out/failed */
-        /* input (non-blocking-ish: 50 ms poll via SO_RCVTIMEO) */
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+        /* Poll input so a receive timeout cannot be confused with a socket error. */
+        uint8_t ch;
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(fd, &readfds);
+        struct timeval rtv = { .tv_sec = 0, .tv_usec = 50 * 1000 };
+        int ready = lwip_select(fd + 1, &readfds, NULL, NULL, &rtv);
+        if (ready < 0) {
+            debugf("TELNET: select failed (errno=%d)", errno);
+            return;
+        }
+
+        if (ready > 0) {
+            int r = lwip_recv(fd, &ch, 1, 0);
+            if (r == 0)
+                return;                    /* closed */
+            if (r < 0) {
+                debugf("TELNET: recv failed (errno=%d)", errno);
+                return;                     /* reset/keepalive-reaped */
+            }
+            if (telnet_option) {
+                telnet_option = false;
+            } else if (telnet_command) {
+                telnet_command = false;
+                telnet_option = ch >= 251 && ch <= 254;
+            } else if (ch == 255) {
+                telnet_command = true;
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
+            } else if (ch == '\r' || ch == '\n') {
+                telnetd_execute_command(command, &command_length);
+            } else if (ch == '\b' || ch == 127) {
+                if (command_length > 0) {
+                    command_length--;
+                    tn_puts(fd, "\b \b");
+                }
+            } else if (ch >= 32 && ch < 127 && command_length < sizeof(command) - 3) {
+                command[command_length++] = ch;
+                /* we announced WILL ECHO, so the client shows nothing itself */
+                tn_send(fd, &ch, 1);
+#endif
+            }
+        }
+#else
         uint8_t ch;
         int r = lwip_recv(fd, &ch, 1, 0);
         if (r == 0)
@@ -163,7 +208,7 @@ static void session(int fd)
             } else if (ch == 255) {
                 telnet_command = true;
             } else if (ch == '\r' || ch == '\n') {
-                telnetd_execute_command(fd, command, &command_length);
+                telnetd_execute_command(command, &command_length);
             } else if (ch == '\b' || ch == 127) {
                 if (command_length > 0) {
                     command_length--;
@@ -171,10 +216,10 @@ static void session(int fd)
                 }
             } else if (ch >= 32 && ch < 127 && command_length < sizeof(command) - 3) {
                 command[command_length++] = ch;
-                /* we announced WILL ECHO, so the client shows nothing itself */
                 tn_send(fd, &ch, 1);
             }
         }
+#endif
         {
             /* drain the console tee */
             for (;;) {
@@ -227,8 +272,10 @@ static void telnetd_thread(void *arg)
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
-        struct timeval tv = { .tv_sec = 0, .tv_usec = 50 * 1000 };
-        lwip_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        #if !defined(PICO_RP2040) && !defined(PICO_RP2350)
+            struct timeval rtv = { .tv_sec = 0, .tv_usec = 50 * 1000 };
+            lwip_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rtv, sizeof(rtv));
+        #endif
         /* A peer that vanishes without closing (port scan, killed nc) stops
          * ACKing; once its window fills an untimed send blocks this thread
          * forever and the single-session server is wedged until reboot. */
