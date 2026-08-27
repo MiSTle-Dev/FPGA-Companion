@@ -7,76 +7,54 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
 
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
 #include "lwip/sockets.h"
 #include "lwip/netif.h"
-#include "usb_osal.h"
-#include "usb_config.h"
 #include "debug.h"
 #include "telnetd.h"
 
 #define TELNET_PORT     23
 #define TEE_BUF_LEN     2048
-#define SHELL_PRINT_LEN 256
+#define SHELL_COMMAND_LEN 256
+#define TELNETD_STACK_WORDS 768
 
-extern int shell_set_print(void (*shell_printf)(char *fmt, ...));
+extern void shell_exe_cmd(unsigned char *cmd, int len);
+extern int shell_set_echo(bool enabled);
 
 /* ---- console tee ring (written by shell output from any thread) ---------- */
 static char     s_tee[TEE_BUF_LEN];
 static volatile uint32_t s_tee_wr;        /* total lines ever written  */
 static uint32_t s_tee_rd;                 /* telnet thread's position  */
-static usb_osal_mutex_t s_tee_lock;
+static SemaphoreHandle_t s_tee_lock;
 static volatile bool s_client_up;
 
-static void telnetd_console_tee(const char *text)
+/* Everything the firmware prints goes through bflb_console_write(), so
+ * wrapping it (see -Wl,--wrap in CMakeLists.txt) mirrors shell command
+ * output too, not just the few messages the shell emits itself. */
+extern ssize_t __real_bflb_console_write(const void *data, size_t size);
+
+ssize_t __wrap_bflb_console_write(const void *data, size_t size)
 {
-    if (!s_client_up || !s_tee_lock)
-        return;
-    usb_osal_mutex_take(s_tee_lock);
-    while (*text)
-        s_tee[s_tee_wr++ % TEE_BUF_LEN] = *text++;
-    usb_osal_mutex_give(s_tee_lock);
-}
+    const char *p = data;
 
-static void telnetd_vprintf(const char *fmt, va_list ap)
-{
-    char buf[SHELL_PRINT_LEN];
-    int len = vsnprintf(buf, sizeof(buf), fmt, ap);
+    /* printf() from an ISR must not touch the mutex */
+    if (s_client_up && s_tee_lock && data && !xPortIsInsideInterrupt()) {
+        static char prev;
+        xSemaphoreTake(s_tee_lock, portMAX_DELAY);
+        for (size_t i = 0; i < size; i++) {
+            if (p[i] == '\n' && prev != '\r')
+                s_tee[s_tee_wr++ % TEE_BUF_LEN] = '\r';
+            s_tee[s_tee_wr++ % TEE_BUF_LEN] = p[i];
+            prev = p[i];
+        }
+        xSemaphoreGive(s_tee_lock);
+    }
 
-    if (len <= 0)
-        return;
-    if (len >= (int)sizeof(buf))
-        len = sizeof(buf) - 1;
-    buf[len] = 0;
-    telnetd_console_tee(buf);
-}
-
-void telnetd_printf(const char *fmt, ...)
-{
-    va_list ap;
-
-    va_start(ap, fmt);
-    telnetd_vprintf(fmt, ap);
-    va_end(ap);
-}
-
-static void telnetd_shell_printf(char *fmt, ...)
-{
-    va_list ap;
-    va_list copy;
-
-    va_start(ap, fmt);
-    va_copy(copy, ap);
-    vprintf(fmt, copy);
-    va_end(copy);
-
-    telnetd_vprintf(fmt, ap);
-    va_end(ap);
-}
-
-void telnetd_monitor_shell(void)
-{
-    shell_set_print(telnetd_shell_printf);
+    return __real_bflb_console_write(data, size);
 }
 
 /* ---- helpers ------------------------------------------------------------- */
@@ -105,9 +83,27 @@ static void tn_puts(int fd, const char *s)
     tn_send(fd, s, (int)strlen(s));
 }
 
+static void telnetd_execute_command(uint8_t *command, size_t *length)
+{
+    /* an empty line still goes to the shell: that is what redraws the prompt */
+    command[(*length)++] = '\r';
+    command[(*length)++] = '\n';
+    command[*length] = '\0';
+    /* the shell would echo the whole line again; we already echoed it live */
+    shell_set_echo(false);
+    shell_exe_cmd(command, *length);
+    shell_set_echo(true);
+    *length = 0;
+}
+
 /* ---- session ------------------------------------------------------------- */
 static void session(int fd)
 {
+    uint8_t command[SHELL_COMMAND_LEN];
+    size_t command_length = 0;
+    bool telnet_command = false;
+    bool telnet_option = false;
+
     s_peer_dead = false;
     /* char-at-a-time: WILL ECHO, WILL SGA, DO SGA */
     static const uint8_t nego[] = { 255, 251, 1, 255, 251, 3, 255, 253, 3 };
@@ -116,10 +112,12 @@ static void session(int fd)
 
     /* start in console mode: replay the on-screen backlog */
     {
-        usb_osal_mutex_take(s_tee_lock);
+        xSemaphoreTake(s_tee_lock, portMAX_DELAY);
         s_tee_rd = s_tee_wr;               /* live from here on */
-        usb_osal_mutex_give(s_tee_lock);
+        xSemaphoreGive(s_tee_lock);
     }
+
+    telnetd_execute_command(command, &command_length);
 
     for (;;) {
         if (s_peer_dead)
@@ -131,19 +129,40 @@ static void session(int fd)
             return;                        /* closed */
         if (r < 0 && errno != EWOULDBLOCK && errno != EAGAIN)
             return;                        /* reset/keepalive-reaped, not the 50 ms poll */
+        if (r > 0) {
+            if (telnet_option) {
+                telnet_option = false;
+            } else if (telnet_command) {
+                telnet_command = false;
+                telnet_option = ch >= 251 && ch <= 254;
+            } else if (ch == 255) {
+                telnet_command = true;
+            } else if (ch == '\r' || ch == '\n') {
+                telnetd_execute_command(command, &command_length);
+            } else if (ch == '\b' || ch == 127) {
+                if (command_length > 0) {
+                    command_length--;
+                    tn_puts(fd, "\b \b");
+                }
+            } else if (ch >= 32 && ch < 127 && command_length < sizeof(command) - 3) {
+                command[command_length++] = ch;
+                /* we announced WILL ECHO, so the client shows nothing itself */
+                tn_send(fd, &ch, 1);
+            }
+        }
         {
             /* drain the console tee */
             for (;;) {
                 char out[128];
                 int len = 0;
-                usb_osal_mutex_take(s_tee_lock);
+                xSemaphoreTake(s_tee_lock, portMAX_DELAY);
                 if (s_tee_wr - s_tee_rd > TEE_BUF_LEN)
                     s_tee_rd = s_tee_wr - TEE_BUF_LEN;   /* dropped */
                 while (s_tee_rd < s_tee_wr && len < (int)sizeof(out)) {
                     out[len++] = s_tee[s_tee_rd % TEE_BUF_LEN];
                     s_tee_rd++;
                 }
-                usb_osal_mutex_give(s_tee_lock);
+                xSemaphoreGive(s_tee_lock);
                 if (!len)
                     break;
                 tn_send(fd, out, len);
@@ -160,7 +179,7 @@ static void telnetd_thread(void *arg)
      * memp pools and corrupts the stack (manifested as boot hangs around
      * DHCP time). netif_default appearing means core init long finished. */
     while (netif_default == NULL)
-        usb_osal_msleep(200);
+        vTaskDelay(pdMS_TO_TICKS(200));
 
     int lfd = lwip_socket(AF_INET, SOCK_STREAM, 0);
     if (lfd < 0)
@@ -180,7 +199,7 @@ static void telnetd_thread(void *arg)
     for (;;) {
         int fd = lwip_accept(lfd, NULL, NULL);
         if (fd < 0) {
-            usb_osal_msleep(500);
+            vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
         struct timeval tv = { .tv_sec = 0, .tv_usec = 50 * 1000 };
@@ -208,9 +227,14 @@ static void telnetd_thread(void *arg)
 
 void telnetd_init(void)
 {
-    s_tee_lock = usb_osal_mutex_create();
-    /* Same priority band as the other app threads — an over-high priority
-     * here (above the tcpip thread) is part of how the init race bites. */
-    usb_osal_thread_create("telnetd", 3072, CONFIG_USBHOST_PSC_PRIO + 1,
-                           telnetd_thread, NULL);
+    s_tee_lock = xSemaphoreCreateMutex();
+    if (!s_tee_lock) {
+        debugf("TELNET: failed to create tee mutex");
+        return;
+    }
+
+    BaseType_t created = xTaskCreate(telnetd_thread, "telnetd", TELNETD_STACK_WORDS,
+                NULL, configMAX_PRIORITIES - 3, NULL);
+    if (created != pdPASS)
+        debugf("TELNET: failed to create server task");
 }

@@ -96,13 +96,13 @@ extern void bl_show_chipinfo(void);
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_UART_TX  GPIO_PIN_11
-#define PIN_UART_RX  GPIO_PIN_22
+#define PIN_UART_RX  GPIO_PIN_20
 #elif TANG_NANO20K_V3923
 #warning "Building for TANG_NANO20K internal BL616 v3923"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_UART_TX  GPIO_PIN_11
-#define PIN_UART_RX  GPIO_PIN_22
+#define PIN_UART_RX  GPIO_PIN_20
 #elif M0S_DOCK
 #warning "Building for M0S DOCK BL616"
 #include "../jtag.h"
@@ -145,6 +145,15 @@ volatile uint32_t *reg_gpio_tms = (volatile uint32_t *)0x20000904; // gpio_cfg16
 volatile uint32_t *reg_gpio_tck = (volatile uint32_t *)0x200008ec; // gpio_cfg10
 volatile uint32_t *reg_gpio_tdo = (volatile uint32_t *)0x200008fc; // gpio_cfg14
 volatile uint32_t *reg_gpio_tdi = (volatile uint32_t *)0x200008f4; // gpio_cfg12
+#elif defined(M0S_DOCK)
+#define PIN_JTAG_TMS GPIO_PIN_0
+#define PIN_JTAG_TCK GPIO_PIN_1
+#define PIN_JTAG_TDI GPIO_PIN_3
+#define PIN_JTAG_TDO GPIO_PIN_20
+volatile uint32_t *reg_gpio_tms = (volatile uint32_t *)0x200008c4; // gpio_cfg0
+volatile uint32_t *reg_gpio_tck = (volatile uint32_t *)0x200008c8; // gpio_cfg1
+volatile uint32_t *reg_gpio_tdo = (volatile uint32_t *)0x20000914; // gpio_cfg20
+volatile uint32_t *reg_gpio_tdi = (volatile uint32_t *)0x200008d0; // gpio_cfg3
 #else
 #define PIN_JTAG_TMS GPIO_PIN_0
 #define PIN_JTAG_TCK GPIO_PIN_1
@@ -1364,9 +1373,6 @@ void mcu_hw_init(void) {
 
   xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
   telnetd_init();
-#ifndef CONFIG_CONSOLE_WO
-  telnetd_monitor_shell();
-#endif
 }
 
 void stop_hid(void) {
@@ -2990,41 +2996,41 @@ void usbh_asix_stop(struct usbh_asix *asix_class)
     network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
 }
 
-// BL616 MPU pinmapping
+// BL616 MPU pin mapping
 //
-// GPIO | M0S_DOCK | NANO20K  |NANO20K_3923| CONSOLE60K  | MEGA138KPRO | MEGA60K     | PRIMER25K
-// -----+----------+----------+-----------+-------------+-------------+-------------+------------
-//    0 | TMS      | CSN      | CSN       | TMS/CSN     | TMS/CSN     | TMS/CSN     | TMS/CSN
-//    1 | TCK      | SCK      | SCK       | TCK/SCK     | TCK/SCK     | TCK/SCK     | TCK/SCK
-//    2 | TDO      | MISO     | -         | TDO/MISO    | TDO/MISO    | TDO/MISO    | TDO/MISO
-//    3 | TDI      | MOSI     | -         | TDI/MOSI    | TDI/MOSI    | TDI/MOSI    | TDI/MOSI
-//    4 | -        | -        | -         | -           | -           | -           | -
-//    5 | -        | -        | -         | -           | -           | -           | -
-//    6 | -        | -        | -         | -           | -           | -           | -
-//    7 | -        | -        | -         | -           | -           | -           | -
-//    8 | -        | -        | -         | -           | -           | -           | -
-//    9 | -        | -        | -         | -           | -           | -           | -
-//   10 | MISO     | TCK      | TCK       | -           | JTAGSEL     | -           | SPI IRQn
-//   11 | MOSI     | UART TX  | UART TX   | -           | SPI IRQn    | -           | JTAGSEL
-//   12 | CSN      | TDI      | TDI       | -           | -           | -           | UART TX (S3)
-//   13 | SCK      | SPI IRQn | SPI IRQn  | -           | -           | -           | -
-//   14 | SPI IRQn | TDO      | TDO       | -           | -           | -           | -
-//   15 | -        | -        | -         | -           | -           | -           | -
-//   16 | -        | TMS      | TMS       | TF_SDIO_SEL | -           | PWR_KEY     | -
-//   17 | -        | -        | -         | -           | -           | ModeSel     | -
-//   18 | -        | -        | -         | -           | -           | -           | -
-//   19 | -        | -        | -         | -           | -           | -           | -
-//   20 | -        | -        | -         | -           | LED6        | I2C INT     | LED6
-//   21 | UART TX  | SDA      | SDA       | USB-C SBU1  | -           | I2C SDA     | -
-//   22 | UART RX  | UART RX  | UART RX   | UART RX     | UART RX     | UART RX     | UART RX
-//   23 | -        | -        | -         | -           | -           | -           | -
-//   24 | -        | -        | -         | -           | -           | -           | -
-//   25 | -        | -        | -         | -           | -           | -           | -
-//   26 | -        | -        | -         | -           | -           | -           | -
-//   27 | LED1     | -        | MOSI      | SPI IRQn    | SDA         | SPI IRQn    | -
-//   28 | LED2     | -        | -         | JTAGSEL     | UART TX     | JTAGSEL     | -
-//   29 | -        | -        | -         | DDC DAT     | -           | -           | -
-//   30 | -        | -        | MISO      | UART TX     | -           | UART TX     | -
+// GPIO | M0S Dock | Nano20K     | Nano20K v3923 | Console60K    | Mega138K Pro | Mega60K  | Primer25K
+// -----+----------+-------------+---------------+---------------+--------------+----------+-----------
+//    0 | TMS      | CSN         | CSN           | TMS/CSN       | TMS/CSN      | TMS/CSN  | TMS/CSN
+//    1 | TCK      | SCK         | SCK           | TCK/SCK       | TCK/SCK      | TCK/SCK  | TCK/SCK
+//    2 | BOOT     | MISO/BOOT   | BOOT          | TDO/MISO/BOOT | TDO/MISO/BOOT| TDO/MISO/BOOT | TDO/MISO/BOOT
+//    3 | TDI      | MOSI        | -             | TDI/MOSI      | TDI/MOSI     | TDI/MOSI | TDI/MOSI
+//    4 | -        | -           | -             | -             | -            | -        | -
+//    5 | -        | -           | -             | -             | -            | -        | -
+//    6 | -        | -           | -             | -             | -            | -        | -
+//    7 | -        | -           | -             | -             | -            | -        | -
+//    8 | -        | -           | -             | -             | -            | -        | -
+//    9 | -        | -           | -             | -             | -            | -        | -
+//   10 | MISO     | TCK         | TCK           | -             | JTAGSEL      | -        | SPI IRQn
+//   11 | MOSI     | UART TX     | UART TX       | -             | SPI IRQn     | -        | JTAGSEL
+//   12 | CSN      | TDI         | TDI           | -             | -            | -        | UART TX (S3)
+//   13 | SCK      | SPI IRQn    | SPI IRQn      | -             | -            | -        | -
+//   14 | SPI IRQn | TDO         | TDO           | -             | -            | -        | -
+//   15 | -        | -           | -             | -             | -            | -        | -
+//   16 | -        | TMS         | TMS           | TF_SDIO_SEL   | -            | PWR_KEY  | -
+//   17 | -        | -           | -             | -             | -            | ModeSel  | -
+//   18 | -        | -           | -             | -             | -            | -        | -
+//   19 | -        | -           | -             | -             | -            | -        | -
+//   20 | TDO      | UART RX     | UART RX       | -             | LED6         | I2C INT  | LED6
+//   21 | UART TX  | SDA         | SDA           | USB-C SBU1    | -            | I2C SDA  | -
+//   22 | UART RX  | SCL         | SCL           | UART RX       | UART RX      | UART RX  | UART RX
+//   23 | -        | -           | -             | -             | -            | -        | -
+//   24 | -        | -           | -             | -             | -            | -        | -
+//   25 | -        | -           | -             | -             | -            | -        | -
+//   26 | -        | -           | -             | -             | -            | -        | -
+//   27 | LED1     | -           | MOSI          | SPI IRQn      | SDA          | SPI IRQn | -
+//   28 | LED2     | -           | -             | JTAGSEL       | UART TX      | JTAGSEL  | -
+//   29 | -        | -           | -             | DDC DAT       | -            | -        | -
+//   30 | -        | -           | MISO          | UART TX       | -            | UART TX  | -
 //
 // Notes:
 // - GPIO 13 (NANO20K) and GPIO 10/11/27 (Tang boards) are the default UART pins

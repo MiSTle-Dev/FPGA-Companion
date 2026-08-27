@@ -11,13 +11,14 @@ M0S Dock consists of a M0S PCBA subassembly that is mounted on a carrier PCBA as
 |------|------------- |--------|--------------|
 |20    |JTAG TMS[^1]  |GPIO  0 |              |
 |21    |JTAG TCK[^1]  |GPIO  1 |              |
-|22    |JTAG TDO[^1]  |GPIO  2 |EN_CHIP BL616 |
+|22    |              |GPIO  2 |EN_CHIP BL616 |
 |23    |JTAG TDI[^1]  |GPIO  3 |              |
 |IO 12 |CSN           |GPIO 12 |              |
 |IO 13 |SCK           |GPIO 13 |              |
 |IO 10 |MISO          |GPIO 10 |              |
 |IO 11 |MOSI          |GPIO 11 |              |
 |IO 14 |IRQN          |GPIO 14 |              |
+|14    |JTAG TDO[^1]  |GPIO 20 |              |
 |RX    |BL616 UART RX |GPIO 21 |debug console |
 |TX    |BL616 UART TX |GPIO 22 |debug console |
 |GND   |GND           |        |              |
@@ -29,7 +30,7 @@ Location JTAG connection TN20k PCBA top side.
 
 ![Tang Nano 20k JTAG](../rp2040/jtag_tn20k.png)
 
-Location GPIO 0...3 for JTAG purposes on M0S sub-module PCBA. M0S Dock top side. 
+Location GPIO 0,1,3,20 for JTAG purposes on M0S sub-module PCBA. M0S Dock top side. 
 
 ![M0S](M0S.png)
 
