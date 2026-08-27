@@ -1,10 +1,9 @@
 /*
- * telnetd — remote console/menu mirror on TCP port 23.
+ * telnetd — remote shell/console mirror on TCP port 23.
  */
 #include <stdbool.h>
 #include <stdint.h>
 #include <errno.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
@@ -25,9 +24,9 @@
 extern void shell_exe_cmd(unsigned char *cmd, int len);
 extern int shell_set_echo(bool enabled);
 
-/* ---- console tee ring (written by shell output from any thread) ---------- */
+/* ---- console tee ring (written from any thread that prints) ------------- */
 static char     s_tee[TEE_BUF_LEN];
-static volatile uint32_t s_tee_wr;        /* total lines ever written  */
+static volatile uint32_t s_tee_wr;        /* total bytes ever written  */
 static uint32_t s_tee_rd;                 /* telnet thread's position  */
 static SemaphoreHandle_t s_tee_lock;
 static volatile bool s_client_up;
@@ -110,12 +109,9 @@ static void session(int fd)
     tn_send(fd, nego, sizeof(nego));
     tn_puts(fd, "\r\nBL616 shell monitor\r\n");
 
-    /* start in console mode: replay the on-screen backlog */
-    {
-        xSemaphoreTake(s_tee_lock, portMAX_DELAY);
-        s_tee_rd = s_tee_wr;               /* live from here on */
-        xSemaphoreGive(s_tee_lock);
-    }
+    xSemaphoreTake(s_tee_lock, portMAX_DELAY);
+    s_tee_rd = s_tee_wr;               /* drop the backlog, mirror from here on */
+    xSemaphoreGive(s_tee_lock);
 
     telnetd_execute_command(command, &command_length);
 
