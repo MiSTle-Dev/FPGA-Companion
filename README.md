@@ -4,10 +4,12 @@ The MiSTle FPGA Companion implements support functions for FPGA
 based retro computing projects like [MiSTeryNano
 project](https://github.com/MiSTle-Dev/MiSTeryNano). While the FPGA
 typically implements the hardware of the retro machine itself the
-Companion uses a microcontroller to add support for modern peripherals
-like USB keyboards, mice, SD cards and USB LAN dongle. It also implements an
-on-screen-display menu to allow the user to configure the retro
-machine.
+The Companion uses a microcontroller to support modern peripherals such as
+USB keyboards, mice, SD cards, and USB LAN dongles. It also provides an
+on-screen display (OSD) menu for configuring the retro machine. A built-in FTP
+server allows files to be copied to the SD card. A Telnet server is also built
+in, allowing clients to monitor console and debug messages. On the BL616, it
+can also accept commands for the device shell.
 
 The FPGA Companion replaces the MiSTeryNano firmware that was
 formerly part of the [MiSTeryNano
@@ -47,12 +49,11 @@ disadvantages.
   - Pros
     - Very powerful Risc-V CPU
     - USB 2.0 highspeed host support
-    - WiFi 6 support
-    - Built-in Bluetooth and WiFi
+    - Built-in WIFI6 BT BLE ZIGBEE THREAD MATTER support
     - [CherryUSB](https://github.com/cherry-embedded/CherryUSB) stack
   - Cons
     - Limited SDK support
-    - Many Tang boards do not have WiFi or Bluetooth antennas (only M0S Dock)
+    - Many Tang boards lack Wi-Fi and Bluetooth antennas; the M0S Dock is an exception
 
 ### RP2040
 

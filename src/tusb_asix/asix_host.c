@@ -32,6 +32,11 @@ static const struct {
 };
 
 static asixh_interface_t _interfaces[CFG_TUH_ASIX];
+static uint32_t _stats[ASIX_STAT_COUNT];
+
+void tuh_asix_get_stats(uint32_t stats[ASIX_STAT_COUNT]) {
+  memcpy(stats, _stats, sizeof(_stats));
+}
 
 TU_ATTR_ALWAYS_INLINE static inline asixh_interface_t *get_interface(uint8_t dev_addr) {
   TU_VERIFY(dev_addr <= CFG_TUH_DEVICE_MAX, NULL);
@@ -388,6 +393,63 @@ bool tuh_asix_receive(uint8_t dev_addr, uint8_t ep) {
   return true;
 }
 
+static uint16_t asix_prepare_tx(uint8_t *out, const uint8_t *data, uint16_t len, uint16_t ep_size) {
+  *(uint16_t*)&out[0] = len;
+  *(uint16_t*)&out[2] = ~len;
+  memcpy(out+4, data, len);
+
+  uint16_t xfer_len = len + 4;
+  if(ep_size && (xfer_len % ep_size) == 0 &&
+     (uint16_t)(xfer_len + 4) <= CFG_TUH_ASIX_EP_BUFSIZE) {
+    out[xfer_len + 0] = 0x00;
+    out[xfer_len + 1] = 0x00;
+    out[xfer_len + 2] = 0xff;
+    out[xfer_len + 3] = 0xff;
+    xfer_len += 4;
+  }
+
+  return xfer_len;
+}
+
+static bool asix_start_tx(asixh_interface_t *itf, uint8_t *buf, uint16_t len) {
+  TU_VERIFY(usbh_edpt_claim(itf->dev_addr, itf->ep[2]), false);
+  if(!usbh_edpt_xfer(itf->dev_addr, itf->ep[2], buf, len)) {
+    usbh_edpt_release(itf->dev_addr, itf->ep[2]);
+    _stats[ASIX_STAT_TX_START_FAIL]++;
+    return false;
+  }
+  _stats[ASIX_STAT_TX_STARTED]++;
+  return true;
+}
+
+static void asix_start_next_tx(asixh_interface_t *itf) {
+  if(!itf->tx_count)
+    return;
+
+  uint8_t idx = itf->tx_head;
+  uint16_t len = itf->tx_len[idx];
+  memcpy(itf->epout_buf, itf->tx_queue[idx], len);
+  itf->tx_head = (uint8_t)((itf->tx_head + 1) % CFG_TUH_ASIX_TX_QUEUE_DEPTH);
+  itf->tx_count--;
+
+  if(!asix_start_tx(itf, itf->epout_buf, len)) {
+    itf->tx_head = idx;
+    itf->tx_count++;
+  }
+}
+
+static void asix_queue_tx(asixh_interface_t *itf, const uint8_t *data, uint16_t len) {
+  if(itf->tx_count >= CFG_TUH_ASIX_TX_QUEUE_DEPTH) {
+    _stats[ASIX_STAT_TX_QUEUE_FULL]++;
+    return;
+  }
+
+  uint8_t idx = (uint8_t)((itf->tx_head + itf->tx_count) % CFG_TUH_ASIX_TX_QUEUE_DEPTH);
+  itf->tx_len[idx] = asix_prepare_tx(itf->tx_queue[idx], data, len, itf->ep_size[2]);
+  itf->tx_count++;
+  _stats[ASIX_STAT_TX_QUEUED]++;
+}
+
 bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
   // TU_LOG2("%s(%d,%02x,%lu)\r\n", __FUNCTION__, dev_addr, ep_addr, xferred_bytes);
   
@@ -399,6 +461,15 @@ bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint
 
   uint8_t *buf = (number==1)?itf->ep0in_buf:itf->ep1in_buf;
   
+  if(dir == TUSB_DIR_OUT && ep_addr == itf->ep[2]) {
+    if(result == XFER_RESULT_SUCCESS)
+      _stats[ASIX_STAT_TX_DONE]++;
+    else
+      _stats[ASIX_STAT_TX_START_FAIL]++;
+    asix_start_next_tx(itf);
+    return true;
+  }
+
   if (result != XFER_RESULT_SUCCESS)
     return false;
 
@@ -421,21 +492,39 @@ bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint
     
     // ep 2 is bulk data in
     if(number == 2) {
-      // read length field and verify its bit inverse
-      uint16_t len = (buf[0] + 256*buf[1]) & 0x7ff;
-      if(len == ((0xffff ^ (buf[2] + 256*buf[3])) & 0x7ff)) {
-	// check if there's sufficient data inside the packet
-	if(xferred_bytes >= (uint32_t)len+4) {
-	  // netif up? This may not be the case if USB network card was detected
-	  // before the lwip stack was up
-	  if(itf->netif.input) {
-	    struct pbuf* p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);	
-	    pbuf_take(p, buf+4, len);
-	    
-	    if (itf->netif.input(p, &(itf->netif)) != ERR_OK)
-	      pbuf_free(p);
-	  }
-	}
+      _stats[ASIX_STAT_RX_XFERS]++;
+      uint32_t offset = 0;
+      while(xferred_bytes - offset >= 4) {
+        uint16_t len = (buf[offset + 0] + 256*buf[offset + 1]) & 0x7ff;
+        uint16_t len_crc = buf[offset + 2] + 256*buf[offset + 3];
+        if(!len || len != ((0xffff ^ len_crc) & 0x7ff)) {
+          _stats[ASIX_STAT_RX_BAD_HEADER]++;
+          break;
+        }
+        offset += 4;
+
+        if(xferred_bytes - offset < len) {
+          _stats[ASIX_STAT_RX_TRUNCATED]++;
+          break;
+        }
+
+        // netif up? This may not be the case if USB network card was detected
+        // before the lwip stack was up
+        if(itf->netif.input) {
+          struct pbuf* p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
+          if(p && pbuf_take(p, buf+offset, len) == ERR_OK) {
+            if (itf->netif.input(p, &(itf->netif)) != ERR_OK)
+              pbuf_free(p);
+            _stats[ASIX_STAT_RX_FRAMES]++;
+          } else if(p) {
+            pbuf_free(p);
+            _stats[ASIX_STAT_RX_PBUF_FAIL]++;
+          } else {
+            _stats[ASIX_STAT_RX_PBUF_FAIL]++;
+          }
+        }
+
+        offset += len;
       }
       // receive next packet
       tuh_asix_receive(dev_addr, 1);
@@ -455,14 +544,17 @@ void tuh_asix_transmit(struct netif *netif, uint8_t *data, uint16_t len) {
       itf = &_interfaces[i];
 
   TU_VERIFY(itf, );
-  TU_VERIFY(usbh_edpt_claim(itf->dev_addr, itf->ep[2]), );
+  TU_VERIFY((uint16_t)(len + 8) <= CFG_TUH_ASIX_EP_BUFSIZE, );
 
-  *(uint16_t*)&(itf->epout_buf[0]) =  len;
-  *(uint16_t*)&(itf->epout_buf[2]) = ~len;
-  memcpy(itf->epout_buf+4, data, len);
-  
-  if(!usbh_edpt_xfer(itf->dev_addr, itf->ep[2], itf->epout_buf, len+4))
-    usbh_edpt_release(itf->dev_addr, itf->ep[2]);
+  if(usbh_edpt_claim(itf->dev_addr, itf->ep[2])) {
+    uint16_t xfer_len = asix_prepare_tx(itf->epout_buf, data, len, itf->ep_size[2]);
+    if(!usbh_edpt_xfer(itf->dev_addr, itf->ep[2], itf->epout_buf, xfer_len)) {
+      usbh_edpt_release(itf->dev_addr, itf->ep[2]);
+      asix_queue_tx(itf, data, len);
+    }
+  } else {
+    asix_queue_tx(itf, data, len);
+  }
 
   return;
 }

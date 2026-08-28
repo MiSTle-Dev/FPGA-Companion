@@ -13,6 +13,7 @@
 #include "../inifile.h"
 #include "../debug.h"
 #include "../ftpd.h"
+#include "../telnetd.h"
 #include "../xml.h"
 #include "../at_wifi.h"
 
@@ -130,6 +131,7 @@ int main( void )
 #endif
 {
   mcu_hw_init();
+  telnetd_init();
   
   // run FPGA com thread
   xTaskCreate( com_task, "FPGA Com", 4096, NULL, CONFIG_MAX_PRIORITY-1, &com_task_handle );

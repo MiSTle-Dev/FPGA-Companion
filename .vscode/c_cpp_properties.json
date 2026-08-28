@@ -4,6 +4,7 @@
     {
       "name": "BL616",
       "compileCommands": "${workspaceFolder}/src/bl616/build/compile_commands.json",
+      "intelliSenseMode": "linux-gcc-x64",
       "cStandard": "c17"
     },
     {

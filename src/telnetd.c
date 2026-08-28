@@ -16,13 +16,26 @@
 #include "debug.h"
 #include "telnetd.h"
 
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+#include "pico/stdio.h"
+#include "pico/stdio/driver.h"
+#endif
+
 #define TELNET_PORT     23
 #define TEE_BUF_LEN     2048
 #define SHELL_COMMAND_LEN 256
 #define TELNETD_STACK_WORDS 768
 
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
 extern void shell_exe_cmd(unsigned char *cmd, int len);
 extern int shell_set_echo(bool enabled);
+#endif
+
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+#define TELNETD_IN_ISR() false
+#else
+#define TELNETD_IN_ISR() xPortIsInsideInterrupt()
+#endif
 
 /* ---- console tee ring (written from any thread that prints) ------------- */
 static char     s_tee[TEE_BUF_LEN];
@@ -31,17 +44,11 @@ static uint32_t s_tee_rd;                 /* telnet thread's position  */
 static SemaphoreHandle_t s_tee_lock;
 static volatile bool s_client_up;
 
-/* Everything the firmware prints goes through bflb_console_write(), so
- * wrapping it (see -Wl,--wrap in CMakeLists.txt) mirrors shell command
- * output too, not just the few messages the shell emits itself. */
-extern ssize_t __real_bflb_console_write(const void *data, size_t size);
-
-ssize_t __wrap_bflb_console_write(const void *data, size_t size)
+static void tee_write(const void *data, size_t size)
 {
     const char *p = data;
 
-    /* printf() from an ISR must not touch the mutex */
-    if (s_client_up && s_tee_lock && data && !xPortIsInsideInterrupt()) {
+    if (s_client_up && s_tee_lock && data && !TELNETD_IN_ISR()) {
         static char prev;
         xSemaphoreTake(s_tee_lock, portMAX_DELAY);
         for (size_t i = 0; i < size; i++) {
@@ -52,9 +59,27 @@ ssize_t __wrap_bflb_console_write(const void *data, size_t size)
         }
         xSemaphoreGive(s_tee_lock);
     }
+}
 
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
+/* BL616 routes libc output through bflb_console_write(). */
+extern ssize_t __real_bflb_console_write(const void *data, size_t size);
+
+ssize_t __wrap_bflb_console_write(const void *data, size_t size)
+{
+    tee_write(data, size);
     return __real_bflb_console_write(data, size);
 }
+#else
+static void pico_tee_out_chars(const char *data, int size)
+{
+    tee_write(data, (size_t)size);
+}
+
+static stdio_driver_t pico_tee_driver = {
+    .out_chars = pico_tee_out_chars,
+};
+#endif
 
 /* ---- helpers ------------------------------------------------------------- */
 /* Set when a send errors or times out (SO_SNDTIMEO): the peer vanished
@@ -82,6 +107,7 @@ static void tn_puts(int fd, const char *s)
     tn_send(fd, s, (int)strlen(s));
 }
 
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
 static void telnetd_execute_command(uint8_t *command, size_t *length)
 {
     /* an empty line still goes to the shell: that is what redraws the prompt */
@@ -94,12 +120,15 @@ static void telnetd_execute_command(uint8_t *command, size_t *length)
     shell_set_echo(true);
     *length = 0;
 }
+#endif
 
 /* ---- session ------------------------------------------------------------- */
 static void session(int fd)
 {
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
     uint8_t command[SHELL_COMMAND_LEN];
     size_t command_length = 0;
+#endif
     bool telnet_command = false;
     bool telnet_option = false;
 
@@ -107,18 +136,59 @@ static void session(int fd)
     /* char-at-a-time: WILL ECHO, WILL SGA, DO SGA */
     static const uint8_t nego[] = { 255, 251, 1, 255, 251, 3, 255, 253, 3 };
     tn_send(fd, nego, sizeof(nego));
-    tn_puts(fd, "\r\nBL616 shell monitor\r\n");
+    tn_puts(fd, "\r\nMiSTle FPGA Companion monitor\r\n");
 
     xSemaphoreTake(s_tee_lock, portMAX_DELAY);
     s_tee_rd = s_tee_wr;               /* drop the backlog, mirror from here on */
     xSemaphoreGive(s_tee_lock);
 
-    telnetd_execute_command(command, &command_length);
-
     for (;;) {
         if (s_peer_dead)
             return;                        /* send timed out/failed */
-        /* input (non-blocking-ish: 50 ms poll via SO_RCVTIMEO) */
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+        /* Poll input so a receive timeout cannot be confused with a socket error. */
+        uint8_t ch;
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(fd, &readfds);
+        struct timeval rtv = { .tv_sec = 0, .tv_usec = 50 * 1000 };
+        int ready = lwip_select(fd + 1, &readfds, NULL, NULL, &rtv);
+        if (ready < 0) {
+            debugf("TELNET: select failed (errno=%d)", errno);
+            return;
+        }
+
+        if (ready > 0) {
+            int r = lwip_recv(fd, &ch, 1, 0);
+            if (r == 0)
+                return;                    /* closed */
+            if (r < 0) {
+                debugf("TELNET: recv failed (errno=%d)", errno);
+                return;                     /* reset/keepalive-reaped */
+            }
+            if (telnet_option) {
+                telnet_option = false;
+            } else if (telnet_command) {
+                telnet_command = false;
+                telnet_option = ch >= 251 && ch <= 254;
+            } else if (ch == 255) {
+                telnet_command = true;
+#if !defined(PICO_RP2040) && !defined(PICO_RP2350)
+            } else if (ch == '\r' || ch == '\n') {
+                telnetd_execute_command(command, &command_length);
+            } else if (ch == '\b' || ch == 127) {
+                if (command_length > 0) {
+                    command_length--;
+                    tn_puts(fd, "\b \b");
+                }
+            } else if (ch >= 32 && ch < 127 && command_length < sizeof(command) - 3) {
+                command[command_length++] = ch;
+                /* we announced WILL ECHO, so the client shows nothing itself */
+                tn_send(fd, &ch, 1);
+#endif
+            }
+        }
+#else
         uint8_t ch;
         int r = lwip_recv(fd, &ch, 1, 0);
         if (r == 0)
@@ -142,10 +212,10 @@ static void session(int fd)
                 }
             } else if (ch >= 32 && ch < 127 && command_length < sizeof(command) - 3) {
                 command[command_length++] = ch;
-                /* we announced WILL ECHO, so the client shows nothing itself */
                 tn_send(fd, &ch, 1);
             }
         }
+#endif
         {
             /* drain the console tee */
             for (;;) {
@@ -198,8 +268,10 @@ static void telnetd_thread(void *arg)
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
-        struct timeval tv = { .tv_sec = 0, .tv_usec = 50 * 1000 };
-        lwip_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        #if !defined(PICO_RP2040) && !defined(PICO_RP2350)
+            struct timeval rtv = { .tv_sec = 0, .tv_usec = 50 * 1000 };
+            lwip_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rtv, sizeof(rtv));
+        #endif
         /* A peer that vanishes without closing (port scan, killed nc) stops
          * ACKing; once its window fills an untimed send blocks this thread
          * forever and the single-session server is wedged until reboot. */
@@ -228,6 +300,10 @@ void telnetd_init(void)
         debugf("TELNET: failed to create tee mutex");
         return;
     }
+
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+    stdio_set_driver_enabled(&pico_tee_driver, true);
+#endif
 
     BaseType_t created = xTaskCreate(telnetd_thread, "telnetd", TELNETD_STACK_WORDS,
                 NULL, configMAX_PRIORITIES - 3, NULL);
