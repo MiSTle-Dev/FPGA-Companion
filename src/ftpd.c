@@ -30,6 +30,9 @@
 
 #include "debug.h"
 #include "sdc.h"
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+#include "tusb_asix/asix_host.h"
+#endif
 
 #include "ftpd.h"
 
@@ -242,7 +245,8 @@ typedef enum {
     LIST_DATA_ERROR,
 } list_result_t;
 
-static list_result_t send_list(int dfd, const char *path, bool names_only)
+static list_result_t send_list(int dfd, const char *path, bool names_only,
+                               uint8_t *out, size_t out_cap)
 {
     char full[FPATH_MAX];
     full_path(path, full, sizeof(full));
@@ -262,6 +266,7 @@ static list_result_t send_list(int dfd, const char *path, bool names_only)
         return LIST_FILESYSTEM_ERROR;
     }
 
+    size_t out_len = 0;
     for (;;) {
         sdc_lock();
         res = f_readdir(&dir, &fno);
@@ -274,7 +279,8 @@ static list_result_t send_list(int dfd, const char *path, bool names_only)
             break;
         if (fno.fattrib & (AM_HID | AM_SYS))
             continue;
-        char line[128];
+
+        char line[384];
         int n;
         if (names_only) {
             n = snprintf(line, sizeof(line), "%s\r\n", fno.fname);
@@ -291,12 +297,27 @@ static list_result_t send_list(int dfd, const char *path, bool names_only)
         }
         if (n < 0)
             continue;
-        if (!send_all(dfd, line, (size_t)n)) {
-            sdc_lock();
-            f_closedir(&dir);
-            sdc_unlock();
-            return LIST_DATA_ERROR;
+        if ((size_t)n >= sizeof(line))
+            n = (int)sizeof(line) - 1;
+
+        if (out_len + (size_t)n > out_cap) {
+            if (!send_all(dfd, out, out_len)) {
+                sdc_lock();
+                f_closedir(&dir);
+                sdc_unlock();
+                return LIST_DATA_ERROR;
+            }
+            out_len = 0;
         }
+        memcpy(out + out_len, line, (size_t)n);
+        out_len += (size_t)n;
+    }
+
+    if (out_len && !send_all(dfd, out, out_len)) {
+        sdc_lock();
+        f_closedir(&dir);
+        sdc_unlock();
+        return LIST_DATA_ERROR;
     }
 
     sdc_lock();
@@ -412,18 +433,36 @@ static void do_stor(ftps_t *fs, const char *path)
 
     bool ok = true;
     uint32_t total = restart_at;        /* track offset to pinpoint a bad write */
+    uint32_t recv_calls = 0;
+    uint32_t write_calls = 0;
+    uint32_t max_recv = 0;
+    TickType_t recv_ticks = 0;
+    TickType_t write_ticks = 0;
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+    uint32_t asix_before[ASIX_STAT_COUNT];
+    uint32_t asix_after[ASIX_STAT_COUNT];
+    tuh_asix_get_stats(asix_before);
+#endif
     for (;;) {
+        TickType_t t0 = xTaskGetTickCount();
         int r = lwip_recv(dfd, fs->xbuf, XFER_CHUNK, 0);
+        recv_ticks += xTaskGetTickCount() - t0;
+        recv_calls++;
         if (r == 0)
             break;
         if (r < 0) {
             ok = false;
             break;
         }
+        if ((uint32_t)r > max_recv)
+            max_recv = (uint32_t)r;
         UINT bw = 0;
         sdc_lock();
+        t0 = xTaskGetTickCount();
         FRESULT wr = f_write(&f, fs->xbuf, (UINT)r, &bw);
+        write_ticks += xTaskGetTickCount() - t0;
         sdc_unlock();
+        write_calls++;
         if (wr != FR_OK || bw != (UINT)r) {
             debugf("FTP: STOR write failed at offset %lu (recv=%d written=%u fr=%d)",
                    (unsigned long)total, r, bw, wr);
@@ -434,12 +473,36 @@ static void do_stor(ftps_t *fs, const char *path)
     }
 
     sdc_lock();
+    TickType_t close_start = xTaskGetTickCount();
     f_close(&f);
+    TickType_t close_ticks = xTaskGetTickCount() - close_start;
     sdc_unlock();
     lwip_close(dfd);
     reply(fs, ok ? "226 Transfer complete." : "426 Transfer aborted.");
-    if (ok)
-        debugf("FTP: STORED %s (%lu bytes)", path, (unsigned long)total);
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+    tuh_asix_get_stats(asix_after);
+#endif
+    if (ok) {
+        debugf("FTP: STORED %s (%lu bytes, recv calls=%lu max=%lu, recv=%lu ms write=%lu ms close=%lu ms writes=%lu)",
+               path, (unsigned long)total, (unsigned long)recv_calls, (unsigned long)max_recv,
+               (unsigned long)(recv_ticks * portTICK_PERIOD_MS),
+               (unsigned long)(write_ticks * portTICK_PERIOD_MS),
+               (unsigned long)(close_ticks * portTICK_PERIOD_MS),
+               (unsigned long)write_calls);
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+        debugf("FTP: ASIX delta rx_xfer=%lu rx_frame=%lu rx_bad=%lu rx_trunc=%lu rx_pbuf_fail=%lu tx_start=%lu tx_queue=%lu tx_full=%lu tx_fail=%lu tx_done=%lu",
+               (unsigned long)(asix_after[ASIX_STAT_RX_XFERS] - asix_before[ASIX_STAT_RX_XFERS]),
+               (unsigned long)(asix_after[ASIX_STAT_RX_FRAMES] - asix_before[ASIX_STAT_RX_FRAMES]),
+               (unsigned long)(asix_after[ASIX_STAT_RX_BAD_HEADER] - asix_before[ASIX_STAT_RX_BAD_HEADER]),
+               (unsigned long)(asix_after[ASIX_STAT_RX_TRUNCATED] - asix_before[ASIX_STAT_RX_TRUNCATED]),
+               (unsigned long)(asix_after[ASIX_STAT_RX_PBUF_FAIL] - asix_before[ASIX_STAT_RX_PBUF_FAIL]),
+               (unsigned long)(asix_after[ASIX_STAT_TX_STARTED] - asix_before[ASIX_STAT_TX_STARTED]),
+               (unsigned long)(asix_after[ASIX_STAT_TX_QUEUED] - asix_before[ASIX_STAT_TX_QUEUED]),
+               (unsigned long)(asix_after[ASIX_STAT_TX_QUEUE_FULL] - asix_before[ASIX_STAT_TX_QUEUE_FULL]),
+               (unsigned long)(asix_after[ASIX_STAT_TX_START_FAIL] - asix_before[ASIX_STAT_TX_START_FAIL]),
+               (unsigned long)(asix_after[ASIX_STAT_TX_DONE] - asix_before[ASIX_STAT_TX_DONE]));
+#endif
+    }
 }
 
 /* ---- command loop ---------------------------------------------------------- */
@@ -540,7 +603,7 @@ static void session(ftps_t *fs)
                     reply(fs, "425 No data connection.");
                     continue;
                 }
-                list_result_t result = send_list(dfd, path, nl);
+                list_result_t result = send_list(dfd, path, nl, fs->xbuf, sizeof(fs->xbuf));
                 lwip_close(dfd);
                 if (result == LIST_OK)
                     reply(fs, "226 Directory send OK.");

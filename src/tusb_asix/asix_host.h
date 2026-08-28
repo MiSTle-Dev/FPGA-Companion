@@ -5,6 +5,7 @@
  extern "C" {
 #endif
 
+#include "host/usbh.h"
 #include "host/usbh_pvt.h"
 #include "lwip/netif.h"
 
@@ -13,8 +14,30 @@
 //--------------------------------------------------------------------+
 
 #ifndef CFG_TUH_ASIX_EP_BUFSIZE
-#define CFG_TUH_ASIX_EP_BUFSIZE 1536+4
+#define CFG_TUH_ASIX_EP_BUFSIZE 2048
 #endif
+
+#ifndef CFG_TUH_ASIX_TX_QUEUE_DEPTH
+#if defined(PICO_RP2350)
+#define CFG_TUH_ASIX_TX_QUEUE_DEPTH 4
+#else
+#define CFG_TUH_ASIX_TX_QUEUE_DEPTH 2
+#endif
+#endif
+
+typedef enum {
+  ASIX_STAT_RX_XFERS,
+  ASIX_STAT_RX_FRAMES,
+  ASIX_STAT_RX_BAD_HEADER,
+  ASIX_STAT_RX_TRUNCATED,
+  ASIX_STAT_RX_PBUF_FAIL,
+  ASIX_STAT_TX_STARTED,
+  ASIX_STAT_TX_QUEUED,
+  ASIX_STAT_TX_QUEUE_FULL,
+  ASIX_STAT_TX_START_FAIL,
+  ASIX_STAT_TX_DONE,
+  ASIX_STAT_COUNT
+} asix_stat_t;
 
 typedef struct {
   uint8_t dev_addr;
@@ -39,6 +62,10 @@ typedef struct {
   uint8_t ep0in_buf[8];
   uint8_t ep1in_buf[CFG_TUH_ASIX_EP_BUFSIZE];
   uint8_t epout_buf[CFG_TUH_ASIX_EP_BUFSIZE];
+  uint8_t tx_queue[CFG_TUH_ASIX_TX_QUEUE_DEPTH][CFG_TUH_ASIX_EP_BUFSIZE];
+  uint16_t tx_len[CFG_TUH_ASIX_TX_QUEUE_DEPTH];
+  uint8_t tx_head;
+  uint8_t tx_count;
 } asixh_interface_t;
 
 extern usbh_class_driver_t const usbh_asix_driver;
@@ -46,6 +73,7 @@ extern usbh_class_driver_t const usbh_asix_driver;
 void tuh_asix_umount_cb(asixh_interface_t *asix_itf);
 void tuh_asix_mount_cb(asixh_interface_t *asix_itf);
 void tuh_asix_transmit(struct netif *netif, uint8_t *data, uint16_t len);
+void tuh_asix_get_stats(uint32_t stats[ASIX_STAT_COUNT]);
    
 #ifdef __cplusplus
 }
