@@ -308,19 +308,21 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
   // we expect at least three bytes:
   if(nbytes < 3) return;
 
-  // collect info about the two axes
-  int a[2];
-  for(int i=0;i<2;i++) {  
-    bool is_signed = report->joystick_mouse.axis[i].logical.min > 
-      report->joystick_mouse.axis[i].logical.max;
+  // collect info about at least two axes, third is optional scroll wheel
+  int a[3] = { 0,0,0 };
+  for(int i=0;i<3;i++) {  
+    if(report->joystick_mouse.axis[i].size) {    
+      bool is_signed = report->joystick_mouse.axis[i].logical.min > 
+	report->joystick_mouse.axis[i].logical.max;
 
-    a[i] = collect_bits(buffer, report->joystick_mouse.axis[i].offset, 
-			report->joystick_mouse.axis[i].size, is_signed);
+      a[i] = collect_bits(buffer, report->joystick_mouse.axis[i].offset, 
+			  report->joystick_mouse.axis[i].size, is_signed);
+    }
   }
 
-  // ... and two buttons
+  // ... and at least two buttons
   uint8_t btns = 0;
-  for(int i=0;i<2;i++)
+  for(int i=0;i<3;i++)
     if(buffer[report->joystick_mouse.button[i].byte_offset] & 
        report->joystick_mouse.button[i].bitmask)
       btns |= (1<<i);
@@ -331,6 +333,8 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
   mcu_hw_spi_tx_u08(btns);
   mcu_hw_spi_tx_u08(a[0]);
   mcu_hw_spi_tx_u08(a[1]);
+  if(report->joystick_mouse.axis[2].size)
+    mcu_hw_spi_tx_u08(a[2]);
   mcu_hw_spi_end();
 }
 
