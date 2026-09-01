@@ -93,7 +93,7 @@
 #if PICO_RP2350
 #define configTOTAL_HEAP_SIZE                   (112*1024)
 #else
-#define configTOTAL_HEAP_SIZE                   (110*1024)
+#define configTOTAL_HEAP_SIZE                   (106*1024)
 #endif
 #else
 #define configTOTAL_HEAP_SIZE                   (128*1024)
