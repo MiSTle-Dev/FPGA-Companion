@@ -25,20 +25,6 @@
 #endif
 #endif
 
-typedef enum {
-  ASIX_STAT_RX_XFERS,
-  ASIX_STAT_RX_FRAMES,
-  ASIX_STAT_RX_BAD_HEADER,
-  ASIX_STAT_RX_TRUNCATED,
-  ASIX_STAT_RX_PBUF_FAIL,
-  ASIX_STAT_TX_STARTED,
-  ASIX_STAT_TX_QUEUED,
-  ASIX_STAT_TX_QUEUE_FULL,
-  ASIX_STAT_TX_START_FAIL,
-  ASIX_STAT_TX_DONE,
-  ASIX_STAT_COUNT
-} asix_stat_t;
-
 typedef struct {
   uint8_t dev_addr;
   struct netif netif;
@@ -60,7 +46,16 @@ typedef struct {
   uint16_t ep_size[3];
   
   uint8_t ep0in_buf[8];
-  uint8_t ep1in_buf[CFG_TUH_ASIX_EP_BUFSIZE];
+  // ping-pong buffers for bulk IN: one is handed to lwIP/pbuf while the
+  // other is already queued for the next USB transfer
+  uint8_t ep1in_buf[2][CFG_TUH_ASIX_EP_BUFSIZE];
+  uint8_t rx_buf_idx;
+  // a frame's header/CRC is never split across transfers, but the AX88772
+  // does split an oversized frame's payload across two bulk-in transfers;
+  // this reassembles that continuation instead of misparsing it as a header
+  uint8_t rx_carry_buf[CFG_TUH_ASIX_EP_BUFSIZE];
+  uint16_t rx_carry_have;
+  uint16_t rx_carry_need;
   uint8_t epout_buf[CFG_TUH_ASIX_EP_BUFSIZE];
   uint8_t tx_queue[CFG_TUH_ASIX_TX_QUEUE_DEPTH][CFG_TUH_ASIX_EP_BUFSIZE];
   uint16_t tx_len[CFG_TUH_ASIX_TX_QUEUE_DEPTH];
@@ -73,7 +68,6 @@ extern usbh_class_driver_t const usbh_asix_driver;
 void tuh_asix_umount_cb(asixh_interface_t *asix_itf);
 void tuh_asix_mount_cb(asixh_interface_t *asix_itf);
 void tuh_asix_transmit(struct netif *netif, uint8_t *data, uint16_t len);
-void tuh_asix_get_stats(uint32_t stats[ASIX_STAT_COUNT]);
    
 #ifdef __cplusplus
 }
