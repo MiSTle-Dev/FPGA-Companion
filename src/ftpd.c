@@ -30,9 +30,6 @@
 
 #include "debug.h"
 #include "sdc.h"
-#if defined(PICO_RP2040) || defined(PICO_RP2350)
-#include "tusb_asix/asix_host.h"
-#endif
 
 #include "ftpd.h"
 
@@ -433,36 +430,18 @@ static void do_stor(ftps_t *fs, const char *path)
 
     bool ok = true;
     uint32_t total = restart_at;        /* track offset to pinpoint a bad write */
-    uint32_t recv_calls = 0;
-    uint32_t write_calls = 0;
-    uint32_t max_recv = 0;
-    TickType_t recv_ticks = 0;
-    TickType_t write_ticks = 0;
-#if defined(PICO_RP2040) || defined(PICO_RP2350)
-    uint32_t asix_before[ASIX_STAT_COUNT];
-    uint32_t asix_after[ASIX_STAT_COUNT];
-    tuh_asix_get_stats(asix_before);
-#endif
     for (;;) {
-        TickType_t t0 = xTaskGetTickCount();
         int r = lwip_recv(dfd, fs->xbuf, XFER_CHUNK, 0);
-        recv_ticks += xTaskGetTickCount() - t0;
-        recv_calls++;
         if (r == 0)
             break;
         if (r < 0) {
             ok = false;
             break;
         }
-        if ((uint32_t)r > max_recv)
-            max_recv = (uint32_t)r;
         UINT bw = 0;
         sdc_lock();
-        t0 = xTaskGetTickCount();
         FRESULT wr = f_write(&f, fs->xbuf, (UINT)r, &bw);
-        write_ticks += xTaskGetTickCount() - t0;
         sdc_unlock();
-        write_calls++;
         if (wr != FR_OK || bw != (UINT)r) {
             debugf("FTP: STOR write failed at offset %lu (recv=%d written=%u fr=%d)",
                    (unsigned long)total, r, bw, wr);
@@ -473,36 +452,10 @@ static void do_stor(ftps_t *fs, const char *path)
     }
 
     sdc_lock();
-    TickType_t close_start = xTaskGetTickCount();
     f_close(&f);
-    TickType_t close_ticks = xTaskGetTickCount() - close_start;
     sdc_unlock();
     lwip_close(dfd);
     reply(fs, ok ? "226 Transfer complete." : "426 Transfer aborted.");
-#if defined(PICO_RP2040) || defined(PICO_RP2350)
-    tuh_asix_get_stats(asix_after);
-#endif
-    if (ok) {
-        debugf("FTP: STORED %s (%lu bytes, recv calls=%lu max=%lu, recv=%lu ms write=%lu ms close=%lu ms writes=%lu)",
-               path, (unsigned long)total, (unsigned long)recv_calls, (unsigned long)max_recv,
-               (unsigned long)(recv_ticks * portTICK_PERIOD_MS),
-               (unsigned long)(write_ticks * portTICK_PERIOD_MS),
-               (unsigned long)(close_ticks * portTICK_PERIOD_MS),
-               (unsigned long)write_calls);
-#if defined(PICO_RP2040) || defined(PICO_RP2350)
-        debugf("FTP: ASIX delta rx_xfer=%lu rx_frame=%lu rx_bad=%lu rx_trunc=%lu rx_pbuf_fail=%lu tx_start=%lu tx_queue=%lu tx_full=%lu tx_fail=%lu tx_done=%lu",
-               (unsigned long)(asix_after[ASIX_STAT_RX_XFERS] - asix_before[ASIX_STAT_RX_XFERS]),
-               (unsigned long)(asix_after[ASIX_STAT_RX_FRAMES] - asix_before[ASIX_STAT_RX_FRAMES]),
-               (unsigned long)(asix_after[ASIX_STAT_RX_BAD_HEADER] - asix_before[ASIX_STAT_RX_BAD_HEADER]),
-               (unsigned long)(asix_after[ASIX_STAT_RX_TRUNCATED] - asix_before[ASIX_STAT_RX_TRUNCATED]),
-               (unsigned long)(asix_after[ASIX_STAT_RX_PBUF_FAIL] - asix_before[ASIX_STAT_RX_PBUF_FAIL]),
-               (unsigned long)(asix_after[ASIX_STAT_TX_STARTED] - asix_before[ASIX_STAT_TX_STARTED]),
-               (unsigned long)(asix_after[ASIX_STAT_TX_QUEUED] - asix_before[ASIX_STAT_TX_QUEUED]),
-               (unsigned long)(asix_after[ASIX_STAT_TX_QUEUE_FULL] - asix_before[ASIX_STAT_TX_QUEUE_FULL]),
-               (unsigned long)(asix_after[ASIX_STAT_TX_START_FAIL] - asix_before[ASIX_STAT_TX_START_FAIL]),
-               (unsigned long)(asix_after[ASIX_STAT_TX_DONE] - asix_before[ASIX_STAT_TX_DONE]));
-#endif
-    }
 }
 
 /* ---- command loop ---------------------------------------------------------- */

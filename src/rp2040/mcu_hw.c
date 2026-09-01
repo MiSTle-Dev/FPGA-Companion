@@ -144,7 +144,7 @@
 #error "Cannot determine TinyUSB version!"
 #endif
 
-#if TUSB_VERSION_NUMBER < 1700
+#if TUSB_VERSION_NUMBER < 2000
 #error "Please update your TinyUSB installation!"
 #endif
 

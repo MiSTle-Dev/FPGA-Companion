@@ -32,11 +32,6 @@ static const struct {
 };
 
 static asixh_interface_t _interfaces[CFG_TUH_ASIX];
-static uint32_t _stats[ASIX_STAT_COUNT];
-
-void tuh_asix_get_stats(uint32_t stats[ASIX_STAT_COUNT]) {
-  memcpy(stats, _stats, sizeof(_stats));
-}
 
 TU_ATTR_ALWAYS_INLINE static inline asixh_interface_t *get_interface(uint8_t dev_addr) {
   TU_VERIFY(dev_addr <= CFG_TUH_DEVICE_MAX, NULL);
@@ -383,8 +378,8 @@ bool tuh_asix_receive(uint8_t dev_addr, uint8_t ep) {
   TU_VERIFY(itf, 0);
   
   TU_VERIFY(usbh_edpt_claim(dev_addr, itf->ep[ep]), false);
-  uint8_t *buf = (ep==0)?itf->ep0in_buf:itf->ep1in_buf;
-  uint16_t len = (ep==0)?sizeof(itf->ep0in_buf):sizeof(itf->ep1in_buf);
+  uint8_t *buf = (ep==0)?itf->ep0in_buf:itf->ep1in_buf[itf->rx_buf_idx];
+  uint16_t len = (ep==0)?sizeof(itf->ep0in_buf):sizeof(itf->ep1in_buf[0]);
   
   if(!usbh_edpt_xfer(dev_addr, itf->ep[ep], buf, len)) {
     usbh_edpt_release(dev_addr, itf->ep[ep]);
@@ -415,10 +410,8 @@ static bool asix_start_tx(asixh_interface_t *itf, uint8_t *buf, uint16_t len) {
   TU_VERIFY(usbh_edpt_claim(itf->dev_addr, itf->ep[2]), false);
   if(!usbh_edpt_xfer(itf->dev_addr, itf->ep[2], buf, len)) {
     usbh_edpt_release(itf->dev_addr, itf->ep[2]);
-    _stats[ASIX_STAT_TX_START_FAIL]++;
     return false;
   }
-  _stats[ASIX_STAT_TX_STARTED]++;
   return true;
 }
 
@@ -440,14 +433,12 @@ static void asix_start_next_tx(asixh_interface_t *itf) {
 
 static void asix_queue_tx(asixh_interface_t *itf, const uint8_t *data, uint16_t len) {
   if(itf->tx_count >= CFG_TUH_ASIX_TX_QUEUE_DEPTH) {
-    _stats[ASIX_STAT_TX_QUEUE_FULL]++;
     return;
   }
 
   uint8_t idx = (uint8_t)((itf->tx_head + itf->tx_count) % CFG_TUH_ASIX_TX_QUEUE_DEPTH);
   itf->tx_len[idx] = asix_prepare_tx(itf->tx_queue[idx], data, len, itf->ep_size[2]);
   itf->tx_count++;
-  _stats[ASIX_STAT_TX_QUEUED]++;
 }
 
 bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
@@ -459,13 +450,9 @@ bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint
   asixh_interface_t *itf = get_interface(dev_addr);
   TU_VERIFY(itf, false);
 
-  uint8_t *buf = (number==1)?itf->ep0in_buf:itf->ep1in_buf;
+  uint8_t *buf = (number==1)?itf->ep0in_buf:itf->ep1in_buf[itf->rx_buf_idx];
   
   if(dir == TUSB_DIR_OUT && ep_addr == itf->ep[2]) {
-    if(result == XFER_RESULT_SUCCESS)
-      _stats[ASIX_STAT_TX_DONE]++;
-    else
-      _stats[ASIX_STAT_TX_START_FAIL]++;
     asix_start_next_tx(itf);
     return true;
   }
@@ -492,19 +479,53 @@ bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint
     
     // ep 2 is bulk data in
     if(number == 2) {
-      _stats[ASIX_STAT_RX_XFERS]++;
+      // switch to the other buffer and re-arm the bulk endpoint right away so
+      // the USB link keeps receiving while we still parse/hand off this buffer
+      itf->rx_buf_idx ^= 1;
+      tuh_asix_receive(dev_addr, 1);
+
       uint32_t offset = 0;
+
+      // finish reassembling a frame whose payload was split across the
+      // previous bulk-in transfer and this one (AX88772 does this whenever
+      // a frame doesn't fit in the remaining space of a 2048-byte transfer)
+      if(itf->rx_carry_need) {
+        uint16_t need = itf->rx_carry_need - itf->rx_carry_have;
+        uint16_t take = (xferred_bytes < need) ? (uint16_t)xferred_bytes : need;
+        memcpy(itf->rx_carry_buf + itf->rx_carry_have, buf, take);
+        itf->rx_carry_have += take;
+        offset = take;
+
+        if(itf->rx_carry_have == itf->rx_carry_need) {
+          if(itf->netif.input) {
+            struct pbuf* p = pbuf_alloc(PBUF_RAW, itf->rx_carry_need, PBUF_POOL);
+            if(p && pbuf_take(p, itf->rx_carry_buf, itf->rx_carry_need) == ERR_OK) {
+              if (itf->netif.input(p, &(itf->netif)) != ERR_OK)
+                pbuf_free(p);
+            } else if(p) {
+              pbuf_free(p);
+            }
+          }
+          itf->rx_carry_need = 0;
+          itf->rx_carry_have = 0;
+        }
+        // else: frame still incomplete, nothing else usable in this transfer
+      }
+
       while(xferred_bytes - offset >= 4) {
         uint16_t len = (buf[offset + 0] + 256*buf[offset + 1]) & 0x7ff;
         uint16_t len_crc = buf[offset + 2] + 256*buf[offset + 3];
         if(!len || len != ((0xffff ^ len_crc) & 0x7ff)) {
-          _stats[ASIX_STAT_RX_BAD_HEADER]++;
           break;
         }
         offset += 4;
 
         if(xferred_bytes - offset < len) {
-          _stats[ASIX_STAT_RX_TRUNCATED]++;
+          // payload continues in the next bulk-in transfer; stash what we
+          // have and finish it above once the rest arrives
+          itf->rx_carry_have = (uint16_t)(xferred_bytes - offset);
+          itf->rx_carry_need = len;
+          memcpy(itf->rx_carry_buf, buf + offset, itf->rx_carry_have);
           break;
         }
 
@@ -515,19 +536,13 @@ bool asixh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint
           if(p && pbuf_take(p, buf+offset, len) == ERR_OK) {
             if (itf->netif.input(p, &(itf->netif)) != ERR_OK)
               pbuf_free(p);
-            _stats[ASIX_STAT_RX_FRAMES]++;
           } else if(p) {
             pbuf_free(p);
-            _stats[ASIX_STAT_RX_PBUF_FAIL]++;
-          } else {
-            _stats[ASIX_STAT_RX_PBUF_FAIL]++;
           }
         }
 
         offset += len;
       }
-      // receive next packet
-      tuh_asix_receive(dev_addr, 1);
     }
   }
   
