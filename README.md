@@ -1,15 +1,16 @@
 # MiSTle FPGA Companion
 
-The MiSTle FPGA Companion implements support functions for FPGA
-based retro computing projects like [MiSTeryNano
-project](https://github.com/MiSTle-Dev/MiSTeryNano). While the FPGA
-typically implements the hardware of the retro machine itself the
-The Companion uses a microcontroller to support modern peripherals such as
-USB keyboards, mice, SD cards, and USB LAN dongles. It also provides an
-on-screen display (OSD) menu for configuring the retro machine. A built-in FTP
-server allows files to be copied to the SD card. A Telnet server is also built
-in, allowing clients to monitor console and debug messages. On the BL616, it
-can also accept commands for the device shell.
+The MiSTle FPGA Companion implements support functions for FPGA-based retro
+computing projects like the [MiSTeryNano
+project](https://github.com/MiSTle-Dev/MiSTeryNano). While the FPGA typically
+implements the hardware of the retro machine itself, the Companion uses a
+microcontroller to support modern peripherals such as USB keyboards, mice,
+joysticks, and gamepads (SDL mapping), SD cards, and USB LAN dongles. It also
+provides an on-screen display (OSD) menu for configuring the retro machine. An
+FPGA core can also be loaded from a USB memory stick or SD card for DEV20K,
+DEV25K, and Console 60k/138k. A built-in FTP server allows files to be copied
+to the SD card. A Telnet server is also built in, allowing clients to monitor
+debug messages.
 
 The FPGA Companion replaces the MiSTeryNano firmware that was
 formerly part of the [MiSTeryNano
