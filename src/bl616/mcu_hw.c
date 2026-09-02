@@ -32,7 +32,6 @@
 #include "bl616_glb.h"
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
-#include "bflb_dma.h"
 #include "bflb_gpio.h"
 #include "bflb_wdg.h"
 #include "bflb_sdh.h"
@@ -45,12 +44,9 @@
 #include "bflb_clock.h"
 #include "bflb_flash.h"
 #include "bflb_sec_mutex.h"
-#include "bflb_xip_sflash.h"
-#include "bflb_sf_ctrl.h"
-#include "board_flash_psram.h"
 
-#include "lwip/opt.h"
-#include "lwip/init.h"
+#include <sys/socket.h>
+#include <lwip/inet.h>
 #include "netif/etharp.h"
 #include "lwip/netif.h"
 #include "lwip/dhcp.h"
@@ -65,14 +61,13 @@
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
 #include <lwip/dns.h>
+#include "bl_fw_api.h"
+#include "fhost_api.h"
 #include "wifi_mgmr_ext.h"
-#include "rfparam_adapter.h"
+#include "wifi_mgmr.h"
 
 #include "bflb_rtc.h" 
-#include "bflb_acomp.h"
-#include "bflb_efuse.h"
 #include "board.h"
-#include "bl616_tzc_sec.h"
 #include "task.h"
 #include "timers.h"
 #include "bflb_irq.h"
