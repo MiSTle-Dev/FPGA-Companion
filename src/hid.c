@@ -742,13 +742,8 @@ void parse_with_sdl_mapping(const hid_report_t *report,
   if (dpad == 0)
   {
     uint8_t lx_raw, ly_raw;
-    // do _not_ use the READ_AXIS macros as they are based on the hid report interpretation
-    // done by the HID parser which is what the SDL table is meant to ignore/overwrite
-    //READ_AXIS_U8(map->axis_lx, lx_raw);
-    //READ_AXIS_U8(map->axis_ly, ly_raw);
-    lx_raw = buffer[map->axis_lx];
-    ly_raw = buffer[map->axis_ly];
-    
+    READ_AXIS_U8(map->axis_lx, lx_raw);
+    READ_AXIS_U8(map->axis_ly, ly_raw);
     if (lx_raw > AX_HIGH)
       dpad |= DIR_RIGHT;
     if (lx_raw < AX_LOW)
@@ -763,12 +758,8 @@ void parse_with_sdl_mapping(const hid_report_t *report,
   joy |= dpad;
   
   uint8_t ax = 0x80, ay = 0x80;
-  // again, do _not_ use the READ_AXIS macros as they are based on the hid report interpretation
-  // done by the HID parser which is what the SDL table is meant to ignore/overwrite
-  //READ_AXIS_U8(map->axis_lx, ax);
-  //READ_AXIS_U8(map->axis_ly, ay);
-  //ax = buffer[0];
-  //ay = buffer[1];
+  READ_AXIS_U8(map->axis_lx, ax);
+  READ_AXIS_U8(map->axis_ly, ay);
   if(map->axis_lx >= 0 && map->axis_ly >= 0) {  
     ax = buffer[map->axis_lx];
     ay = buffer[map->axis_ly];
@@ -826,9 +817,6 @@ void parse_with_sdl_mapping(const hid_report_t *report,
 
     usb_debugf("MAP%d: D %02x X %02x Y %02x EB %02x",
                state->js_index, joy, ax, ay, btn_extra);
-
-    usb_debugf("MAP->AX %02x", map->axis_lx);
-    usb_debugf("MAP->AY %02x", map->axis_ly);
 
     mcu_hw_spi_begin();
     mcu_hw_spi_tx_u08(SPI_TARGET_HID);
