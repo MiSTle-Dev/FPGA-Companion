@@ -93,6 +93,8 @@ BTN_KEYS = {
 AXIS_KEYS = {
     "leftx": "axis_lx", "lefty": "axis_ly", "rightx": "axis_rx", "righty": "axis_ry",
     "lefttrigger": "axis_lt", "righttrigger": "axis_rt",
+
+    "dpdown": "axis_ly", "dpright": "axis_lx"
 }
 
 def c_escape(s: str) -> str:
@@ -114,7 +116,6 @@ def parse_mapping_to_record(mapping_str: str):
         key, val = part.split(":", 1)
         key, val = key.strip().lower(), val.strip().lower()
         if key in ("platform","crc","type"): continue
-
         if key in BTN_KEYS:
             if val.startswith("b"):
                 try: rec[BTN_KEYS[key]] = int(val[1:])
@@ -127,10 +128,12 @@ def parse_mapping_to_record(mapping_str: str):
                     if key=="dpup": rec["dpad_hat_up"]=mask
                     elif key=="dpright": rec["dpad_hat_right"]=mask
                     elif key=="dpdown": rec["dpad_hat_down"]=mask
-                    elif key=="dpleft": rec["dpad_hat_left"]=mask
-        elif key in AXIS_KEYS:
+                    elif key=="dpleft": rec["dpad_hat_left"]=mask                    
+        if key in AXIS_KEYS:
             invert = 0
             if val.endswith("~"): invert, val = 1, val[:-1]
+            if val.startswith("-"): invert, val = 1, val[1:]
+            if val.startswith("+"): invert, val = 0, val[1:]
             if val.startswith("a"):
                 try:
                     idx = int(val[1:])

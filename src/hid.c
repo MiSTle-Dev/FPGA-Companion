@@ -718,6 +718,7 @@ void parse_with_sdl_mapping(const hid_report_t *report,
 
   unsigned char dpad = 0;
 
+  // parse directions from a button based configuration
   if (map->btn_dpad_up >= 0 || map->btn_dpad_right >= 0 ||
       map->btn_dpad_down >= 0 || map->btn_dpad_left >= 0)
   {
@@ -731,17 +732,23 @@ void parse_with_sdl_mapping(const hid_report_t *report,
       dpad |= DIR_LEFT;
   }
 
+  // otherwise parse directions from a hat
   if (dpad == 0 && map->dpad_hat >= 0 && report->joystick_mouse.hat.size > 0)
   {
     READ_HAT_DIR(dpad);
   }
 
+  // otherwise parse directions from analogue axes
   if (dpad == 0)
   {
     uint8_t lx_raw, ly_raw;
-    READ_AXIS_U8(map->axis_lx, lx_raw);
-    READ_AXIS_U8(map->axis_ly, ly_raw);
-
+    // do _not_ use the READ_AXIS macros as they are based on the hid report interpretation
+    // done by the HID parser which is what the SDL table is meant to ignore/overwrite
+    //READ_AXIS_U8(map->axis_lx, lx_raw);
+    //READ_AXIS_U8(map->axis_ly, ly_raw);
+    lx_raw = buffer[map->axis_lx];
+    ly_raw = buffer[map->axis_ly];
+    
     if (lx_raw > AX_HIGH)
       dpad |= DIR_RIGHT;
     if (lx_raw < AX_LOW)
@@ -754,16 +761,23 @@ void parse_with_sdl_mapping(const hid_report_t *report,
 
   joy &= ~(DIR_RIGHT | DIR_LEFT | DIR_DOWN | DIR_UP);
   joy |= dpad;
-
+  
   uint8_t ax = 0x80, ay = 0x80;
-  READ_AXIS_U8(map->axis_lx, ax);
-  READ_AXIS_U8(map->axis_ly, ay);
-  ax = buffer[0];
-  ay = buffer[1];
-  if (map->axis_lx_invert)
-    ax = 255 - ax;
-  if (map->axis_ly_invert)
-    ay = 255 - ay;
+  // again, do _not_ use the READ_AXIS macros as they are based on the hid report interpretation
+  // done by the HID parser which is what the SDL table is meant to ignore/overwrite
+  //READ_AXIS_U8(map->axis_lx, ax);
+  //READ_AXIS_U8(map->axis_ly, ay);
+  //ax = buffer[0];
+  //ay = buffer[1];
+  if(map->axis_lx >= 0 && map->axis_ly >= 0) {  
+    ax = buffer[map->axis_lx];
+    ay = buffer[map->axis_ly];
+
+    if (map->axis_lx_invert)
+      ax = 255 - ax;
+    if (map->axis_ly_invert)
+      ay = 255 - ay;
+  }
 
   unsigned char btn_extra = 0;
   int axis_lt = sanitize_trigger_axis(map, map->axis_lt, map->axis_rt);
