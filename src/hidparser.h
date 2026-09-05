@@ -14,7 +14,7 @@
 
 #define MAX_AXES 8
 
-// currently only joysticks are supported
+// currently only joysticks and mice are supported
 typedef struct {
   uint8_t type: 3;               // REPORT_TYPE_...
   uint8_t report_id_present: 1;  // REPORT_TYPE_...
@@ -24,8 +24,9 @@ typedef struct {
   union {
     struct {
       struct {
-	uint16_t offset;
-	uint8_t size;
+	uint16_t offset;  // bit offset inside report
+	uint8_t size;     // size in bits
+	int8_t index;     // index of axis inside report
 	struct {
 	  uint16_t min;
 	  uint16_t max;
@@ -61,5 +62,6 @@ typedef struct {
 } hid_report_t;
 
 bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t *conf, uint16_t *rbytes);
+void fix_report_descriptor(uint16_t vid, uint16_t pid, uint16_t version, uint8_t *desc, uint16_t len);
 
 #endif // HIDPARSER_H

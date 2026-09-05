@@ -32,6 +32,7 @@
 #include "bl616_glb.h"
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
+#include "bflb_dma.h"
 #include "bflb_gpio.h"
 #include "bflb_wdg.h"
 #include "bflb_sdh.h"
@@ -44,9 +45,12 @@
 #include "bflb_clock.h"
 #include "bflb_flash.h"
 #include "bflb_sec_mutex.h"
+#include "bflb_xip_sflash.h"
+#include "bflb_sf_ctrl.h"
+#include "board_flash_psram.h"
 
-#include <sys/socket.h>
-#include <lwip/inet.h>
+#include "lwip/opt.h"
+#include "lwip/init.h"
 #include "netif/etharp.h"
 #include "lwip/netif.h"
 #include "lwip/dhcp.h"
@@ -61,13 +65,14 @@
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
 #include <lwip/dns.h>
-#include "bl_fw_api.h"
-#include "fhost_api.h"
 #include "wifi_mgmr_ext.h"
-#include "wifi_mgmr.h"
+#include "rfparam_adapter.h"
 
 #include "bflb_rtc.h" 
+#include "bflb_acomp.h"
+#include "bflb_efuse.h"
 #include "board.h"
+#include "bl616_tzc_sec.h"
 #include "task.h"
 #include "timers.h"
 #include "bflb_irq.h"
@@ -223,30 +228,41 @@ const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
                                           uint16_t pid,
                                           int version_optional)
 {
-  const UsbGamepadMap *fallback = NULL;
+  /*
+   * Selection order:
+   *   1. exact VID/PID/bcdDevice match,
+   *   2. VID/PID entry with version == 0 (generic/default SDL entry),
+   *   3. first VID/PID entry as a deterministic last-resort fallback.
+   *
+   * The old code only populated fallback when version_optional < 0.  The
+   * normal caller always passes bcdDevice, so a missing exact version could
+   * never fall back and the SDL map was silently disabled.
+   */
+  const UsbGamepadMap *first_vid_pid = NULL;
+  const UsbGamepadMap *version_zero = NULL;
 
   for (size_t i = 0; i < kUsbGamepadMapsCount; i++)
   {
     const UsbGamepadMap *m = &kUsbGamepadMaps[i];
 
-    if (m->vid == vid && m->pid == pid)
-    {
-      if (version_optional >= 0)
-      {
-        if (m->version == (uint16_t)version_optional)
-        {
-          return m; // version hit
-        }
-      }
-      else
-      {
-        if (!fallback)
-          fallback = m;
-      }
-    }
+    if (m->vid != vid || m->pid != pid)
+      continue;
+
+    if (!first_vid_pid)
+      first_vid_pid = m;
+
+    if (!version_zero && m->version == 0)
+      version_zero = m;
+
+    if (version_optional >= 0 &&
+        m->version == (uint16_t)version_optional)
+      return m;
   }
 
-  return fallback;
+  if (version_zero)
+    return version_zero;
+
+  return first_vid_pid;
 }
 
 void set_led(int pin, int on) {
@@ -818,6 +834,13 @@ void usbh_hid_run(struct usbh_hid *hid_class)
       return;
     }
 
+    // Some device return broken hid descriptor reports. Just like the Linux
+    // kernel we replace these.
+    fix_report_descriptor(hid_class->hport->device_desc.idVendor,
+			  hid_class->hport->device_desc.idProduct,
+			  hid_class->hport->device_desc.bcdDevice,
+			  report_desc[i], (uint16_t)rep_desc);
+  
     if (!parse_report_descriptor(report_desc[i], (uint16_t)rep_desc, &usb->hid_info[i].report, NULL))
     {
       usb->hid_info[i].state = STATE_FAILED;

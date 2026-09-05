@@ -329,30 +329,41 @@ const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
                                           uint16_t pid,
                                           int version_optional)
 {
-  const UsbGamepadMap *fallback = NULL;
+  /*
+   * Selection order:
+   *   1. exact VID/PID/bcdDevice match,
+   *   2. VID/PID entry with version == 0 (generic/default SDL entry),
+   *   3. first VID/PID entry as a deterministic last-resort fallback.
+   *
+   * The old code only populated fallback when version_optional < 0.  The
+   * normal caller always passes bcdDevice, so a missing exact version could
+   * never fall back and the SDL map was silently disabled.
+   */
+  const UsbGamepadMap *first_vid_pid = NULL;
+  const UsbGamepadMap *version_zero = NULL;
 
   for (size_t i = 0; i < kUsbGamepadMapsCount; i++)
   {
     const UsbGamepadMap *m = &kUsbGamepadMaps[i];
 
-    if (m->vid == vid && m->pid == pid)
-    {
-      if (version_optional >= 0)
-      {
-        if (m->version == (uint16_t)version_optional)
-        {
-          return m;
-        }
-      }
-      else
-      {
-        if (!fallback)
-          fallback = m;
-      }
-    }
+    if (m->vid != vid || m->pid != pid)
+      continue;
+
+    if (!first_vid_pid)
+      first_vid_pid = m;
+
+    if (!version_zero && m->version == 0)
+      version_zero = m;
+
+    if (version_optional >= 0 &&
+        m->version == (uint16_t)version_optional)
+      return m;
   }
 
-  return fallback;
+  if (version_zero)
+    return version_zero;
+
+  return first_vid_pid;
 }
 
 // English
@@ -429,6 +440,10 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   for(idx=0;idx<MAX_HID_DEVICES && (hid_device[idx].dev_addr != 0xff);idx++);
   if(idx != MAX_HID_DEVICES) {
     usb_debugf("Using HID entry %d", idx);
+
+    // Some device return broken hid descriptor reports. Just like the Linux
+    // kernel we replace these.
+    fix_report_descriptor(desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice, desc_report, desc_len);
     
     if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].rep, NULL)) {
       hid_device[idx].dev_addr = dev_addr;
@@ -448,8 +463,38 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 
     if (map)
     {
+      char str0[8], str1[8], str2[8], str3[8];
+      
       usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
                  map->name, map->vid, map->pid, map->version);
+
+      if(map->btn_a>=0) sprintf(str0, " A=%d", map->btn_a); else str0[0] = '\0';      
+      if(map->btn_b>=0) sprintf(str1, " B=%d", map->btn_b); else str1[0] = '\0';
+      if(map->btn_x>=0) sprintf(str2, " X=%d", map->btn_x); else str2[0] = '\0';
+      if(map->btn_y>=0) sprintf(str3, " Y=%d", map->btn_y); else str3[0] = '\0';            
+      usb_debugf("  buttons:%s%s%s%s", str0, str1, str2, str3);
+
+      if(map->axis_lx>=0 || map->axis_ly>=0) {
+	if(map->axis_lx>=0) sprintf(str0, " LX=%d", map->axis_lx); else str0[0] = '\0';      
+	if(map->axis_ly>=0) sprintf(str1, " LY=%d", map->axis_ly); else str1[0] = '\0';      
+	usb_debugf("  analogue axes:%s%s", str0, str1);
+      }
+
+      if(map->dpad_axis_up>=0 || map->dpad_axis_down>=0 ||
+	 map->dpad_axis_left>=0 || map->dpad_axis_right >= 0) {
+      
+	if(map->dpad_axis_up>=0)
+	  sprintf(str0, " U=%d", map->dpad_axis_up); else str0[0] = '\0';      
+	if(map->dpad_axis_down>=0)
+	  sprintf(str1, " D=%d", map->dpad_axis_down); else str1[0] = '\0';      
+	if(map->dpad_axis_left>=0)
+	  sprintf(str2, " L=%d", map->dpad_axis_left); else str2[0] = '\0';      
+	if(map->dpad_axis_right>=0)
+	  sprintf(str3, " R=%d", map->dpad_axis_right); else str3[0] = '\0';      
+
+	usb_debugf("  dpad axes:%s%s%s%s", str0, str1, str2, str3);
+      }
+	
       hid_device[idx].rep.map = map;
       hid_device[idx].rep.map_found = 1;
       hid_device[idx].rep.map_checked = 1;
@@ -553,6 +598,7 @@ void mcu_hw_spi_init(void) {
   // set handler but not enable yet as the main task may not be ready
   gpio_init(SPI_IRQ_PIN);
   gpio_set_dir(SPI_IRQ_PIN, GPIO_IN);
+  gpio_pull_up(SPI_IRQ_PIN);
   gpio_add_raw_irq_handler(SPI_IRQ_PIN, irq_handler);  
 }
 
@@ -838,7 +884,7 @@ static void asix_net_task(__attribute__((unused)) void *parms) {
 
 void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_interface_t const* xid_itf, __attribute__((unused)) uint16_t len) {
   const xinput_gamepad_t *p = &xid_itf->pad;
-  
+
   if (xid_itf->last_xfer_result == XFER_RESULT_SUCCESS) {
     if (xid_itf->connected && xid_itf->new_pad_data) {
 
@@ -1915,6 +1961,15 @@ void mcu_hw_fpga_reconfig(bool run) {
 }
 #endif
 
+#ifdef PIN_3WAY_SELECT
+static void button_irq_handler(void) {
+  if(gpio_get_irq_event_mask(PIN_3WAY_CLICK) & GPIO_IRQ_EDGE_FALL) {
+    gpio_acknowledge_irq(PIN_3WAY_CLICK, GPIO_IRQ_EDGE_FALL);
+    menu_notify(MENU_EVENT_TOGGLE);
+  }
+}
+#endif
+
 void mcu_hw_init(void) {
   // default 125MHz is not appropriate for PIO USB. Sysclock should be multiple of 12MHz.
   // some devices won't enumerate propery below ~16*12Mhz
@@ -1951,6 +2006,17 @@ void mcu_hw_init(void) {
 
   mcu_hw_spi_init();
 
+#ifdef PIN_3WAY_SELECT
+  // Initialize 3WAY button as input and use it as a menu
+  // button during runtime. This would be extended to use the
+  // 3way on the Mini20K to control the menu
+  gpio_init(PIN_3WAY_SELECT);
+  gpio_set_dir(PIN_3WAY_SELECT, GPIO_IN);
+  gpio_pull_up(PIN_3WAY_SELECT);
+  gpio_set_irq_enabled(PIN_3WAY_SELECT, GPIO_IRQ_EDGE_FALL, true);
+  gpio_add_raw_irq_handler(PIN_3WAY_SELECT, button_irq_handler);  
+#endif
+  
   // initialize the LED gpios
 #ifdef LED_MOUSE_PIN
   debugf("LED MOUSE    = %d", LED_MOUSE_PIN);

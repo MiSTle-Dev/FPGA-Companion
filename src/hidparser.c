@@ -128,6 +128,69 @@ typedef struct
 
 // ---------------- core ----------------
 
+void fix_report_descriptor(uint16_t vid, uint16_t pid, uint16_t version, uint8_t *desc, uint16_t len) {
+  hidp_debugf("fix_report_descriptor(%04x, %04x, %04x, %d)", vid, pid, version, len);
+
+  // retrolink gamepad v1.06
+  if(vid == 0x0079 && pid == 0x0011 && version == 0x0106 && len == 101) {  
+    // the retrolink devices use a very broken report descriptor
+    // 0x05, 0x01,         /*  Usage Page (Desktop),                   */
+    // 0x09, 0x04,         /*  Usage (Joystick),                       */
+    // 0xA1, 0x01,         /*  Collection (Application),               */
+    // 0xA1, 0x02,         /*      Collection (Logical),               */
+    // 0x75, 0x08,         /*          Report Size (8),                */
+    // 0x95, 0x05,         /*          Report Count (5),               */
+    // 0x15, 0x00,         /*          Logical Minimum (0),            */
+    // 0x26, 0xFF, 0x00,   /*          Logical Maximum (255),          */
+    // 0x35, 0x00,         /*          Physical Minimum (0),           */
+    // 0x46, 0xFF, 0x00,   /*          Physical Maximum (255),         */
+    // 0x09, 0x30,         /*          Usage (X),                      */
+    // 0x09, 0x30,         /*          Usage (X),                      */
+    // 0x09, 0x30,         /*          Usage (X),                      */
+    // 0x09, 0x30,         /*          Usage (X),                      */
+    // 0x09, 0x31,         /*          Usage (Y),                      */
+    // 0x81, 0x02,         /*          Input (Variable),               */
+    // 0x75, 0x04,         /*          Report Size (4),                */
+    // 0x95, 0x01,         /*          Report Count (1),               */
+    // 0x25, 0x07,         /*          Logical Maximum (7),            */
+    // 0x46, 0x3B, 0x01,   /*          Physical Maximum (315),         */
+    // 0x65, 0x14,         /*          Unit (Degrees),                 */
+    // 0x09, 0x00,         /*          Usage (00h),                    */
+    // 0x81, 0x42,         /*          Input (Variable, Null State),   */
+    // 0x65, 0x00,         /*          Unit,                           */
+    // 0x75, 0x01,         /*          Report Size (1),                */
+    // 0x95, 0x0A,         /*          Report Count (10),              */
+    // 0x25, 0x01,         /*          Logical Maximum (1),            */
+    // 0x45, 0x01,         /*          Physical Maximum (1),           */
+    // 0x05, 0x09,         /*          Usage Page (Button),            */
+    // 0x19, 0x01,         /*          Usage Minimum (01h),            */
+    // 0x29, 0x0A,         /*          Usage Maximum (0Ah),            */
+    // 0x81, 0x02,         /*          Input (Variable),               */
+    // 0x06, 0x00, 0xFF,   /*          Usage Page (FF00h),             */
+    // 0x75, 0x01,         /*          Report Size (1),                */
+    // 0x95, 0x0A,         /*          Report Count (10),              */
+    // 0x25, 0x01,         /*          Logical Maximum (1),            */
+    // 0x45, 0x01,         /*          Physical Maximum (1),           */
+    // 0x09, 0x01,         /*          Usage (01h),                    */
+    // 0x81, 0x02,         /*          Input (Variable),               */
+    // 0xC0,               /*      End Collection,                     */
+    // 0xA1, 0x02,         /*      Collection (Logical),               */
+    // 0x75, 0x08,         /*          Report Size (8),                */
+    // 0x95, 0x04,         /*          Report Count (4),               */
+    // 0x46, 0xFF, 0x00,   /*          Physical Maximum (255),         */
+    // 0x26, 0xFF, 0x00,   /*          Logical Maximum (255),          */
+    // 0x09, 0x02,         /*          Usage (02h),                    */
+    // 0x91, 0x02,         /*          Output (Variable),              */
+    // 0xC0,               /*      End Collection,                     */
+    // 0xC0                /*  End Collection                          */
+
+    hidp_debugf("patching retrolink descriptor");
+    desc[23] = 0x32;
+    desc[25] = 0x33;
+    desc[27] = 0x34;
+  }
+}
+
 static bool report_is_usable(uint16_t bit_count, uint8_t report_complete, hid_report_t *conf) {
 	hidp_debugf("  - total bit count: %d (%d bytes, %d bits)", 
 	      bit_count, bit_count/8, bit_count%8);
@@ -152,12 +215,20 @@ static bool report_is_usable(uint16_t bit_count, uint8_t report_complete, hid_re
         {
             hidp_debugf("JOYSTICK/MOUSE DATA:");
 
+	    if (conf->type == REPORT_TYPE_JOYSTICK)
+                for (int i = 0; i < MAX_AXES; i++)
+		    if(conf->joystick_mouse.axis[i].index >= 0)
+                        hidp_debugf("conf->joystick_mouse.axis[%d].index = %d", i, conf->joystick_mouse.axis[i].index);
+
             for (int i = 0; i < MAX_AXES; i++)
             {
-                hidp_debugf("conf->joystick_mouse.axis[%d].offset = %d", i, conf->joystick_mouse.axis[i].offset);
-                hidp_debugf("conf->joystick_mouse.axis[%d].size = %d", i, conf->joystick_mouse.axis[i].size);
-                hidp_debugf("conf->joystick_mouse.axis[%d].logical.min = %d", i, conf->joystick_mouse.axis[i].logical.min);
-                hidp_debugf("conf->joystick_mouse.axis[%d].logical.max = %d", i, conf->joystick_mouse.axis[i].logical.max);
+		if(conf->joystick_mouse.axis[i].size > 0)
+                {
+                    hidp_debugf("conf->joystick_mouse.axis[%d].offset = %d", i, conf->joystick_mouse.axis[i].offset);
+                    hidp_debugf("conf->joystick_mouse.axis[%d].size = %d", i, conf->joystick_mouse.axis[i].size);
+                    hidp_debugf("conf->joystick_mouse.axis[%d].logical.min = %d", i, conf->joystick_mouse.axis[i].logical.min);
+                    hidp_debugf("conf->joystick_mouse.axis[%d].logical.max = %d", i, conf->joystick_mouse.axis[i].logical.max);
+                }
             }
 
             for (int i = 0; i < 32; i++)
@@ -207,6 +278,7 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
     bool report_has_input = false;
 
 	memset(conf, 0, sizeof(hid_report_t));
+	for(int c=0;c<MAX_AXES;c++) conf->joystick_mouse.axis[c].index = -1;
 
 	uint8_t report_complete = 0;
 
@@ -389,42 +461,45 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
 
                 if (conf->type == REPORT_TYPE_JOYSTICK || conf->type == REPORT_TYPE_MOUSE)
                 {
+		    // Collect info about all axes and re-order them so that the X-AXIS always
+		    // ends up at index 0 and the Y-AXIS always ends up at index 1 even
+		    // if their physical order inside the report is different
                     for (uint8_t idx = 0; idx < assignable; ++idx)
-                    {
+		      {
                         uint16_t u = local_usage_at_pos[idx];
                         if (u == USAGE_X)
                         {
-                            if (axis[0] == -1)
+			  if (axis[0] == -1)
                                 axis[0] = idx;
                         }
                         else if (u == USAGE_Y)
                         {
-                            if (axis[1] == -1)
+			  if (axis[1] == -1)
                                 axis[1] = idx;
                         }
                         else if (u == USAGE_Z)
                         {
-                            if (axis[2] == -1)
+			  if (axis[2] == -1)
                                 axis[2] = idx;
                         }
                         else if (u == USAGE_RX)
                         {
-                            if (axis[3] == -1)
+			  if (axis[3] == -1)
                                 axis[3] = idx;
                         }
                         else if (u == USAGE_RY)
                         {
-                            if (axis[4] == -1)
+			  if (axis[4] == -1)
                                 axis[4] = idx;
                         }
                         else if (u == USAGE_RZ)
                         {
-                            if (axis[5] == -1)
+			  if (axis[5] == -1)
                                 axis[5] = idx;
                         }
                         else if (u == USAGE_WHEEL)
                         {
-                            if (axis[2] == -1)
+			  if (axis[2] == -1)
                                 axis[2] = idx;
                         }
                         else if (u == USAGE_HAT)
@@ -439,6 +514,11 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
 							  cnt, cnt/8, cnt&7);
 
 							if((conf->type == REPORT_TYPE_JOYSTICK) || (conf->type == REPORT_TYPE_MOUSE)) {
+							        // the index allows to map from physical axis mapping inside
+							        // the report to the logical mapping used here
+							        if(axis[c] < MAX_AXES)
+								    conf->joystick_mouse.axis[axis[c]].index = c;
+								
 								// save in joystick report
 								conf->joystick_mouse.axis[c].offset = cnt;
 								conf->joystick_mouse.axis[c].size = report_size;
