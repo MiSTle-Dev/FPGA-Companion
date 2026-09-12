@@ -32,7 +32,6 @@
 #include "bl616_glb.h"
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
-#include "bflb_dma.h"
 #include "bflb_gpio.h"
 #include "bflb_wdg.h"
 #include "bflb_sdh.h"
@@ -45,9 +44,6 @@
 #include "bflb_clock.h"
 #include "bflb_flash.h"
 #include "bflb_sec_mutex.h"
-#include "bflb_xip_sflash.h"
-#include "bflb_sf_ctrl.h"
-#include "board_flash_psram.h"
 
 #include "lwip/opt.h"
 #include "lwip/init.h"
@@ -69,10 +65,7 @@
 #include "rfparam_adapter.h"
 
 #include "bflb_rtc.h" 
-#include "bflb_acomp.h"
-#include "bflb_efuse.h"
 #include "board.h"
-#include "bl616_tzc_sec.h"
 #include "task.h"
 #include "timers.h"
 #include "bflb_irq.h"

@@ -109,6 +109,10 @@
 #define CONFIG_USBDEV_MSC_STACKSIZE 2048
 #endif
 
+#ifndef CONFIG_USBHOST_SERIAL_RX_SIZE
+#define CONFIG_USBHOST_SERIAL_RX_SIZE 2048
+#endif
+
 /* This parameter affects usb performance, and depends on (TCP_WND)tcp eceive windows size,
  * you can change to 2K ~ 16K and must be larger than TCP RX windows size in order to avoid being overflow.
  */
@@ -168,6 +172,7 @@
 #define CONFIG_USBHOST_MAX_XBOX_CLASS       2
 #define CONFIG_USBHOST_MAX_AUDIO_CLASS      0
 #define CONFIG_USBHOST_MAX_VIDEO_CLASS      0
+#define CONFIG_USBHOST_MAX_SERIAL_CLASS     2
 
 #define CONFIG_USBHOST_DEV_NAMELEN 16
 
