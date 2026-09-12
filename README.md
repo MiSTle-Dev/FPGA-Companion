@@ -56,7 +56,7 @@ disadvantages.
     - Limited SDK support
     - Many Tang boards lack Wi-Fi and Bluetooth antennas; the M0S Dock is an exception
 
-### RP2040
+### RP2040 / RP2350
 
   - Pros
     - Powerful and well-supported SDK
