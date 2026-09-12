@@ -2,3 +2,10 @@ mainmenu "SDK Configuration"
 
 source "$BL_SDK_BASE/Kconfig"
 
+config CHERRYUSB_HOST_XBOX
+		bool "Xbox host class"
+		default n
+		depends on CHERRYUSB_HOST
+		help
+			Build the Xbox controller host class.
+

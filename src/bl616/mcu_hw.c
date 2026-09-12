@@ -32,7 +32,6 @@
 #include "bl616_glb.h"
 #include "bflb_mtimer.h"
 #include "bflb_spi.h"
-#include "bflb_dma.h"
 #include "bflb_gpio.h"
 #include "bflb_wdg.h"
 #include "bflb_sdh.h"
@@ -45,9 +44,6 @@
 #include "bflb_clock.h"
 #include "bflb_flash.h"
 #include "bflb_sec_mutex.h"
-#include "bflb_xip_sflash.h"
-#include "bflb_sf_ctrl.h"
-#include "board_flash_psram.h"
 
 #include "lwip/opt.h"
 #include "lwip/init.h"
@@ -69,10 +65,7 @@
 #include "rfparam_adapter.h"
 
 #include "bflb_rtc.h" 
-#include "bflb_acomp.h"
-#include "bflb_efuse.h"
 #include "board.h"
-#include "bl616_tzc_sec.h"
 #include "task.h"
 #include "timers.h"
 #include "bflb_irq.h"
@@ -371,20 +364,22 @@ static void xbox_parse(struct xbox_info_S *xbox) {
 
   // build new state
   unsigned char state =
-    ((wButtons & XINPUT_GAMEPAD_DPAD_UP   )?0x08:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_DPAD_DOWN )?0x04:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_DPAD_LEFT )?0x02:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_DPAD_RIGHT)?0x01:0x00) |
+    ((wButtons & XINPUT_GAMEPAD_DPAD_UP) ? 0x08 : 0x00) |
+    ((wButtons & XINPUT_GAMEPAD_DPAD_DOWN) ? 0x04 : 0x00) |
+    ((wButtons & XINPUT_GAMEPAD_DPAD_LEFT) ? 0x02 : 0x00) |
+    ((wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) ? 0x01 : 0x00) |
     ((wButtons & 0xf000) >> 8); // Y, X, B, A
 
   // build extra button new state
   unsigned char state_btn_extra =
-    ((wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER  )?0x01:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER )?0x02:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_BACK           )?0x04:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_START          )?0x08:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_LEFT_THUMB     )?0x40:0x00) |
-    ((wButtons & XINPUT_GAMEPAD_RIGHT_THUMB    )?0x80:0x00);
+    ((wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) ? 0x01 : 0x00) |
+    ((wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) ? 0x02 : 0x00) |
+    ((wButtons & XINPUT_GAMEPAD_BACK) ? 0x04 : 0x00) |
+    ((wButtons & XINPUT_GAMEPAD_START) ? 0x08 : 0x00) |
+    ((xbox->buffer[4] > 0x80) ? 0x10 : 0x00) |
+    ((xbox->buffer[5] > 0x80) ? 0x20 : 0x00) |
+    ((wButtons & XINPUT_GAMEPAD_LEFT_THUMB) ? 0x40 : 0x00) |
+    ((wButtons & XINPUT_GAMEPAD_RIGHT_THUMB) ? 0x80 : 0x00);
 
   // build analog stick x,y state
   int16_t sThumbLX = xbox->buffer[7] << 8 | xbox->buffer[6];
@@ -393,10 +388,10 @@ static void xbox_parse(struct xbox_info_S *xbox) {
   uint8_t ay = ~byteScaleAnalog(sThumbLY);
 
   // map analog stick directions to digital
-  if(ax > (uint8_t) 0xc0) state |= 0x01;
-  if(ax < (uint8_t) 0x40) state |= 0x02;
-  if(ay > (uint8_t) 0xc0) state |= 0x04;
-  if(ay < (uint8_t) 0x40) state |= 0x08;
+  if (ax > 0xc0) state |= 0x01;
+  if (ax < 0x40) state |= 0x02;
+  if (ay > 0xc0) state |= 0x04;
+  if (ay < 0x40) state |= 0x08;
 
   // submit if state has changed
   if(state != xbox->last_state ||
@@ -881,6 +876,7 @@ void usbh_xbox_run(struct usbh_xbox *xbox_class) {
 
     usb_debugf("NEW XBOX HID %d", i);
     memset(&usb->xbox_info[i].report, 0, sizeof(usb->xbox_info[i].report));
+    usb->xbox_info[i].js_index = hid_allocate_joystick();
 
 #if 0   // don't try to read HID report descriptor as it's not used/parsed, anyway
     uint16_t rep_desc = usbh_hid_get_report_descriptor(xbox_class, report_desc[i], 1024);
@@ -902,6 +898,11 @@ void usbh_xbox_run(struct usbh_xbox *xbox_class) {
 void usbh_xbox_stop(struct usbh_xbox *xbox_class) {
   uint8_t i = xbox_class->minor;
   usb_config.xbox_info[i].stop = 1;
+
+  if (usb_config.xbox_info[i].js_index != NO_JOYSTICK) {
+    hid_release_joystick(usb_config.xbox_info[i].js_index);
+    usb_config.xbox_info[i].js_index = NO_JOYSTICK;
+  }
 }
 
 static struct bflb_device_s *usb_dev;
@@ -929,7 +930,8 @@ void usb_host(void) {
   for(int i=0;i<CONFIG_USBHOST_MAX_XBOX_CLASS;i++) {
     usb_config.xbox_info[i].index = i;
     usb_config.xbox_info[i].state = 0;
-    usb_config.xbox_info[i].buffer = xbox_buffer[i];      
+    usb_config.xbox_info[i].js_index = NO_JOYSTICK;
+    usb_config.xbox_info[i].buffer = xbox_buffer[i];
     usb_config.xbox_info[i].usb = &usb_config;
     usb_config.xbox_info[i].sem = xSemaphoreCreateBinary();
   }
