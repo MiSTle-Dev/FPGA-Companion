@@ -32,7 +32,7 @@ void mcu_hw_port_byte(unsigned char);
 
 // command line wifi interface for use with AT commands
 void mcu_hw_wifi_scan(void);
-void mcu_hw_wifi_connect(char *ssid, char *key);
+bool mcu_hw_wifi_connect(char *ssid, char *key);
 void mcu_hw_tcp_connect(char *ip, int port);
 void mcu_hw_tcp_disconnect(void);
 bool mcu_hw_tcp_data(unsigned char byte);

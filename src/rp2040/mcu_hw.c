@@ -22,6 +22,7 @@
 #include "../config.h"
 #include "../spi.h"
 #include "../sysctrl.h"
+#include "../inifile.h"
 #include "../at_wifi.h"
 #include "../inifile.h"
 #include "../menu.h"
@@ -168,6 +169,10 @@ static struct {
   uint8_t state_x;
   uint8_t state_y;
   uint8_t state_btn_extra;
+
+  UsbGamepadMap *map;
+  bool map_found;
+  bool map_checked;
 } xbox_state[MAX_XBOX_DEVICES];
 
 CFG_TUH_MEM_SECTION struct {
@@ -325,7 +330,7 @@ static void print_utf16(uint16_t* temp_buf, size_t buf_len) {
 }
 
 // Lookup if there is a map for current gamepad
-const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
+static const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
                                           uint16_t pid,
                                           int version_optional)
 {
@@ -366,6 +371,37 @@ const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
   return first_vid_pid;
 }
 
+static void show_map(const UsbGamepadMap *map) {
+  char str0[8], str1[8], str2[8], str3[8];
+      
+  if(map->btn_a>=0) sprintf(str0, " A=%d", map->btn_a); else str0[0] = '\0';      
+  if(map->btn_b>=0) sprintf(str1, " B=%d", map->btn_b); else str1[0] = '\0';
+  if(map->btn_x>=0) sprintf(str2, " X=%d", map->btn_x); else str2[0] = '\0';
+  if(map->btn_y>=0) sprintf(str3, " Y=%d", map->btn_y); else str3[0] = '\0';            
+  usb_debugf("  buttons:%s%s%s%s", str0, str1, str2, str3);
+  
+  if(map->axis_lx>=0 || map->axis_ly>=0) {
+    if(map->axis_lx>=0) sprintf(str0, " LX=%d", map->axis_lx); else str0[0] = '\0';      
+    if(map->axis_ly>=0) sprintf(str1, " LY=%d", map->axis_ly); else str1[0] = '\0';      
+    usb_debugf("  analogue axes:%s%s", str0, str1);
+  }
+  
+  if(map->dpad_axis_up>=0 || map->dpad_axis_down>=0 ||
+     map->dpad_axis_left>=0 || map->dpad_axis_right >= 0) {
+    
+    if(map->dpad_axis_up>=0)
+      sprintf(str0, " U=%d", map->dpad_axis_up); else str0[0] = '\0';      
+    if(map->dpad_axis_down>=0)
+      sprintf(str1, " D=%d", map->dpad_axis_down); else str1[0] = '\0';      
+    if(map->dpad_axis_left>=0)
+      sprintf(str2, " L=%d", map->dpad_axis_left); else str2[0] = '\0';      
+    if(map->dpad_axis_right>=0)
+      sprintf(str3, " R=%d", map->dpad_axis_right); else str3[0] = '\0';      
+    
+    usb_debugf("  dpad axes:%s%s%s%s", str0, str1, str2, str3);
+  }
+}
+  
 // English
 #define LANGUAGE_ID 0x0409
 
@@ -376,7 +412,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 
   uint16_t vid, pid;
   tuh_vid_pid_get(dev_addr, &vid, &pid);
-	
+  
   // check for Sony PS3 / Speedlink Competition Pro V3 (054c:0268)
   if (vid == 0x054c && pid == 0x0268) {
     static uint8_t const magic_init[] = { 0x42, 0x0c, 0x00, 0x00 };
@@ -463,38 +499,11 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 
     if (map)
     {
-      char str0[8], str1[8], str2[8], str3[8];
-      
       usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
                  map->name, map->vid, map->pid, map->version);
 
-      if(map->btn_a>=0) sprintf(str0, " A=%d", map->btn_a); else str0[0] = '\0';      
-      if(map->btn_b>=0) sprintf(str1, " B=%d", map->btn_b); else str1[0] = '\0';
-      if(map->btn_x>=0) sprintf(str2, " X=%d", map->btn_x); else str2[0] = '\0';
-      if(map->btn_y>=0) sprintf(str3, " Y=%d", map->btn_y); else str3[0] = '\0';            
-      usb_debugf("  buttons:%s%s%s%s", str0, str1, str2, str3);
-
-      if(map->axis_lx>=0 || map->axis_ly>=0) {
-	if(map->axis_lx>=0) sprintf(str0, " LX=%d", map->axis_lx); else str0[0] = '\0';      
-	if(map->axis_ly>=0) sprintf(str1, " LY=%d", map->axis_ly); else str1[0] = '\0';      
-	usb_debugf("  analogue axes:%s%s", str0, str1);
-      }
-
-      if(map->dpad_axis_up>=0 || map->dpad_axis_down>=0 ||
-	 map->dpad_axis_left>=0 || map->dpad_axis_right >= 0) {
+      show_map(map);
       
-	if(map->dpad_axis_up>=0)
-	  sprintf(str0, " U=%d", map->dpad_axis_up); else str0[0] = '\0';      
-	if(map->dpad_axis_down>=0)
-	  sprintf(str1, " D=%d", map->dpad_axis_down); else str1[0] = '\0';      
-	if(map->dpad_axis_left>=0)
-	  sprintf(str2, " L=%d", map->dpad_axis_left); else str2[0] = '\0';      
-	if(map->dpad_axis_right>=0)
-	  sprintf(str3, " R=%d", map->dpad_axis_right); else str3[0] = '\0';      
-
-	usb_debugf("  dpad axes:%s%s%s%s", str0, str1, str2, str3);
-      }
-	
       hid_device[idx].rep.map = map;
       hid_device[idx].rep.map_found = 1;
       hid_device[idx].rep.map_checked = 1;
@@ -656,6 +665,7 @@ usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count){
 #define NETWORK_STATUS_HAS_ADDR           (1<<3) // IP address is valid
 #define NETWORK_STATUS_SNTP_STARTED       (1<<4) // sntp app is running
 #define NETWORK_STATUS_TCP_CONNECTED      (1<<5) // the at wifi tcp connection is established
+#define NETWORK_STATUS_WIFI_AUTO          (1<<6) // wifi started from config file (no serial at-wifi IO)
 
 static uint8_t network_status = NETWORK_STATUS_UNINITIALIZED;
 static bool asix_unmount_in_progress = false;
@@ -663,6 +673,10 @@ static bool asix_unmount_in_progress = false;
 /* ======================================================================= */
 /* ======                   ASIX ethernet                        ========= */
 /* ======================================================================= */
+
+#if CFG_TUH_CDC 
+#define ENABLE_PPP
+#endif
 
 // LWIP network interface
 #include "lwip/etharp.h"
@@ -686,8 +700,8 @@ static err_t netif_asix_low_init(struct netif *netif) {
   return ERR_OK;
 }
 
-static void netif_asix_link_callback(struct netif *netif) {
-  usb_debugf("ASIX: netif link status changed %s", netif_is_link_up(netif) ? "up" : "down");
+static void netif_link_callback(struct netif *netif) {
+  usb_debugf("netif link status changed %s", netif_is_link_up(netif) ? "up" : "down");
   if(netif_is_link_up(netif)) {
     network_status |= NETWORK_STATUS_UP;
 
@@ -707,6 +721,27 @@ static void netif_asix_link_callback(struct netif *netif) {
   }
 }
 
+static void ntp_setup(struct netif *netif) {  
+  if(!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
+    sntp_init();
+    network_status |= NETWORK_STATUS_SNTP_STARTED;
+  }
+	
+  // set ntp server from config if specified there
+  if(inifile_config_has("ntp", "ip")) {
+    for(int i=0;i<inifile_config_num_values("ntp", "ip");i++) {
+      ip_addr_t sa;
+      ip_addr_set_ip4_u32(&sa, htonl(inifile_config_get_ip("ntp", "ip", i)));
+      sntp_setserver(i, &sa);
+    }
+  }
+
+  // only request ntp server via dhcp if it has not been set explicitely
+  // and if the interface is ppp as that cannot use dhcp
+  if(!netif || netif->name[0] != 'p' || netif->name[1] != 'p') 
+    sntp_servermode_dhcp(!inifile_config_has("ntp", "ip"));
+}
+
 // this is actually called by axis _and_ the wifi
 static void netif_status_callback(struct netif *netif) {
   usb_debugf("netif status changed %s", ip4addr_ntoa(netif_ip4_addr(netif)));
@@ -718,12 +753,9 @@ static void netif_status_callback(struct netif *netif) {
       usb_debugf("just got an ip address");
       menu_notify_ip(ip4addr_ntoa(netif_ip4_addr(netif)));
 
-      // start ntp client
-      if(!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
-	network_status |= NETWORK_STATUS_SNTP_STARTED;
-	sntp_init();
-      } else
-	usb_debugf("sntp already started");
+      // display what sntp server is actually set (via DHCP)
+      usb_debugf("SNTP server 0 is %s", ip4addr_ntoa(sntp_getserver(0)));
+      ntp_setup(NULL);  // re-setup as dhcp may have been overwritten the ntp address
     }
     
     network_status |=  NETWORK_STATUS_HAS_ADDR;
@@ -745,12 +777,9 @@ static void netif_status_callback(struct netif *netif) {
 void sntp_set_system_time(u32_t sec) {
   debugf("%s(%lu)", __FUNCTION__, sec);
 
-  time_t ut = sec;
+  time_t ut = sec + 3600 * inifile_config_get_int("ntp", "timezone", 0);
   struct tm* timeinfo = gmtime(&ut);
 
-  // TODO: handle time zone
-  // (needs to be read from config or the like)
-  
   // time is UTC ...
   debugf(" YEAR:     %u", 1900 + timeinfo->tm_year);
   debugf(" MONTH:    %u", 1 + timeinfo->tm_mon);
@@ -765,6 +794,36 @@ void sntp_set_system_time(u32_t sec) {
   sys_set_time(SYS_TIME_FLAGS_NTP | ( timeinfo->tm_isdst?SYS_TIME_FLAGS_DST:0),
 	       timeinfo->tm_year, timeinfo->tm_mon, timeinfo->tm_mday + (timeinfo->tm_wday << 5),
 	       timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+}
+
+static void netif_up(struct netif *netif) {
+  usb_debugf("netif_up(%c%c)", netif->name[0], netif->name[1]);
+  
+  // assign callbacks for link and status
+  netif_set_link_callback(netif, netif_link_callback);
+  netif_set_status_callback(netif, netif_status_callback);  
+
+  // set the default interface and bring it up
+  netif_set_default(netif);
+  netif_set_up(netif);
+
+  ntp_setup(netif);
+    
+  // don't start dhcp on the ppp interface
+  if(netif->name[0] != 'p' || netif->name[1] != 'p')  {
+    // Start DHCP client unless configured not to do so
+    if(inifile_config_get_int("network", "mode", 1) == 1)    
+      dhcp_start(netif);
+    else {
+      // set static network config. Default is 192.168.0.2/24 and gateway 192.168.0.1
+      ip_addr_t ipaddr, netmask, gw;
+      ip_addr_set_ip4_u32(&ipaddr, htonl(inifile_config_get_ip("network", "ip", 0xc0a80002)));
+      ip_addr_set_ip4_u32(&netmask, htonl(inifile_config_get_ip("network", "mask", 0xffffff00)));
+      ip_addr_set_ip4_u32(&gw, htonl(inifile_config_get_ip("network", "gw", 0xc0a80001)));
+      netif_set_addr(netif, &ipaddr, &netmask, &gw);
+    }
+  } else
+    usb_debugf("Not starting DHCP for PPP");
 }
 
 static void asix_net_register(asixh_interface_t *itf) {
@@ -795,17 +854,7 @@ static void asix_net_register(asixh_interface_t *itf) {
   itf->netif.name[0] = 'e';
   itf->netif.name[1] = '0';
 
-  // assign callbacks for link and status
-  netif_set_link_callback(&itf->netif, netif_asix_link_callback);
-  netif_set_status_callback(&itf->netif, netif_status_callback);
-  
-  // set the default interface and bring it up
-  netif_set_default(&itf->netif);
-  netif_set_up(&itf->netif);
-
-  // Start DHCP client
-  sntp_servermode_dhcp(1);
-  dhcp_start(&itf->netif);
+  netif_up(&itf->netif);
 }
 
 void tuh_asix_mount_cb(asixh_interface_t *itf) {
@@ -864,6 +913,45 @@ void tuh_asix_umount_cb(asixh_interface_t *itf) {
   menu_notify(MENU_EVENT_NETWORK_DISCONNECTED);
 }
 
+#ifdef ENABLE_PPP
+
+#include "netif/ppp/ppp.h"
+#include "netif/ppp/pppos.h"
+
+// only one CDC device is supported, so only one PPP device can
+// be detected
+static ppp_pcb *ppp;
+static struct netif ppp_netif;
+
+static void ppp_status_cb(ppp_pcb *pcb, int err_code, void *ctx) {
+  switch (err_code) {
+  case PPPERR_NONE:
+    usb_debugf("PPP Connected");
+    break;
+  case PPPERR_AUTHFAIL:
+    usb_debugf("Authentication Failed");
+    break;
+  default:
+    usb_debugf("PPP Error: %d", err_code);
+  }
+}
+
+static int8_t cdc_idx = -1;
+u32_t ppp_output_cb(ppp_pcb *pcb, const void *data, u32_t len, void *ctx) {
+  // forward data to serial port
+  if(cdc_idx < 0) {
+    usb_debugf("CDC not available");
+    return 0;
+  }
+
+  u32_t res = tuh_cdc_write(cdc_idx, data, len);
+  if(res != len) usb_debugf("tuh_cdc_write(): unexpected result %d != %d", res, len);
+  
+  return res;
+}
+
+#endif
+
 static void asix_net_task(__attribute__((unused)) void *parms) {
   // setup async context exactly like the cyw43 does it
   async_context_t *context = cyw43_arch_async_context();
@@ -875,10 +963,17 @@ static void asix_net_task(__attribute__((unused)) void *parms) {
   lwip_freertos_init(context);
   network_status |= NETWORK_STATUS_TCPIP_INIT;
 
+#ifdef ENABLE_PPP
+  usb_debugf("Initializing PPP over serial");
+
+  // initialize ppp to be used with the esp32_ppp dongle
+  ppp = pppos_create(&ppp_netif, ppp_output_cb, ppp_status_cb, NULL);
+#endif
+ 
   vTaskDelete(NULL);
 }  
-  
-  /* ======================================================================= */
+
+/* ======================================================================= */
 /* ======                   XBOX controllers                     ========= */
 /* ======================================================================= */
 
@@ -958,6 +1053,8 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
 }
 
 void tuh_xinput_mount_cb(uint8_t dev_addr, uint8_t instance, const xinputh_interface_t *xinput_itf) {
+  const UsbGamepadMap *map;
+
   usb_debugf("xbox mounted %d/%d", dev_addr, instance);
 
   // search for a free xbox entry
@@ -972,6 +1069,29 @@ void tuh_xinput_mount_cb(uint8_t dev_addr, uint8_t instance, const xinputh_inter
     xbox_state[idx].state_x = 0;
     xbox_state[idx].state_y = 0;
     xbox_state[idx].js_index = hid_allocate_joystick();
+
+    tusb_desc_device_t device;
+    if(tuh_descriptor_get_device_local(dev_addr, &device))  {
+      // lookup for VID/PID/Version
+      map = find_usb_gamepad_map(device.idVendor, device.idProduct, device.bcdDevice);
+    
+      if (map) {
+	usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
+		   map->name, map->vid, map->pid, map->version);
+
+	show_map(map);
+      
+	xbox_state[idx].map = map;
+	xbox_state[idx].map_found = 1;
+	xbox_state[idx].map_checked = 1;
+      } else {
+	usb_debugf("No map for VID=%04x PID=%04x, VERSION=%04x",
+		   device.idVendor, device.idProduct, device.bcdDevice);
+	xbox_state[idx].map = NULL;
+	xbox_state[idx].map_found = 0;
+	xbox_state[idx].map_checked = 1;
+      }    
+    }
   } else
     usb_debugf("Error, no more free XBOX entries");
 
@@ -1003,6 +1123,74 @@ void tuh_xinput_umount_cb(uint8_t dev_addr, uint8_t instance) {
   usb_check_devices();
 }
 
+#if CFG_TUH_CDC 
+// Invoked when received new data
+void tuh_cdc_rx_cb(uint8_t idx) {
+  static uint8_t buf[128];
+
+  // forward cdc interfaces -> console
+  uint32_t count = tuh_cdc_read(idx, buf, sizeof(buf));
+
+  // Forward the data into lwip/ppp
+  pppos_input(ppp, buf, count);
+}
+
+static void process_line_state_cb(tuh_xfer_t *xfer) {
+  usb_debugf("process_line_state_cb(%d)", xfer->user_data);
+
+  // on esp32: RTS -> EN (reset)
+  //           DTR -> GPIO0  
+  usb_debugf("DTR (GPIO0): %d", tuh_cdc_get_dtr(cdc_idx));
+  usb_debugf("RTS (EN): %d", tuh_cdc_get_rts(cdc_idx));
+    
+  vTaskDelay(pdMS_TO_TICKS(10));
+    
+  // DTR = bit 0, RTS = bit 1
+  if(xfer->user_data == 0)
+    tuh_cdc_set_rts(cdc_idx, 0, process_line_state_cb, 0x1);
+  if(xfer->user_data == 1)
+    tuh_cdc_set_rts(cdc_idx, 1, process_line_state_cb, 0x2);
+  if(xfer->user_data == 2) {  
+    ppp_connect(ppp, 0); // `0` for no holdoff delay
+    ppp_set_usepeerdns(ppp, 1);
+
+    netif_up(&ppp_netif);
+  }
+}
+
+void tuh_cdc_mount_cb(uint8_t idx) {
+  cdc_idx = idx;
+  tuh_itf_info_t itf_info = { 0 };
+  tuh_cdc_itf_get_info(idx, &itf_info);
+
+  usb_debugf("CDC%d Interface is mounted: address = %u, itf_num = %u",
+	     idx, itf_info.daddr, itf_info.desc.bInterfaceNumber);
+
+  cdc_line_coding_t line_coding = { 0 };
+  if (tuh_cdc_get_local_line_coding(idx, &line_coding)) {
+    usb_debugf("  Baudrate: %" PRIu32 ", Stop Bits : %u",
+	       line_coding.bit_rate, line_coding.stop_bits);
+    usb_debugf("  Parity  : %u, Data Width: %u",
+	       line_coding.parity, line_coding.data_bits);
+  }
+
+  // trigger first transfer
+  tuh_xfer_t xfer =  {.user_data=0 };
+  process_line_state_cb(&xfer);
+}
+
+void tuh_cdc_umount_cb(uint8_t idx) {
+  tuh_itf_info_t itf_info = { 0 };
+  tuh_cdc_itf_get_info(idx, &itf_info);
+
+  usb_debugf("CDC Interface is unmounted: address = %u, itf_num = %u",
+	     itf_info.daddr, itf_info.desc.bInterfaceNumber);
+
+  cdc_idx = -1;
+}
+#endif
+
+
 #include "hardware/watchdog.h"
 
 void mcu_hw_reset(void) {
@@ -1019,8 +1207,9 @@ void mcu_hw_reset(void) {
 void mcu_hw_wifi_scan(void) {
   at_wifi_puts("WiFi not available\r\n");
 }
-void mcu_hw_wifi_connect(__attribute__((unused)) char *ssid, __attribute__((unused)) char *key) {
+bool mcu_hw_wifi_connect(__attribute__((unused)) char *ssid, __attribute__((unused)) char *key) {
   at_wifi_puts("WiFi not available\r\n");
+  return true;
 }
 #else  
 static bool is_pico_w = false;
@@ -1050,8 +1239,6 @@ static void mcu_hw_wifi_init(void) {
   debugf("Detected Pico-W");
 #endif
 
-  sntp_servermode_dhcp(1);
-
   if(cyw43_arch_init_with_country(CYW43_COUNTRY_GERMANY)) {
     debugf("WiFi failed to initialise");
     return;
@@ -1059,6 +1246,8 @@ static void mcu_hw_wifi_init(void) {
   
   debugf("WiFi initialised");
   network_status |= (NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI);
+
+  sntp_servermode_dhcp(!inifile_config_has("ntp", "ip"));
   
   cyw43_arch_enable_sta_mode();
   debugf("STA mode enabled");
@@ -1071,6 +1260,22 @@ static void mcu_hw_wifi_init(void) {
   xTimerStart(led_timer_handle, 0);
 
   netif_set_status_callback(netif_default, netif_status_callback);
+
+  // connect to wifi immediately if configured through config file
+  if(inifile_config_has("wifi", "ssid") && inifile_config_has("wifi", "pass")) {
+    network_status |= NETWORK_STATUS_WIFI_AUTO;
+
+    debugf("Connecting to WiFi '%s'", inifile_config_get_str("wifi", "ssid"));
+
+    if(!mcu_hw_wifi_connect(inifile_config_get_str("wifi", "ssid"),
+			    inifile_config_get_str("wifi", "pass"))) {
+      debugf("failed");      
+      network_status &= ~NETWORK_STATUS_WIFI_AUTO;
+    }
+  } else
+    debugf("No WiFi setup");
+
+  //  ntp_setup(NULL);
   
 #ifdef ENABLE_BLUETOOTH
   // this will actually never return. But that is no problem
@@ -1176,18 +1381,26 @@ void mcu_hw_wifi_scan(void) {
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-void mcu_hw_wifi_connect(char *ssid, char *key) {
-  if(!wifi_available()) return;
+bool mcu_hw_wifi_connect(char *ssid, char *key) {
+  if(!wifi_available()) return false;
 
   debugf("WiFI: connect to %s/%s", ssid, key);
   
-  at_wifi_puts("Connecting...");
+  if(!(network_status & NETWORK_STATUS_WIFI_AUTO))
+    at_wifi_puts("Connecting...");
+  
   if(cyw43_arch_wifi_connect_timeout_ms(ssid, key, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-    at_wifi_puts("\r\nConnection failed!\r\n");
+    if(!(network_status & NETWORK_STATUS_WIFI_AUTO))
+      at_wifi_puts("\r\nConnection failed!\r\n");
+
+    return false;
   } else {
-    at_wifi_puts("\r\nConnected\r\n");
+    if(!(network_status & NETWORK_STATUS_WIFI_AUTO))
+      at_wifi_puts("\r\nConnected\r\n");
+    
     network_status |= NETWORK_STATUS_UP;
-  }  
+  }
+  return true;
 }
 #endif
 

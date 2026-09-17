@@ -33,6 +33,9 @@ static void com_task(__attribute__((unused)) void *p ) {
     // initialitze SD card
     sdc_init();
 
+    // try to load the global config
+    inifile_config_read();
+    
     // try to load a config .xml from sd card. If the core has identified itself,
     // then e.g. atarist.xml will be read. otherwise config.xml
     FIL fil;

@@ -1847,18 +1847,18 @@ static void wifi_info()
 
 }
 
-void mcu_hw_wifi_connect(char *ssid, char *key) {
+bool mcu_hw_wifi_connect(char *ssid, char *key) {
   if (active_network_interface == NETWORK_INTERFACE_RTL8152 ||
       active_network_interface == NETWORK_INTERFACE_ASIX) {
     debugf("Ignoring WiFi command since USB Ethernet is active");
     at_wifi_puts("WiFi not available\r\n");
-    return;
+    return false;
   }
 
   if (!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
     debugf("Ignoring WiFi command since TCP stack is not initialized");
     at_wifi_puts("TCPIP not available\r\n");
-    return;
+    return false;
   }
 
   debugf("WiFI: connect to %s/%s", ssid, key);
@@ -1891,8 +1891,11 @@ void mcu_hw_wifi_connect(char *ssid, char *key) {
       network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
       if (active_network_interface == NETWORK_INTERFACE_WIFI)
         active_network_interface = NETWORK_INTERFACE_NONE;
+
+      return false;
       }
     }
+  return true;
 }
 
 static bool network_available(void) {
