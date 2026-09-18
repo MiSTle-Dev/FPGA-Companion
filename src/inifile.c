@@ -296,6 +296,9 @@ static const struct {
   // (S)NTP
   { "NTP", "IP", CONFIG_TYPE_IP, NULL },
   { "NTP", "TIMEZONE", CONFIG_TYPE_INT, NULL },
+
+  // MENU/OSD
+  { "MENU", "GAMEPAD_TRIGGER", CONFIG_TYPE_INT, NULL },
   
   { NULL, NULL, 0, NULL }
 };

@@ -338,6 +338,48 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
   mcu_hw_spi_end();
 }
 
+static void joystick_push(uint8_t index, uint8_t joy, uint8_t ax, uint8_t ay, uint8_t btn_extra) {    
+  // check if there's a gamepad menu button enabled in the config
+  if(inifile_config_has("menu", "gamepad_trigger")) {
+    int btn = inifile_config_get_int("menu", "gamepad_trigger", 0);
+
+    // buttons 0..3 are encoded in the upper bits of 'joy', further
+    // 8 buttons are in btn_extra
+
+    static bool last_detected = false;
+    bool detected = false;
+    if(btn < 4) {
+      if(joy & (1<<(btn+4)))
+	detected = true;      
+    } else if(btn < 12) {
+      if(btn_extra & (1<<(btn-4)))
+	detected = true;      
+    }
+
+    if(detected && !last_detected) {
+      usb_debugf("menu trigger pressed");
+      menu_notify(MENU_EVENT_TOGGLE);
+    }
+
+    last_detected = detected;
+  }
+      
+  if(osd_is_visible()) {
+    // if OSD is visible, then process events locally
+    menu_joystick_state(joy);	      
+  } else {
+    mcu_hw_spi_begin();
+    mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+    mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
+    mcu_hw_spi_tx_u08(index);
+    mcu_hw_spi_tx_u08(joy);
+    mcu_hw_spi_tx_u08(ax);
+    mcu_hw_spi_tx_u08(ay);
+    mcu_hw_spi_tx_u08(btn_extra);
+    mcu_hw_spi_end();
+  }
+}
+  
 void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *state,
 		    const unsigned char *buffer, __attribute__((unused)) int nbytes) {
   //  usb_debugf("joystick: %d %02x %02x %02x %02x", nbytes,
@@ -504,22 +546,9 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
     state->last_state_btn_extra = btn_extra;
     usb_debugf("JOY%d: D %02x X %02x Y %02x EB %02x", state->js_index, joy, ax, ay, btn_extra);
 
-    if(osd_is_visible()) {	       
-      // if OSD is visible, then process events locally
-      menu_joystick_state(joy);	      
-    } else {      
-      mcu_hw_spi_begin();
-      mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-      mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
-      mcu_hw_spi_tx_u08(state->js_index);
-      mcu_hw_spi_tx_u08(joy);
-      mcu_hw_spi_tx_u08(ax); // e.g. gamepad X
-      mcu_hw_spi_tx_u08(ay); // e.g. gamepad Y
-      mcu_hw_spi_tx_u08(btn_extra); // e.g. gamepad extra buttons
-      mcu_hw_spi_end();
-    }
-    }
+    joystick_push(state->js_index, joy, ax, ay, btn_extra);
   }
+}
 
 void consumer_parse(const hid_report_t *report, struct hid_consumer_state_S *state,
 		    const unsigned char *buffer, __attribute__((unused)) int nbytes) {
@@ -629,7 +658,7 @@ void parse_with_sdl_mapping(const hid_report_t *report,
                                  _is_signed);                                 \
         if (tmp_ < 0)                                                         \
           tmp_ = 0;                                                           \
-        if (tmp_ > 255)                                                       \ 
+        if (tmp_ > 255)                                                       \
           tmp_ = 255;                                                         \
         (out_u8_) = (uint8_t)tmp_;                                            \
       }                                                                       \
@@ -840,15 +869,7 @@ void parse_with_sdl_mapping(const hid_report_t *report,
     usb_debugf("MAP%d: D %02x X %02x Y %02x EB %02x",
                state->js_index, joy, ax, ay, btn_extra);
 
-    mcu_hw_spi_begin();
-    mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-    mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
-    mcu_hw_spi_tx_u08(state->js_index);
-    mcu_hw_spi_tx_u08(joy);
-    mcu_hw_spi_tx_u08(ax);
-    mcu_hw_spi_tx_u08(ay);
-    mcu_hw_spi_tx_u08(btn_extra);
-    mcu_hw_spi_end();
+    joystick_push(state->js_index, joy, ax, ay, btn_extra);
   }
 
 #undef READ_BUTTON_IDX
