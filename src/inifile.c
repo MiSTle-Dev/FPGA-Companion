@@ -539,7 +539,7 @@ static void inifile_config_parse_line(char *line) {
 	ini_debugf("Ignoring unexpected choice %s '%s'", line, value);
 	break;	
 
-      case CONFIG_TYPE_IP:
+      case CONFIG_TYPE_IP: {
 	// IP may actually be a comma seperated list of IPs
 	uint32_t addr;
 	while(strchr(value, ',')) {
@@ -555,7 +555,7 @@ static void inifile_config_parse_line(char *line) {
 
 	if(inifile_config_parse_ip(value, &addr))
 	  inifile_config_append_value(cfg)->data.ip = addr;
-	break;	
+      } break;	
       }
       
       return;
