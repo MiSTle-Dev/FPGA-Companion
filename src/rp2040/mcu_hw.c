@@ -1261,6 +1261,25 @@ static void mcu_hw_wifi_init(void) {
 
   netif_set_status_callback(netif_default, netif_status_callback);
 
+#ifdef ENABLE_BLUETOOTH
+  // bluetooth needs nothing from config.ini, start it right away
+  bluetooth_init();
+#endif
+
+  // after a cold start com_task reads config.ini only once the FPGA
+  // is up, so wait for it before deciding whether to connect
+  {
+    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(20000);
+    bool waited = false;
+    while(!inifile_config_is_read() && xTaskGetTickCount() < deadline) {
+      if(!waited) { debugf("WiFi: waiting for the configuration from the card"); waited = true; }
+      vTaskDelay(pdMS_TO_TICKS(250));
+    }
+    if(waited)
+      debugf("WiFi: configuration %s",
+             inifile_config_is_read() ? "is available" : "did not arrive, deadline expired");
+  }
+
   // connect to wifi immediately if configured through config file
   if(inifile_config_has("wifi", "ssid") && inifile_config_has("wifi", "pass")) {
     network_status |= NETWORK_STATUS_WIFI_AUTO;
@@ -1280,7 +1299,7 @@ static void mcu_hw_wifi_init(void) {
 #ifdef ENABLE_BLUETOOTH
   // this will actually never return. But that is no problem
   // as this task is only needed for wifi init
-  bluetooth_init();
+  bluetooth_run();
 #endif
 }
 
