@@ -18,6 +18,7 @@ int inifile_option_get(int id);
 
 // handle the global ini file (config.ini)
 void inifile_config_read(void);
+bool inifile_config_is_read(void);  // true once config.ini has been processed
 bool inifile_config_has(char *section, char *name);
 uint32_t inifile_config_get_ip_n(char *section, char *name, uint32_t def, int n);
 uint32_t inifile_config_get_ip(char *section, char *name, uint32_t def);

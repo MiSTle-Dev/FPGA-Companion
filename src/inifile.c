@@ -566,6 +566,8 @@ static void inifile_config_parse_line(char *line) {
 }
   
 // read the system config.ini
+static bool config_read_done = false;
+
 void inifile_config_read(void) {
   ini_debugf("inifile_config_read()");
 
@@ -631,4 +633,11 @@ void inifile_config_read(void) {
   sdc_unlock();
 
   inifile_config_dump();
+
+  // also set when there was no config.ini
+  config_read_done = true;
+}
+
+bool inifile_config_is_read(void) {
+  return config_read_done;
 }
