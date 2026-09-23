@@ -1261,6 +1261,11 @@ static void mcu_hw_wifi_init(void) {
 
   netif_set_status_callback(netif_default, netif_status_callback);
 
+#ifdef ENABLE_BLUETOOTH
+  // bluetooth needs nothing from config.ini, start it right away
+  bluetooth_init();
+#endif
+
   // after a cold start com_task reads config.ini only once the FPGA
   // is up, so wait for it before deciding whether to connect
   {
@@ -1294,7 +1299,7 @@ static void mcu_hw_wifi_init(void) {
 #ifdef ENABLE_BLUETOOTH
   // this will actually never return. But that is no problem
   // as this task is only needed for wifi init
-  bluetooth_init();
+  bluetooth_run();
 #endif
 }
 
