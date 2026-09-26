@@ -1861,7 +1861,9 @@ bool mcu_hw_wifi_connect(char *ssid, char *key) {
     return false;
   }
 
-  debugf("WiFI: connect to %s/%s", ssid, key);
+  // key length only, logs end up in bug reports
+  debugf("WiFI: connect to %s (key: %u characters, not shown)",
+         ssid, (unsigned)(key ? strlen(key) : 0));
   
   at_wifi_puts("WiFI: Connecting...");
   if(wifi_ssid) free(wifi_ssid);

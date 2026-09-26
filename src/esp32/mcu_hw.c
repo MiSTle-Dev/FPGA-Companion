@@ -601,7 +601,9 @@ void mcu_hw_wifi_scan(void) {
 }
 
 void mcu_hw_wifi_connect(char *ssid, char *key) {
-  debugf("connecting '%s' '%s'", ssid, key);
+  // key length only, logs end up in bug reports
+  debugf("connecting '%s' (key: %u characters, not shown)",
+         ssid, (unsigned)(key ? strlen(key) : 0));
 
   static wifi_config_t wifi_configuration;
   strcpy((char*)wifi_configuration.sta.ssid,ssid);
