@@ -61,6 +61,7 @@ void mcu_hw_jtag_set_clock(uint32_t);
 void jtag_writeTDI_msb_first_gpio_out_mode(uint8_t *tx, unsigned int bytes, bool end);
 void jtag_enter_gpio_out_mode(void); 
 void jtag_exit_gpio_out_mode(void);
+void mcu_hw_wifi_auto_connect(void);
 
 // the BL616 based platforms implement custom JTAG routines for fast bulk transfers
 #define MCU_HW_JTAG_GPIO_OUT_MODE

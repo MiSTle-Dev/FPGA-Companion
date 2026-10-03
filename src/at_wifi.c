@@ -271,6 +271,10 @@ static void at_wifi_task(__attribute__((unused)) void *parms) {
 void at_wifi_init(void) {
   debugf("AT WIFI init");
 
+#if defined(M0S_DOCK) || defined(TANG_CONSOLE60K) || defined(TANG_MEGA60K)
+  mcu_hw_wifi_auto_connect();
+#endif
+
   // start a thread to handle at/wifi io
   rx_queue = xQueueCreate(8, sizeof( unsigned char ) );
   xTaskCreate(at_wifi_task, (char *)"at_wifi_task", 2048, NULL, configMAX_PRIORITIES-10, NULL);
