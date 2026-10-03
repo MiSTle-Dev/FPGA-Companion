@@ -258,6 +258,31 @@ const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
   return first_vid_pid;
 }
 
+static void show_map(const UsbGamepadMap *map) {
+  char str0[8], str1[8], str2[8], str3[8];
+
+  if(map->btn_a >= 0) sprintf(str0, " A=%d", map->btn_a); else str0[0] = '\0';
+  if(map->btn_b >= 0) sprintf(str1, " B=%d", map->btn_b); else str1[0] = '\0';
+  if(map->btn_x >= 0) sprintf(str2, " X=%d", map->btn_x); else str2[0] = '\0';
+  if(map->btn_y >= 0) sprintf(str3, " Y=%d", map->btn_y); else str3[0] = '\0';
+  usb_debugf("  buttons:%s%s%s%s", str0, str1, str2, str3);
+
+  if(map->axis_lx >= 0 || map->axis_ly >= 0) {
+    if(map->axis_lx >= 0) sprintf(str0, " LX=%d", map->axis_lx); else str0[0] = '\0';
+    if(map->axis_ly >= 0) sprintf(str1, " LY=%d", map->axis_ly); else str1[0] = '\0';
+    usb_debugf("  analogue axes:%s%s", str0, str1);
+  }
+
+  if(map->dpad_axis_up >= 0 || map->dpad_axis_down >= 0 ||
+     map->dpad_axis_left >= 0 || map->dpad_axis_right >= 0) {
+    if(map->dpad_axis_up >= 0) sprintf(str0, " U=%d", map->dpad_axis_up); else str0[0] = '\0';
+    if(map->dpad_axis_down >= 0) sprintf(str1, " D=%d", map->dpad_axis_down); else str1[0] = '\0';
+    if(map->dpad_axis_left >= 0) sprintf(str2, " L=%d", map->dpad_axis_left); else str2[0] = '\0';
+    if(map->dpad_axis_right >= 0) sprintf(str3, " R=%d", map->dpad_axis_right); else str3[0] = '\0';
+    usb_debugf("  dpad axes:%s%s%s%s", str0, str1, str2, str3);
+  }
+}
+
 void set_led(int pin, int on) {
 #ifdef M0S_DOCK
   // only M0S dock has those leds
@@ -278,8 +303,8 @@ static struct usb_config {
     unsigned char last_state;
     unsigned char js_index;
     unsigned char last_state_btn_extra;
-    int16_t last_state_x;
-    int16_t last_state_y;
+    uint8_t last_state_x;
+    uint8_t last_state_y;
 
     struct usb_config *usb;
     SemaphoreHandle_t sem;
@@ -376,8 +401,6 @@ static void xbox_parse(struct xbox_info_S *xbox) {
     ((wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) ? 0x02 : 0x00) |
     ((wButtons & XINPUT_GAMEPAD_BACK) ? 0x04 : 0x00) |
     ((wButtons & XINPUT_GAMEPAD_START) ? 0x08 : 0x00) |
-    ((xbox->buffer[4] > 0x80) ? 0x10 : 0x00) |
-    ((xbox->buffer[5] > 0x80) ? 0x20 : 0x00) |
     ((wButtons & XINPUT_GAMEPAD_LEFT_THUMB) ? 0x40 : 0x00) |
     ((wButtons & XINPUT_GAMEPAD_RIGHT_THUMB) ? 0x80 : 0x00);
 
@@ -396,13 +419,13 @@ static void xbox_parse(struct xbox_info_S *xbox) {
   // submit if state has changed
   if(state != xbox->last_state ||
     state_btn_extra != xbox->last_state_btn_extra ||
-    sThumbLX != xbox->last_state_x ||
-    sThumbLY != xbox->last_state_y) {
+    ax != xbox->last_state_x ||
+    ay != xbox->last_state_y) {
 
     xbox->last_state = state;
     xbox->last_state_btn_extra = state_btn_extra;
-    xbox->last_state_x = sThumbLX;
-    xbox->last_state_y = sThumbLY;
+    xbox->last_state_x = ax;
+    xbox->last_state_y = ay;
     usb_debugf("XBOX Joy%d: B %02x EB %02x X %02x Y %02x", xbox->js_index, state, state_btn_extra, ax, ay);
 
     if(osd_is_visible()) {	       
@@ -711,6 +734,7 @@ static void usbh_xbox_client_thread(void *argument) {
   if (map) {
     usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
                 map->name, map->vid, map->pid, map->version);
+    show_map(map);
 
     xbox->report.map = map;
     xbox->report.map_found = 1;
@@ -876,6 +900,10 @@ void usbh_xbox_run(struct usbh_xbox *xbox_class) {
 
     usb_debugf("NEW XBOX HID %d", i);
     memset(&usb->xbox_info[i].report, 0, sizeof(usb->xbox_info[i].report));
+    usb->xbox_info[i].last_state = 0;
+    usb->xbox_info[i].last_state_btn_extra = 0;
+    usb->xbox_info[i].last_state_x = 0;
+    usb->xbox_info[i].last_state_y = 0;
     usb->xbox_info[i].js_index = hid_allocate_joystick();
 
 #if 0   // don't try to read HID report descriptor as it's not used/parsed, anyway
@@ -1492,6 +1520,7 @@ extern int wifi_mgmr_sta_quickconnect(const char *ssid, const char *key, uint16_
 #define NETWORK_STATUS_HAS_ADDR           (1<<3) // IP address is valid
 #define NETWORK_STATUS_SNTP_STARTED       (1<<4) // sntp app is running
 #define NETWORK_STATUS_TCP_CONNECTED      (1<<5) // the at wifi tcp connection is established
+#define NETWORK_STATUS_WIFI_AUTO          (1<<6) // WiFi started from config file (no serial AT-WiFi IO)
 
 static uint8_t network_status = NETWORK_STATUS_UNINITIALIZED;
 
@@ -1555,12 +1584,67 @@ uint8_t mcu_hw_network_status(void)
 #define WIFI_STATE_CONNECTED    3
 
 static int wifi_state = WIFI_STATE_UNKNOWN;
+static volatile bool wifi_manager_ready = false;
+static volatile bool wifi_auto_connect_pending = false;
+static bool wifi_auto_connect_started = false;
 
 static char *wifi_ssid = NULL;
 static char *wifi_key = NULL;
 static int s_retry_num = 0;
 static QueueHandle_t wifi_event_queue = NULL;
 static uint32_t wifi_reported_ip = 0;
+
+static void wifi_auto_connect_task(void *param)
+{
+  (void)param;
+  char *ssid = inifile_config_get_str("wifi", "ssid");
+  char *key = inifile_config_get_str("wifi", "pass");
+
+  if (!ssid || !key) {
+    debugf("No WiFi setup");
+    network_status &= ~NETWORK_STATUS_WIFI_AUTO;
+    wifi_auto_connect_started = false;
+    vTaskDelete(NULL);
+    return;
+  }
+
+  network_status |= NETWORK_STATUS_WIFI_AUTO;
+  debugf("Connecting to WiFi '%s'", ssid);
+  if (!mcu_hw_wifi_connect(ssid, key)) {
+    debugf("WiFi auto-connect failed");
+    network_status &= ~NETWORK_STATUS_WIFI_AUTO;
+    wifi_auto_connect_started = false;
+  }
+  vTaskDelete(NULL);
+}
+
+static void wifi_auto_connect_start_if_ready(void)
+{
+  if (!wifi_auto_connect_pending || !wifi_manager_ready ||
+      wifi_auto_connect_started)
+    return;
+
+  wifi_auto_connect_pending = false;
+  wifi_auto_connect_started = true;
+  if (xTaskCreate(wifi_auto_connect_task, "wifi auto", 1024, NULL,
+                  TASK_PRIORITY_FW, NULL) != pdPASS) {
+    wifi_auto_connect_started = false;
+    network_status &= ~NETWORK_STATUS_WIFI_AUTO;
+    debugf("Failed to start WiFi auto-connect task");
+  }
+}
+
+void mcu_hw_wifi_auto_connect(void)
+{
+  if (!inifile_config_has("wifi", "ssid") ||
+      !inifile_config_has("wifi", "pass")) {
+    debugf("No WiFi setup");
+    return;
+  }
+
+  wifi_auto_connect_pending = true;
+  wifi_auto_connect_start_if_ready();
+}
 
 static void wifi_got_ip(const ip4_addr_t *ip, bool force_notify)
 {
@@ -1623,6 +1707,8 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   } break;
   case CODE_WIFI_ON_MGMR_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_MGMR_DONE", __func__);
+    wifi_manager_ready = true;
+    wifi_auto_connect_start_if_ready();
   } break;
   case CODE_WIFI_ON_SCAN_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_SCAN_DONE", __func__);
@@ -1728,9 +1814,11 @@ static void wait4event(char code, char code2) {
             wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0);
             s_retry_num++;
             debugf("retry to connect to the AP");
-            at_wifi_puts(".");
+            if (!(network_status & NETWORK_STATUS_WIFI_AUTO))
+              at_wifi_puts(".");
           } else {
-            at_wifi_puts("\r\nConnection failed!\r\n");
+            if (!(network_status & NETWORK_STATUS_WIFI_AUTO))
+              at_wifi_puts("\r\nConnection failed!\r\n");
             debugf("finally failed");
           }	
           break;
@@ -1739,7 +1827,8 @@ static void wait4event(char code, char code2) {
           break;
         case 4:
           debugf("  -> got ip");
-          at_wifi_puts("\r\nConnected\r\n");
+          if (!(network_status & NETWORK_STATUS_WIFI_AUTO))
+            at_wifi_puts("\r\nConnected\r\n");
           break;	
         case 5:
           debugf("  -> init done");
@@ -1851,19 +1940,22 @@ bool mcu_hw_wifi_connect(char *ssid, char *key) {
   if (active_network_interface == NETWORK_INTERFACE_RTL8152 ||
       active_network_interface == NETWORK_INTERFACE_ASIX) {
     debugf("Ignoring WiFi command since USB Ethernet is active");
-    at_wifi_puts("WiFi not available\r\n");
+    if (!(network_status & NETWORK_STATUS_WIFI_AUTO))
+      at_wifi_puts("WiFi not available\r\n");
     return false;
   }
 
   if (!(network_status & NETWORK_STATUS_TCPIP_INIT)) {
     debugf("Ignoring WiFi command since TCP stack is not initialized");
-    at_wifi_puts("TCPIP not available\r\n");
+    if (!(network_status & NETWORK_STATUS_WIFI_AUTO))
+      at_wifi_puts("TCPIP not available\r\n");
     return false;
   }
 
-  debugf("WiFI: connect to %s/%s", ssid, key);
+  debugf("WiFi: connect to '%s'", ssid);
   
-  at_wifi_puts("WiFI: Connecting...");
+  if (!(network_status & NETWORK_STATUS_WIFI_AUTO))
+    at_wifi_puts("WiFI: Connecting...");
   if(wifi_ssid) free(wifi_ssid);
   if(wifi_key) free(wifi_key);
 
@@ -1878,16 +1970,22 @@ bool mcu_hw_wifi_connect(char *ssid, char *key) {
   s_retry_num = 0;
   if (0 != wifi_mgmr_sta_quickconnect(wifi_ssid, wifi_key, 0, 0)) {
     debugf("\r\nWiFI: STA failed!");
+    if (!(network_status & NETWORK_STATUS_WIFI_AUTO))
+      at_wifi_puts("\r\nWiFI: Connection failed!\r\n");
+    return false;
   } else {
     wait4event(4, 4);
     if (wifi_mgmr_sta_state_get() == 1 && (network_status & NETWORK_STATUS_HAS_ADDR)) {
       active_network_interface = NETWORK_INTERFACE_WIFI;
       network_status |= NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI | NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR;
-      at_wifi_puts("\r\nWiFI: Connected\r\n");
-      wifi_info();
+      if (!(network_status & NETWORK_STATUS_WIFI_AUTO)) {
+        at_wifi_puts("\r\nWiFI: Connected\r\n");
+        wifi_info();
+      }
     } else {
       debugf("\r\nWiFI: Connection failed!");
-      at_wifi_puts("\r\nWiFI: Connection failed!\r\n");
+      if (!(network_status & NETWORK_STATUS_WIFI_AUTO))
+        at_wifi_puts("\r\nWiFI: Connection failed!\r\n");
       network_status &= ~(NETWORK_STATUS_UP | NETWORK_STATUS_HAS_ADDR | NETWORK_STATUS_TCP_CONNECTED);
       if (active_network_interface == NETWORK_INTERFACE_WIFI)
         active_network_interface = NETWORK_INTERFACE_NONE;
