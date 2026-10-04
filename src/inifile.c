@@ -580,7 +580,9 @@ void inifile_config_read(void) {
 
   FIL fil;
   if(f_open(&fil, filename, FA_OPEN_EXISTING | FA_READ) == FR_OK) {
-    char buffer[64];
+    // a WPA key has up to 63 characters, PASS= and the key must fit,
+    // with room for spaces and a short comment
+    char buffer[128];
 
     ini_debugf("Settings file %s opened", filename);
     bool no_eol = false;
@@ -596,8 +598,8 @@ void inifile_config_read(void) {
 	
       } else {      
 	// check if line ends with newline. If not, then it's
-	// been truncated
-	if(strlen(buffer) && buffer[strlen(buffer)-1] != '\n')
+	// been truncated, unless it's the last line of the file
+	if(strlen(buffer) && buffer[strlen(buffer)-1] != '\n' && !f_eof(&fil))
 	  no_eol = true;
 	
 	// a truncated line may still be valid/usable if the truncated
