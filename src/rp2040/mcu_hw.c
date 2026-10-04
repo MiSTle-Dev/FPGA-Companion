@@ -731,7 +731,7 @@ static void ntp_setup(struct netif *netif) {
   if(inifile_config_has("ntp", "ip")) {
     for(int i=0;i<inifile_config_num_values("ntp", "ip");i++) {
       ip_addr_t sa;
-      ip_addr_set_ip4_u32(&sa, htonl(inifile_config_get_ip("ntp", "ip", i)));
+      ip_addr_set_ip4_u32(&sa, htonl(inifile_config_get_ip_n("ntp", "ip", 0, i)));
       sntp_setserver(i, &sa);
     }
   }

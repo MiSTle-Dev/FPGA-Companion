@@ -408,7 +408,7 @@ static struct config_value_s *inifile_config_get_value_n(char *section, char *na
   struct config_value_s *val = cfg->value;
   if(!val) return NULL;
 
-  while(n) {
+  while(n--) {
     val = val->next;
     if(!val) return NULL;
   }
