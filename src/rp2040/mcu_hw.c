@@ -1215,19 +1215,33 @@ bool mcu_hw_wifi_connect(__attribute__((unused)) char *ssid, __attribute__((unus
 static bool is_pico_w = false;
 #include "pico/cyw43_arch.h"
 
+// The LED hangs on the cyw43 chip, and writing it needs the cyw43 lock, which
+// other work can hold for a while. So the timer only sets the state, and the
+// cyw43 context writes it: the timer task never waits for that lock.
+static volatile bool led_state_w;   // the state the next write sets
+
+static void led_write_w(__attribute__((unused)) async_context_t *context,
+                        __attribute__((unused)) async_when_pending_worker_t *worker) {
+  cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state_w);   // runs in the cyw43 context
+}
+
+static async_when_pending_worker_t led_worker_w = { .do_work = led_write_w };
+
 static void led_timer_w(__attribute__((unused)) TimerHandle_t pxTimer) {
   static char state = 0;
   switch(inifile_option_get(INIFILE_OPTION_LED)) {
   case 0:    
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, state & 1);
+    led_state_w = state & 1;   // blink
     break;
   case 1:    
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+    led_state_w = 1;
     break;
   case 2:    
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+    led_state_w = 0;
     break;
   }
+  // never blocks, the write follows when the cyw43 context is free
+  async_context_set_work_pending(cyw43_arch_async_context(), &led_worker_w);
     
   state = !state;
 }
@@ -1254,6 +1268,8 @@ static void mcu_hw_wifi_init(void) {
 
   cyw43_wifi_pm(&cyw43_state, CYW43_PERFORMANCE_PM);
 
+  // the LED timer hands its writes to the cyw43 context, see led_timer_w()
+  async_context_add_when_pending_worker(cyw43_arch_async_context(), &led_worker_w);
   TimerHandle_t led_timer_handle =
     xTimerCreate("LED timer (W)", pdMS_TO_TICKS(200), pdTRUE,
 		 NULL, led_timer_w);
