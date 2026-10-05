@@ -195,6 +195,7 @@ static void mcu_hw_jtag_init(void);
 #include <hardware/bl616.h>
 
 #define MAX_REPORT_SIZE   8
+#define MAX_HID_REPORT_DESC_SIZE 128
 #define XBOX_REPORT_SIZE 20
 
 #define STATE_NONE      0 
@@ -338,7 +339,7 @@ static struct usb_config {
 
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t hid_buffer[CONFIG_USBHOST_MAX_HID_CLASS][MAX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XBOX_CLASS][XBOX_REPORT_SIZE];
-USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[CONFIG_USBHOST_MAX_HID_CLASS][128];
+USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[CONFIG_USBHOST_MAX_HID_CLASS][MAX_HID_REPORT_DESC_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
 
 uint8_t byteScaleAnalog(int16_t xbox_val)
@@ -845,7 +846,7 @@ void usbh_hid_run(struct usbh_hid *hid_class)
     usb_debugf("NEW HID %d", i);
     memset(&usb->hid_info[i].report, 0, sizeof(usb->hid_info[i].report));
 
-    int rep_desc = usbh_hid_get_report_descriptor(hid_class, report_desc[i], 1024);
+    int rep_desc = usbh_hid_get_report_descriptor(hid_class, report_desc[i], MAX_HID_REPORT_DESC_SIZE);
     if (rep_desc < 0)
     {
       usb_debugf("usbh_hid_get_report_descriptor issue");
@@ -907,7 +908,7 @@ void usbh_xbox_run(struct usbh_xbox *xbox_class) {
     usb->xbox_info[i].js_index = hid_allocate_joystick();
 
 #if 0   // don't try to read HID report descriptor as it's not used/parsed, anyway
-    uint16_t rep_desc = usbh_hid_get_report_descriptor(xbox_class, report_desc[i], 1024);
+  int rep_desc = usbh_hid_get_report_descriptor(xbox_class, report_desc[i], 1024);
     if (rep_desc < 0) {
       usb_debugf("usbh_hid_get_report_descriptor issue");
       usb->xbox_info[i].state = STATE_FAILED;
