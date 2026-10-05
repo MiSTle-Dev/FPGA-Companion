@@ -196,7 +196,7 @@ static void mcu_hw_jtag_init(void);
 #include <hardware/bl616.h>
 
 #define MAX_REPORT_SIZE   8
-#define MAX_HID_REPORT_DESC_SIZE 1024
+#define MAX_HID_REPORT_DESC_SIZE 128
 #define XBOX_REPORT_SIZE 20
 
 #define STATE_NONE      0 
@@ -907,6 +907,15 @@ void usbh_xbox_run(struct usbh_xbox *xbox_class) {
     usb->xbox_info[i].last_state_x = 0;
     usb->xbox_info[i].last_state_y = 0;
     usb->xbox_info[i].js_index = hid_allocate_joystick();
+
+#if 0   // don't try to read HID report descriptor as it's not used/parsed, anyway
+  int rep_desc = usbh_hid_get_report_descriptor(xbox_class, report_desc[i], 1024);
+    if (rep_desc < 0) {
+      usb_debugf("usbh_hid_get_report_descriptor issue");
+      usb->xbox_info[i].state = STATE_FAILED;
+      return;
+    }
+#endif
     
     usb->xbox_info[i].stop = 0;
     usb->xbox_info[i].state = STATE_DETECTED;
