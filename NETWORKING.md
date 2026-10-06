@@ -51,7 +51,6 @@ TIMEZONE=+2          ; UTC+2
 SSID=MYSSID
 PASS=MYPASSPHRASE
 ```
-Please enter a line break after the passphrase, otherwise it won't work!
 
 ## AT WiFi Interface
 
