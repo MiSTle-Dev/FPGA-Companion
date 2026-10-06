@@ -1195,6 +1195,15 @@ void tuh_cdc_umount_cb(uint8_t idx) {
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
+#ifdef ENABLE_WIFI
+  // Leave the access point before the restart (core switch, reset from the menu), else it
+  // still holds the association and drops the first authentication after the restart. The
+  // short wait lets the chip send the disassociation.
+  if((network_status & NETWORK_STATUS_WIFI) && (network_status & NETWORK_STATUS_UP)) {
+    cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
+    busy_wait_ms(50);
+  }
+#endif
   watchdog_reboot(0, 0, 10);
   while(1);
 }
