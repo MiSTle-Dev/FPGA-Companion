@@ -1314,10 +1314,6 @@ static void mn_board_init(void) {
     heap_len = ((size_t)&__HeapLimit - (size_t)&__HeapBase);
     mm_register_heap(MM_HEAP_OCRAM_0, "OCRAM", MM_ALLOCATOR_TLSF, &__HeapBase, heap_len);
     mm_register_heap(MM_HEAP_WRAM_0, "WRAM", MM_ALLOCATOR_TLSF, &_heap_wifi_start, (uintptr_t)&_heap_wifi_size);
-    const uint32_t heap_order[] = { MM_HEAP_WRAM_0, MM_HEAP_OCRAM_0 };
-    if (mm_heap_set_any_alloc_order(heap_order,
-                                   sizeof(heap_order) / sizeof(heap_order[0])) != 0)
-      debugf("Failed to configure heap allocation order");
 
     debugf("\r\ndynamic memory init success");
     debugf("ocram heap size: %d Kbyte",((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024);
@@ -1356,15 +1352,6 @@ static void mn_board_init(void) {
     debugf("===========================");
 }
 
-#if defined(DEBUG_USB_BOOT_ENUM) && !defined(CONFIG_CONSOLE_WO)
-void shell_task_runner(void *param)
-{
-  vTaskDelay(pdMS_TO_TICKS(5000));
-  shell_exe_cmd((unsigned char*)"lsusb -v\r\n", strlen("lsusb -v\r\n"));
-  vTaskDelay(pdMS_TO_TICKS(100));
-  vTaskDelete( NULL );
-}
-#endif
 
 void mcu_hw_init(void) {
   mn_board_init();
@@ -1426,9 +1413,6 @@ void mcu_hw_init(void) {
 #endif
   usb_host();
 
-#if defined(DEBUG_USB_BOOT_ENUM) && !defined(CONFIG_CONSOLE_WO)
-  xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
-#endif
 }
 
 void stop_hid(void) {
@@ -1652,7 +1636,6 @@ static char *wifi_key = NULL;
 static int s_retry_num = 0;
 static QueueHandle_t wifi_event_queue = NULL;
 static uint32_t wifi_reported_ip = 0;
-
 static void wifi_auto_connect_start_if_ready(void);
 
 static void wifi_auto_connect_task(void *param)
@@ -2975,9 +2958,17 @@ static void network_link_monitor(void *arg)
     struct netif *netif = (struct netif *)arg;
   enum network_interface interface = active_usb_network_interface;
   bool fallback_requested = false;
+  bool asix_status_monitor_started = false;
 
     while (active_network_netif == netif) {
       bool connected;
+
+      if (interface == NETWORK_INTERFACE_ASIX && asix_status_monitor_started &&
+          active_asix) {
+        int status = usbh_asix_get_connect_status(active_asix);
+        if (status < 0)
+          debugf("ASIX link status request failed: %d", status);
+      }
 
       if (interface == NETWORK_INTERFACE_RTL8152) {
         connected = active_rtl8152 &&
@@ -2988,6 +2979,8 @@ static void network_link_monitor(void *arg)
       }
 
       if (connected) {
+        if (interface == NETWORK_INTERFACE_ASIX)
+          asix_status_monitor_started = true;
         fallback_requested = false;
         if (active_network_interface != interface) {
           active_network_interface = interface;
