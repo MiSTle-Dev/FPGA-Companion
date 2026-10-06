@@ -1129,6 +1129,12 @@ extern uint32_t __HeapLimit;
 extern uint32_t _heap_wifi_start;
 extern uint32_t _heap_wifi_size;
 
+static const uint32_t any_alloc_order[] = {
+    MM_HEAP_OCRAM_0,
+    MM_HEAP_PSRAM_0,
+    MM_HEAP_WRAM_0,
+};
+
 extern void bl_show_flashinfo(void);
 extern void bl_show_log(void);
 extern void bl_show_component_version(void);
@@ -1317,6 +1323,8 @@ static void mn_board_init(void) {
 
     debugf("\r\ndynamic memory init success");
     debugf("ocram heap size: %d Kbyte",((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024);
+
+    mm_heap_set_any_alloc_order(any_alloc_order, sizeof(any_alloc_order) / sizeof(any_alloc_order[0]));
 
     /* boot info dump */
     bl_show_log();
