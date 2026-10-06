@@ -1246,6 +1246,17 @@ static void led_timer_w(__attribute__((unused)) TimerHandle_t pxTimer) {
   state = !state;
 }
 
+// Sets a 32-bit setting (iovar) of the WiFi chip: the name with its NUL, then the value
+// in little endian.
+static int wifi_set_iovar_u32(const char *name, uint32_t val) {
+  uint8_t buf[32];
+  size_t len = strlen(name) + 1;
+  if(len + 4 > sizeof(buf)) return -1;
+  memcpy(buf, name, len);
+  for(int i=0;i<4;i++) buf[len+i] = (val >> (8*i)) & 0xff;
+  return cyw43_ioctl(&cyw43_state, CYW43_IOCTL_SET_VAR, len + 4, buf, CYW43_ITF_STA);
+}
+
 static void mcu_hw_wifi_init(void) {
 #ifdef PICO_RP2350
   debugf("Detected Pico2-W");
@@ -1267,6 +1278,12 @@ static void mcu_hw_wifi_init(void) {
   debugf("STA mode enabled");
 
   cyw43_wifi_pm(&cyw43_state, CYW43_PERFORMANCE_PM);
+
+  // After a reset the access point may still hold the old association. Some (seen on a
+  // Qualcomm based one) then drop the first authentication while they clear it. Phones send
+  // it again within 200 ms. The chip does the same once it may retry the join (default 0).
+  if(wifi_set_iovar_u32("assoc_retry_max", 3))
+    debugf("WiFi: assoc_retry_max not set");
 
   // the LED timer hands its writes to the cyw43 context, see led_timer_w()
   async_context_add_when_pending_worker(cyw43_arch_async_context(), &led_worker_w);
@@ -1397,6 +1414,52 @@ void mcu_hw_wifi_scan(void) {
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
+// Joins and waits for the link, a replacement for cyw43_arch_wifi_connect_timeout_ms().
+// When the chip retries a failed authentication (assoc_retry_max), the driver reports the
+// failure for a few milliseconds before the retry succeeds, and the SDK function takes that
+// as final. Here a failure counts only once it has held for a second. Returns PICO_OK or a
+// PICO_ERROR_* code like the SDK function.
+static int wifi_join(const char *ssid, const char *key, uint32_t timeout_ms) {
+  // start the join, the chip and the driver work on it in the background
+  int err = cyw43_arch_wifi_connect_async(ssid, key, CYW43_AUTH_WPA2_AES_PSK);
+  if(err) return err;
+
+  TickType_t start = xTaskGetTickCount(), fail_since = 0;
+  bool failing = false;            // the link status has been negative since fail_since
+  for(;;) {
+    // the driver's view of the join, polled every 10 ms
+    int status = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
+    TickType_t now = xTaskGetTickCount();
+
+    // joined, keys exchanged and an IP address from DHCP: done
+    if(status == CYW43_LINK_UP)
+      return PICO_OK;
+
+    if(status == CYW43_LINK_NONET) {
+      // no access point with this SSID found (out of range or not up yet): start the
+      // join again, as the SDK function does
+      failing = false;
+      err = cyw43_arch_wifi_connect_async(ssid, key, CYW43_AUTH_WPA2_AES_PSK);
+      if(err) return err;
+    } else if(status < 0) {
+      // BADAUTH or FAIL. After an unanswered authentication the driver shows BADAUTH while
+      // the chip already sends the authentication again, and a good answer turns the state
+      // back to joining. Only a failure that lasts for a second is final, e.g. FAIL once
+      // the chip has given up.
+      if(!failing) { failing = true; fail_since = now; }
+      else if(now - fail_since >= pdMS_TO_TICKS(1000))
+        return status == CYW43_LINK_BADAUTH ? PICO_ERROR_BADAUTH : PICO_ERROR_CONNECT_FAILED;
+    } else
+      failing = false;             // still joining, or joined and waiting for DHCP
+
+    // no link within the time limit, e.g. a wrong key: the driver keeps joining and
+    // reports no failure state for that
+    if(now - start >= pdMS_TO_TICKS(timeout_ms))
+      return PICO_ERROR_TIMEOUT;
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
 bool mcu_hw_wifi_connect(char *ssid, char *key) {
   if(!wifi_available()) return false;
 
@@ -1405,7 +1468,11 @@ bool mcu_hw_wifi_connect(char *ssid, char *key) {
   if(!(network_status & NETWORK_STATUS_WIFI_AUTO))
     at_wifi_puts("Connecting...");
   
-  if(cyw43_arch_wifi_connect_timeout_ms(ssid, key, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
+  int err = wifi_join(ssid, key, 30000);
+  if(err) {
+    debugf("WiFI: connect failed, error %d", err);
+    // the chip keeps rejoining in the background otherwise (wrong key: every few seconds)
+    cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
     if(!(network_status & NETWORK_STATUS_WIFI_AUTO))
       at_wifi_puts("\r\nConnection failed!\r\n");
 
