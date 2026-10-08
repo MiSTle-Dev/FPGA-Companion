@@ -195,8 +195,8 @@ static void mcu_hw_jtag_init(void);
 #include <queue.h>
 #include <hardware/bl616.h>
 
-#define MAX_REPORT_SIZE   8
-#define MAX_HID_REPORT_DESC_SIZE 128
+#define MAX_REPORT_SIZE   256
+#define MAX_HID_REPORT_DESC_SIZE 2048
 #define XBOX_REPORT_SIZE 20
 
 #define STATE_NONE      0 
@@ -326,6 +326,10 @@ static struct usb_config {
     uint8_t *buffer;
     int nbytes;
     hid_report_t report;
+    struct usbh_hid_report_info cherry_report;
+    uint16_t input_report_size;
+    bool report_ids_present;
+    bool use_cherry_keyboard;
     struct usb_config *usb;
     SemaphoreHandle_t sem;
     TaskHandle_t task_handle;
@@ -340,7 +344,9 @@ static struct usb_config {
 
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t hid_buffer[CONFIG_USBHOST_MAX_HID_CLASS][MAX_REPORT_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XBOX_CLASS][XBOX_REPORT_SIZE];
-USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[CONFIG_USBHOST_MAX_HID_CLASS][MAX_HID_REPORT_DESC_SIZE];
+// Report descriptors are fetched and parsed synchronously during enumeration,
+// so one scratch buffer can be reused by every HID interface.
+USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[MAX_HID_REPORT_DESC_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
 
 uint8_t byteScaleAnalog(int16_t xbox_val)
@@ -447,6 +453,186 @@ static void xbox_parse(struct xbox_info_S *xbox) {
   }
 }
 
+static bool usbh_hid_prepare_report_info(struct hid_info_S *hid)
+{
+  struct usbh_hid_report_info *report = &hid->cherry_report;
+  uint64_t max_report_bits = 0;
+
+  hid->report_ids_present = false;
+  hid->use_cherry_keyboard = false;
+  for (uint32_t i = 0; i < report->report_item_count; i++) {
+    struct usbh_hid_report_item *item = &report->report_items[i];
+    uint64_t bit_offset = 0;
+
+    if (item->attribute.report_id != 0)
+      hid->report_ids_present = true;
+
+    for (uint32_t j = 0; j < i; j++) {
+      const struct usbh_hid_report_item *previous = &report->report_items[j];
+      if (previous->report_type == item->report_type &&
+          previous->attribute.report_id == item->attribute.report_id) {
+        bit_offset += (uint64_t)previous->attribute.report_size *
+                      previous->attribute.report_count;
+      }
+    }
+
+    if (bit_offset > UINT32_MAX)
+      return false;
+    item->report_bit_offset = (uint32_t)bit_offset;
+
+    if (item->report_type != HID_REPORT_INPUT)
+      continue;
+
+    uint64_t item_end = bit_offset +
+                        (uint64_t)item->attribute.report_size *
+                        item->attribute.report_count;
+    if (item_end > max_report_bits)
+      max_report_bits = item_end;
+
+    if (!(item->report_flags & HID_MAINITEM_CONSTANT) &&
+        item->attribute.usage_page == 0x07)
+      hid->use_cherry_keyboard = true;
+  }
+
+  uint64_t report_size = (max_report_bits + 7) / 8;
+  if (hid->report_ids_present)
+    report_size++;
+  if (report_size == 0 || report_size > MAX_REPORT_SIZE)
+    return false;
+
+  hid->input_report_size = (uint16_t)report_size;
+  return true;
+}
+
+static bool usbh_hid_read_converted_value(
+    const struct usbh_hid_report_item *item, uint32_t scalar,
+    const uint8_t *bytes, uint32_t bytes_len, uint32_t element,
+    uint32_t *value)
+{
+  uint32_t width = item->attribute.report_size;
+  uint64_t first_bit = (uint64_t)element * width;
+
+  if (width == 0 || width > 32)
+    return false;
+
+  *value = 0;
+  for (uint32_t bit = 0; bit < width; bit++) {
+    uint64_t source_bit = first_bit + bit;
+    uint8_t set;
+
+    if (bytes) {
+      if (source_bit >= (uint64_t)bytes_len * 8)
+        return false;
+      set = (bytes[source_bit / 8] >> (source_bit % 8)) & 1;
+    } else {
+      if (source_bit >= 32)
+        return false;
+      set = (scalar >> source_bit) & 1;
+    }
+
+    *value |= (uint32_t)set << bit;
+  }
+  return true;
+}
+
+static void usbh_hid_set_keyboard_usage(uint8_t *modifiers, uint8_t *keys,
+                                        uint16_t usage)
+{
+  if (usage >= 0xe0 && usage <= 0xe7) {
+    *modifiers |= (uint8_t)(1U << (usage - 0xe0));
+  } else if (usage > 3 && usage <= UINT8_MAX) {
+    keys[usage / 8] |= (uint8_t)(1U << (usage % 8));
+  }
+}
+
+static bool usbh_hid_keyboard_report_parse(struct hid_info_S *hid,
+                                           const uint8_t *report_buf,
+                                           uint32_t report_len)
+{
+  uint8_t report_id = hid->report_ids_present ? report_buf[0] : 0;
+  uint8_t modifiers = 0;
+  uint8_t keys[32] = { 0 };
+  uint64_t required_bits = 0;
+  bool has_report = false;
+
+  for (uint32_t i = 0; i < hid->cherry_report.report_item_count; i++) {
+    const struct usbh_hid_report_item *item =
+        &hid->cherry_report.report_items[i];
+    if (item->report_type != HID_REPORT_INPUT ||
+        item->attribute.report_id != report_id)
+      continue;
+
+    has_report = true;
+    uint64_t item_end = (uint64_t)item->report_bit_offset +
+                        (uint64_t)item->attribute.report_size *
+                        item->attribute.report_count;
+    if (item_end > required_bits)
+      required_bits = item_end;
+  }
+
+  if (!has_report)
+    return false;
+
+  uint64_t required_len = (required_bits + 7) / 8;
+  if (hid->report_ids_present)
+    required_len++;
+  if (report_len < required_len)
+    return false;
+
+  bool found_keyboard_data = false;
+  for (uint32_t i = 0; i < hid->cherry_report.report_item_count; i++) {
+    const struct usbh_hid_report_item *item =
+        &hid->cherry_report.report_items[i];
+    if (item->report_type != HID_REPORT_INPUT ||
+        item->attribute.report_id != report_id ||
+        (item->report_flags & HID_MAINITEM_CONSTANT) ||
+        item->attribute.usage_page != 0x07)
+      continue;
+
+    uint32_t scalar = 0;
+    uint8_t *bytes = NULL;
+    uint32_t bytes_len = 0;
+    int ret = usbh_hid_report_convert((struct usbh_hid_report_item *)item,
+                                      report_buf, &scalar, &bytes,
+                                      &bytes_len);
+    if (ret < 0)
+      return false;
+
+    found_keyboard_data = true;
+    bool variable = (item->report_flags & HID_MAINITEM_VARIABLE) != 0;
+    for (uint32_t element = 0;
+         element < item->attribute.report_count; element++) {
+      uint32_t value;
+      if (!usbh_hid_read_converted_value(item, scalar, bytes, bytes_len,
+                                         element, &value))
+        return false;
+      if (value == 0)
+        continue;
+
+      if (variable) {
+        uint16_t usage_min = item->attribute.usage_min;
+        uint16_t usage_max = item->attribute.usage_max;
+        if (usage_min > usage_max || usage_min == UINT16_MAX)
+          continue;
+        uint32_t usage_count = (uint32_t)usage_max - usage_min + 1;
+        uint16_t usage = usage_min +
+                         (element < usage_count ? element : usage_count - 1);
+        usbh_hid_set_keyboard_usage(&modifiers, keys, usage);
+      } else {
+        if (value <= 3)
+          return false;
+        usbh_hid_set_keyboard_usage(&modifiers, keys, (uint16_t)value);
+      }
+    }
+  }
+
+  if (!found_keyboard_data)
+    return false;
+
+  kbd_parse_usage_state(&hid->hid_state.kbd, modifiers, keys);
+  return true;
+}
+
 // each HID client gets itws own thread which submits urbs
 // and waits for the interrupt to succeed
 static void usbh_hid_client_thread(void *argument) {
@@ -496,7 +682,15 @@ static void usbh_hid_client_thread(void *argument) {
     }
   }
 
-  size_t len = hid->report.report_size + (hid->report.report_id_present ? 1 : 0);
+  size_t len = hid->use_cherry_keyboard ? hid->input_report_size :
+      hid->report.report_size + (hid->report.report_id_present ? 1 : 0);
+  if (len == 0 || len > sizeof(hid_buffer[0])) {
+    usb_debugf("HID client #%d: input report too large (%u bytes)",
+               hid->index, (unsigned int)len);
+    hid->task_handle = NULL;
+    vTaskDelete(NULL);
+    return;
+  }
 
   uint32_t hid_interval_ms;
   if (hid->class->hport->speed == USB_SPEED_HIGH) {
@@ -577,7 +771,10 @@ static void usbh_hid_client_thread(void *argument) {
       break;
 
     if (hid->nbytes > 0) {
-      hid_parse(&hid->report, &hid->hid_state, hid->buffer, hid->nbytes);
+      if (hid->use_cherry_keyboard)
+        usbh_hid_keyboard_report_parse(hid, hid->buffer, hid->nbytes);
+      else
+        hid_parse(&hid->report, &hid->hid_state, hid->buffer, hid->nbytes);
     }
 
     hid->nbytes = 0;
@@ -847,7 +1044,15 @@ void usbh_hid_run(struct usbh_hid *hid_class)
     usb_debugf("NEW HID %d", i);
     memset(&usb->hid_info[i].report, 0, sizeof(usb->hid_info[i].report));
 
-    int rep_desc = usbh_hid_get_report_descriptor(hid_class, report_desc[i], MAX_HID_REPORT_DESC_SIZE);
+    if (hid_class->report_size > sizeof(report_desc)) {
+      usb_debugf("HID report descriptor too large (%u bytes)",
+                 hid_class->report_size);
+      usb->hid_info[i].state = STATE_FAILED;
+      return;
+    }
+
+    int rep_desc = usbh_hid_get_report_descriptor(
+      hid_class, report_desc, hid_class->report_size);
     if (rep_desc < 0)
     {
       usb_debugf("usbh_hid_get_report_descriptor issue");
@@ -860,10 +1065,28 @@ void usbh_hid_run(struct usbh_hid *hid_class)
     fix_report_descriptor(hid_class->hport->device_desc.idVendor,
 			  hid_class->hport->device_desc.idProduct,
 			  hid_class->hport->device_desc.bcdDevice,
-			  report_desc[i], (uint16_t)rep_desc);
+              report_desc, hid_class->report_size);
+
+    bool project_report_parsed = parse_report_descriptor(
+    report_desc, hid_class->report_size,
+        &usb->hid_info[i].report, NULL);
+    int cherry_parse_result = usbh_hid_parse_report_descriptor(
+    report_desc, hid_class->report_size,
+        &usb->hid_info[i].cherry_report);
+    if (cherry_parse_result == 0 &&
+        usbh_hid_prepare_report_info(&usb->hid_info[i])) {
+      if (usb->hid_info[i].use_cherry_keyboard)
+        usb->hid_info[i].report.type = REPORT_TYPE_KEYBOARD;
+    }
   
-    if (!parse_report_descriptor(report_desc[i], (uint16_t)rep_desc, &usb->hid_info[i].report, NULL))
-    {
+    if (!usb->hid_info[i].use_cherry_keyboard && !project_report_parsed) {
+      usb->hid_info[i].state = STATE_FAILED;
+      return;
+    }
+
+    if (usb->hid_info[i].report.type == REPORT_TYPE_KEYBOARD &&
+        !usb->hid_info[i].use_cherry_keyboard) {
+      usb_debugf("HID keyboard report descriptor is unsupported");
       usb->hid_info[i].state = STATE_FAILED;
       return;
     }
@@ -909,7 +1132,7 @@ void usbh_xbox_run(struct usbh_xbox *xbox_class) {
     usb->xbox_info[i].js_index = hid_allocate_joystick();
 
 #if 0   // don't try to read HID report descriptor as it's not used/parsed, anyway
-  int rep_desc = usbh_hid_get_report_descriptor(xbox_class, report_desc[i], 1024);
+  int rep_desc = usbh_hid_get_report_descriptor(xbox_class, report_desc, 1024);
     if (rep_desc < 0) {
       usb_debugf("usbh_hid_get_report_descriptor issue");
       usb->xbox_info[i].state = STATE_FAILED;
