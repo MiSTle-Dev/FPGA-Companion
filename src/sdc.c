@@ -60,6 +60,8 @@ static void sdc_spi_begin(void) {
 #define SDC_BUSY_TIMEOUT_MS   1000
 #define SDC_READY_TIMEOUT_MS  500
 #define SDC_CORE_RW_TIMEOUT_MS 1000
+// a write may take the card ~1s (fpga busy timeout) plus a card re-init after a failure
+#define SDC_WRITE_TIMEOUT_MS  5000
 
 static LBA_t clst2sect(DWORD clst) {
   clst -= 2;
@@ -149,7 +151,7 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
   // and so a sector that never completes is reported instead of assumed ok
   t0 = xTaskGetTickCount();
   while(mcu_hw_spi_tx_u08(0)) {
-    if((xTaskGetTickCount() - t0) > pdMS_TO_TICKS(SDC_READY_TIMEOUT_MS)) {
+    if((xTaskGetTickCount() - t0) > pdMS_TO_TICKS(SDC_WRITE_TIMEOUT_MS)) {
       mcu_hw_spi_end();
       sdc_debugf("SDC: write timeout on sector %lu", sector);
       return -1;
@@ -158,6 +160,15 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
 
   mcu_hw_spi_end();
 
+// the fpga reports a failed write in bit 0 of the status byte
+sdc_spi_begin();
+mcu_hw_spi_tx_u08(SPI_SDC_STATUS);
+status = mcu_hw_spi_tx_u08(0);
+mcu_hw_spi_end();
+if(status & 0x01) {
+  sdc_debugf("SDC: write error on sector %lu", sector);
+  return -1;
+}
   return 0;
 }
 
