@@ -7,7 +7,9 @@
 #include "hidparser.h"
 
 struct hid_kbd_state_S {
-  unsigned char last_report[8];	
+  unsigned char last_report[8];
+  uint8_t modifiers;
+  uint8_t keys[32];
 };
 
 struct hid_mouse_state_S {
@@ -34,6 +36,8 @@ typedef union {
 
 void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* data, uint16_t len);
 
+void kbd_parse_usage_state(struct hid_kbd_state_S *state, uint8_t modifiers,
+                           const uint8_t keys[32]);
 void kbd_parse(const hid_report_t *report, struct hid_kbd_state_S *state, const unsigned char *buffer, int nbytes);
 void mouse_parse(const hid_report_t *report, struct hid_mouse_state_S *state, const unsigned char *buffer, int nbytes);
 void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *state, const unsigned char *buffer, int nbytes);
