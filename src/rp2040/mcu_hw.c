@@ -1267,17 +1267,12 @@ static void mcu_hw_wifi_init(void) {
 #endif
 
   // after a cold start com_task reads config.ini only once the FPGA
-  // is up, so wait for it before deciding whether to connect
-  {
-    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(20000);
-    bool waited = false;
-    while(!inifile_config_is_read() && xTaskGetTickCount() < deadline) {
-      if(!waited) { debugf("WiFi: waiting for the configuration from the card"); waited = true; }
-      vTaskDelay(pdMS_TO_TICKS(250));
-    }
-    if(waited)
-      debugf("WiFi: configuration %s",
-             inifile_config_is_read() ? "is available" : "did not arrive, deadline expired");
+  // is up, so wait for it before deciding whether to connect. Without
+  // an FPGA it waits until com_task detects one and restarts
+  if(!inifile_config_is_read()) {
+    debugf("WiFi: waiting for the configuration from the card");
+    inifile_config_wait();
+    debugf("WiFi: configuration is available");
   }
 
   // connect to wifi immediately if configured through config file

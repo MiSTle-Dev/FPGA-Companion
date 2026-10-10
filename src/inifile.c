@@ -12,6 +12,14 @@
 #include "config.h"
 #include "debug.h"
 
+#ifdef ESP_PLATFORM
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#else
+#include <FreeRTOS.h>
+#include <task.h>
+#endif
+
 static int iswhite(char c) {
   return c == ' ' || c == '\r' || c == '\n' || c == '\t';
 }
@@ -567,6 +575,7 @@ static void inifile_config_parse_line(char *line) {
   
 // read the system config.ini
 static bool config_read_done = false;
+static TaskHandle_t config_waiter = NULL;  // task blocked in inifile_config_wait()
 
 void inifile_config_read(void) {
   ini_debugf("inifile_config_read()");
@@ -634,10 +643,28 @@ void inifile_config_read(void) {
 
   inifile_config_dump();
 
-  // also set when there was no config.ini
+  // also set when there was no config.ini. The scheduler is suspended around
+  // flag and waiter, so inifile_config_wait() cannot miss the wakeup
+  vTaskSuspendAll();
   config_read_done = true;
+  TaskHandle_t waiter = config_waiter;
+  xTaskResumeAll();
+  if(waiter) xTaskNotifyGive(waiter);
 }
 
 bool inifile_config_is_read(void) {
   return config_read_done;
+}
+
+void inifile_config_wait(void) {
+  for(;;) {
+    vTaskSuspendAll();
+    bool done = config_read_done;
+    if(!done) config_waiter = xTaskGetCurrentTaskHandle();
+    xTaskResumeAll();
+    if(done) return;
+
+    // any other notification just leads to another check
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+  }
 }
