@@ -431,7 +431,9 @@ void bluetooth_init(void) {
   
   // turn on!
   hci_power_control(HCI_POWER_ON);
+}
 
+void bluetooth_run(void) {
   bt_debugf("entering main loop");
   
   // this loop will never terminate
