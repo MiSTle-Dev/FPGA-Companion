@@ -1483,8 +1483,28 @@ static int wifi_join(const char *ssid, const char *key, uint32_t timeout_ms) {
   }
 }
 
+// The cyw43 driver always starts DHCP on the STA interface. Apply the
+// [NETWORK] section of config.ini the same way netif_up() does for usb ethernet.
+static void wifi_apply_network_config(void) {
+  if(inifile_config_get_int("network", "mode", 1) == 1) return;  // dhcp (default)
+
+  ip_addr_t ipaddr, netmask, gw;
+  ip_addr_set_ip4_u32(&ipaddr, htonl(inifile_config_get_ip("network", "ip", 0xc0a80002)));
+  ip_addr_set_ip4_u32(&netmask, htonl(inifile_config_get_ip("network", "mask", 0xffffff00)));
+  ip_addr_set_ip4_u32(&gw, htonl(inifile_config_get_ip("network", "gw", 0xc0a80001)));
+
+  struct netif *netif = &cyw43_state.netif[CYW43_ITF_STA];
+  cyw43_arch_lwip_begin();
+  dhcp_stop(netif);
+  netif_set_addr(netif, ip_2_ip4(&ipaddr), ip_2_ip4(&netmask), ip_2_ip4(&gw));
+  cyw43_arch_lwip_end();
+  debugf("WiFi: static ip %s", ip4addr_ntoa(netif_ip4_addr(netif)));
+}
+
 bool mcu_hw_wifi_connect(char *ssid, char *key) {
   if(!wifi_available()) return false;
+
+  wifi_apply_network_config();
 
   debugf("WiFI: connect to %s/%s", ssid, key);
   
