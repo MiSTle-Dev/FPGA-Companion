@@ -506,16 +506,6 @@ static char *menuentry_get_label(config_menu_entry_t *entry) {
   
   return NULL;
 }
-
-static int menu_get_list_length(config_menu_entry_t *entry) {
-  int len = 0;
-  config_listentry_t *le = entry->list->listentries;
-  while(le) {
-    len++;
-    le = le->next;
-  }
-  return len;
-}
   
 static char *menu_get_listentry(config_menu_entry_t *entry, int value) {
   if(!entry || entry->type != CONFIG_MENU_ENTRY_LIST) return NULL;
@@ -1033,11 +1023,14 @@ static void menu_select(void) {
     break;
 
   case CONFIG_MENU_ENTRY_LIST: {
-    // user has choosen a selection list
-    int value = menu_variable_get(entry->list->id) + 1;
-    int list_length = menu_get_list_length(entry);
-    if(value >= list_length) value = 0;    
-    menu_variable_set(entry->list->id, value);
+    // user has choosen a selection list: go to the next entry in list
+    // order and back to the first one after the last. The values need not
+    // be 0..n-1, e.g. DIP switch settings like 3, 2, 1
+    config_listentry_t *le = entry->list->listentries;
+    int value = menu_variable_get(entry->list->id);
+    while(le && le->value != value) le = le->next;
+    le = (le && le->next) ? le->next : entry->list->listentries;
+    if(le) menu_variable_set(entry->list->id, le->value);
 
     // check if there's an action connected to changing this
     // list. This e.g. happens when changing system settings is
