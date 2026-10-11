@@ -42,6 +42,7 @@ MODE=manual          ; manual or dhcp
 IP=192.168.0.12
 MASK=255.255.255.0
 GW=192.168.0.1
+DNS=192.168.0.1      ; name server, only with MODE=manual
 
 [NTP]
 IP=192.53.103.108,192.53.103.104,192.53.103.103
