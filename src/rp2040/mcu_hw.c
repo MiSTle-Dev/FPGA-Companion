@@ -721,6 +721,8 @@ static void netif_link_callback(struct netif *netif) {
   }
 }
 
+#define SNTP_FALLBACK_SERVER "pool.ntp.org"
+
 static void ntp_setup(struct netif *netif) {  
   if(!(network_status & NETWORK_STATUS_SNTP_STARTED)) {
     sntp_init();
@@ -740,6 +742,11 @@ static void ntp_setup(struct netif *netif) {
   // and if the interface is ppp as that cannot use dhcp
   if(!netif || netif->name[0] != 'p' || netif->name[1] != 'p') 
     sntp_servermode_dhcp(!inifile_config_has("ntp", "ip"));
+
+  // neither config.ini nor DHCP named a server: use the public pool. A server
+  // from DHCP later replaces it.
+  if(ip_addr_isany(sntp_getserver(0)) && sntp_getservername(0) == NULL)
+    sntp_setservername(0, SNTP_FALLBACK_SERVER);
 }
 
 // this is actually called by axis _and_ the wifi
