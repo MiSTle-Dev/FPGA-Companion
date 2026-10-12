@@ -72,8 +72,10 @@
 #define LWIP_DHCP_DOES_ACD_CHECK    0
 
 // enable PPP for wireless via esp32
+#if MISTLE_BOARD == 6
 #define PPP_SUPPORT                 1
 #define PPPOS_SUPPORT               1
+#endif
 
 #define LWIP_DHCP_GET_NTP_SRV       1
 #define LWIP_DHCP_MAX_NTP_SERVERS   2

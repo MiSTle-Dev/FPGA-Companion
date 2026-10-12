@@ -22,7 +22,7 @@
 #endif
 
 #define TELNET_PORT     23
-#define TEE_BUF_LEN     2048
+#define TEE_BUF_LEN     1024
 #define SHELL_COMMAND_LEN 256
 #define TELNETD_STACK_WORDS 768
 
