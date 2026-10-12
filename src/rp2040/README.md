@@ -81,7 +81,7 @@ git clone https://github.com/MiSTle-Dev/FPGA-Companion.git  --recursive
 cd FPGA-Companion
 ```
 
-Alternally do a
+Alternatively do a
 
 ```bash
 git submodule update --init
