@@ -1781,6 +1781,26 @@ static void network_get_static_ipv4(ip4_addr_t *ipaddr, ip4_addr_t *netmask,
                    htonl(inifile_config_get_ip("network", "gw", 0xc0a80001)));
 }
 
+static void network_set_static_dns_callback(void *arg)
+{
+  (void)arg;
+
+  ip_addr_t dns;
+  ip_addr_set_ip4_u32(&dns,
+                      htonl(inifile_config_get_ip("network", "dns", 0)));
+  dns_setserver(0, &dns);
+}
+
+static void network_apply_static_dns(void)
+{
+  if (!inifile_config_has("network", "dns"))
+    return;
+
+  if (tcpip_callback_with_block(network_set_static_dns_callback, NULL, 1) !=
+      ERR_OK)
+    debugf("Failed to apply static DNS configuration");
+}
+
 static void network_apply_static_ipv4(struct netif *netif)
 {
   ip4_addr_t ipaddr, netmask, gateway;
@@ -1789,6 +1809,8 @@ static void network_apply_static_ipv4(struct netif *netif)
     debugf("Failed to apply static network configuration");
     return;
   }
+
+  network_apply_static_dns();
 
   if (!(network_status & NETWORK_STATUS_HAS_ADDR))
     menu_notify_ip(ip4addr_ntoa(&ipaddr));
@@ -2033,6 +2055,7 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
       ip4_addr_t ipaddr, netmask, gateway;
       network_get_static_ipv4(&ipaddr, &netmask, &gateway);
       if (wifi_mgmr_sta_ip_set(ipaddr.addr, netmask.addr, gateway.addr, 0) == 0) {
+        network_apply_static_dns();
         wifi_got_ip(&ipaddr, true);
         static_ip_applied = true;
       } else {
@@ -3082,7 +3105,6 @@ static void usbh_lwip_netif_link_callback(struct netif *netif)
   if (netif_is_link_up(netif)) {
     network_status |= NETWORK_STATUS_UP;
     if (network_uses_dhcp()) {
-      dhcp_start(netif);
       if (dhcp_handle)
         xTimerStart(dhcp_handle, 0);
     } else {
