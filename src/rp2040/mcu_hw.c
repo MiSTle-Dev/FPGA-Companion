@@ -58,6 +58,10 @@
 #warning "Building for GW3A/GW5A DEV 25K"
 #include "../jtag.h"
 #include "pio_jtag.h"
+#elif MISTLE_BOARD == 7
+#warning "Building for MiSTeryShieldPico2_TN20k"
+#include "../jtag.h"
+#include "pio_jtag.h"
 #else
 #error "Not a supported MiSTle board!"
 #endif
@@ -73,7 +77,7 @@
 #define PIN_nCFG      21   // pin 32, PIO21
 #define PIN_MODE0     23   // pin 35, PIO23
 #define PIN_MODE1     24   /* pin 36, PIO24 */
-#elif MISTLE_BOARD == 5
+#elif MISTLE_BOARD == 5 || MISTLE_BOARD == 7
 // FPGA JTAG pins
 #define PIN_JTAG_TDI  12   // pin 15, gpio 12
 #define PIN_JTAG_TMS  13   // pin 16, gpio 13
@@ -194,7 +198,7 @@ static void pio_usb_task(__attribute__((unused)) void *parms) {
   while(1) {
     for(int i=0;i<100;i++) {
       tuh_task();
-#if (MISTLE_BOARD == 2) || (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5) || (MISTLE_BOARD == 6)
+#if (MISTLE_BOARD == 2) || (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5) || (MISTLE_BOARD == 6) || (MISTLE_BOARD == 7)
       tud_task();
       usb_jtag_poll();
 #endif
@@ -2408,7 +2412,7 @@ void mcu_hw_init(void) {
   };
   tusb_init(BOARD_TUH_RHPORT, &host_init);
   
-#if (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5) || (MISTLE_BOARD == 6)
+#if (MISTLE_BOARD == 4) || (MISTLE_BOARD == 5) || (MISTLE_BOARD == 6) || (MISTLE_BOARD == 7)
   tusb_rhport_init_t dev_init = {
     .role = TUSB_ROLE_DEVICE,
     .speed = TUSB_SPEED_AUTO
