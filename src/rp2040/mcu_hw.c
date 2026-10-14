@@ -1375,22 +1375,28 @@ static mcu_hw_wifi_scan_cb_func wifi_scan_cb = NULL;
 static int scan_result(__attribute__((unused)) void *env, const cyw43_ev_scan_result_t *result) {
   if (result) {
     char str[74];
+    // the ssid comes with its length and is not terminated when it
+    // fills all 32 bytes
+    int ssid_len = result->ssid_len < sizeof(result->ssid) ?
+      result->ssid_len : sizeof(result->ssid);
     
-    debugf("ssid: %s rssi: %d chan: %d sec: %u",
-	   result->ssid, result->rssi, result->channel,
+    debugf("ssid: %.*s rssi: %d chan: %d sec: %u",
+	   ssid_len, result->ssid, result->rssi, result->channel,
 	   result->auth_mode);
 
     if(wifi_scan_cb) {
       // allocate reply. It's up to the callee to free this
       mcu_hw_scan_result_t *res = pvPortMalloc(sizeof(mcu_hw_scan_result_t));
-      char *ssid = pvPortMalloc(sizeof(strlen(result->ssid)+1));
-      strcpy(ssid, result->ssid);
+      char *ssid = pvPortMalloc(ssid_len+1);
+      memcpy(ssid, result->ssid, ssid_len);
+      ssid[ssid_len] = '\0';
       res->ssid = ssid;
+      res->next = NULL;
 			       
       wifi_scan_cb(res);
     } else {     
-      snprintf(str, sizeof(str), "SSID %s, RSSI %d, CH %d, %s\r\n",
-	       result->ssid, result->rssi, result->channel,
+      snprintf(str, sizeof(str), "SSID %.*s, RSSI %d, CH %d, %s\r\n",
+	       ssid_len, result->ssid, result->rssi, result->channel,
 	       auth_mode_str(result->auth_mode));
       
       at_wifi_puts(str);
