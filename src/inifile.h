@@ -13,7 +13,7 @@
 
 // handle the core specific ini file
 int inifile_read(char *);
-void inifile_write(char *);
+int inifile_write(char *);   // 0 = written, -1 = failed
 int inifile_option_get(int id);
 
 // handle the global ini file (config.ini)

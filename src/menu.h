@@ -52,5 +52,6 @@ void menu_notify_network_disconnected(void);
 void menu_joystick_state(unsigned char state);
 void menu_button_state(unsigned char state);
 void menu_run_current_image_action(void);
+void menu_draw_dialog(const char *title, const char *msg);
 
 #endif // MENU_H

@@ -248,6 +248,11 @@ static SDC_RESULT sdc_ioctl(BYTE cmd, void *buff) {
   sdc_debugf("sdc_ioctl(%d,%p)", cmd, buff);
 
   switch(cmd) {
+  case CTRL_SYNC:
+    // sdc_write_sector() returns only once the FPGA reports the sector written,
+    // so there is never a pending write to wait for
+    return RES_OK;
+
   case GET_SECTOR_SIZE:
     *((WORD*) buff) = 512;
     return RES_OK;

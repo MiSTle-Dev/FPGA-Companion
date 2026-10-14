@@ -174,10 +174,11 @@ int inifile_read(char *name) {
   return 0;
 }
 
-void inifile_write(char *name) {
+// returns 0 when the file was written, -1 otherwise, so the OSD can report it
+int inifile_write(char *name) {
   if(!name) {
     ini_debugf("Unable to write core specific setting as no core has been identified");
-    return;
+    return -1;
   }
     
   char *filename = pvPortMalloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
@@ -189,9 +190,9 @@ void inifile_write(char *name) {
   
   sdc_lock();  // get exclusive access to the file system
   
-  // saving does not work, yet, as there is no SD card write support by now
+  int ok = 0;
   FIL file;
-  if(f_open(&file, filename, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {    
+  if(f_open(&file, filename, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
     f_puts("; FPGA Companion settings\n", &file);
 
     // write variable values
@@ -237,13 +238,15 @@ void inifile_write(char *name) {
     }
 
     f_puts("\n", &file);
-    
-    f_close(&file);  
+
+    ok = (f_error(&file) == 0);             // a line could not be written
+    if(f_close(&file) != FR_OK) ok = 0;     // the data only reaches the card here
   } else
     ini_debugf("Error opening file");
   
   vPortFree(filename);
   sdc_unlock();
+  return ok ? 0 : -1;
 }
 
 // --------------------------------------------------------------------

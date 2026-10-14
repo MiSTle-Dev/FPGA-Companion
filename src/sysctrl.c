@@ -406,7 +406,11 @@ void sys_run_action(config_action_t *action) {
       
     case CONFIG_ACTION_COMMAND_SAVE:
       sys_debugf("SAVE %s", command->filename);
-      inifile_write(command->filename);
+      // tell the user whether saving worked, it was silent before
+      if(inifile_write(command->filename) == 0)
+        menu_draw_dialog("Settings", "saved");
+      else
+        menu_draw_dialog("Settings", "save failed");
       break;
       
     case CONFIG_ACTION_COMMAND_HIDE:
