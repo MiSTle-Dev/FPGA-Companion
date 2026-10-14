@@ -100,6 +100,7 @@ mkdir build
 cd build
 cmake -DBOARD=PICO ..
 # for Pico OSD core loader use: cmake -DBOARD=MSP20K ..
+# for Pico2 OSD core loader use: cmake -DBOARD=MSP2_20K ..
 make
 ```
 

@@ -16,9 +16,9 @@
 #include <string.h>
 
 // If we are in a mistle firmware build environment (MISTLE_BOARD is set), then
-// the board needs to be 6 (the dev25k board using a rp2350)
+// the board needs to be 6 or 7 (the dev25k board using a rp2350)
 #ifdef MISTLE_BOARD
-#if MISTLE_BOARD != 6
+#if MISTLE_BOARD != 6 && MISTLE_BOARD != 7
 #error "PIO JTAG: Unsupported MiSTle board"
 #endif
 #endif
