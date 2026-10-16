@@ -169,6 +169,8 @@ static void port_line(char *command) {
 // Port implements an "AT" like interface to e.g. be used
 // to control a WiFi modem
 void at_wifi_port_byte(unsigned char byte) {
+  // the FPGA may deliver port bytes before at_wifi_init() created the queue
+  if(!rx_queue) return;
   xQueueSendToBack(rx_queue, &byte, ( TickType_t ) 10);
 }
 
