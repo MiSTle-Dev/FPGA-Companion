@@ -393,8 +393,8 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
       joy |= hat_dir;
     }
 
-    usb_debugf("HAT raw=%d norm=%d steps=%d dir=0x%02x%s",
-               hat_raw, v, steps, hat_dir, neutral ? " (neutral)" : "");
+    //usb_debugf("HAT raw=%d norm=%d steps=%d dir=0x%02x%s",    //TOO much output on  PS4's DS4
+    //           hat_raw, v, steps, hat_dir, neutral ? " (neutral)" : "");
   }
 
   if((joy != state->last_state) ||
@@ -405,7 +405,7 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
     state->last_state_x = ax;
     state->last_state_y = ay;
     state->last_state_btn_extra = btn_extra;
-    usb_debugf("JOY%d: D %02x X %02x Y %02x EB %02x", state->js_index, joy, ax, ay, btn_extra);
+    //usb_debugf("JOY%d: D %02x X %02x Y %02x EB %02x", state->js_index, joy, ax, ay, btn_extra); //TOO much on PS4's DS4
 
     joystick_push(state->js_index, joy, ax, ay, btn_extra);
   }
