@@ -2975,8 +2975,41 @@ delete:
 
 void usbh_msc_run(struct usbh_msc *msc_class)
 {
-  xTaskCreate(usbh_msc_thread, "usbh_msc", 2048, msc_class,
-              CONFIG_USBHOST_PSC_PRIO - 1, &usbh_msc_handle);
+  // short-lived task (scsi init + fatfs register), keep the stack small as the
+  // device may be enumerated while wifi/wpa is under heavy heap pressure
+  if (xTaskCreate(usbh_msc_thread, "usbh_msc", 1024, msc_class,
+                  CONFIG_USBHOST_PSC_PRIO - 1, &usbh_msc_handle) != pdPASS) {
+    usbh_msc_handle = NULL;
+    usb_debugf("usbh_msc: task creation failed\r\n");
+  }
+}
+
+volatile size_t xMallocFailedSize = 0;
+
+// overrides the SDK's weak hook to report the heap state before aborting
+void vApplicationMallocFailedHook(void)
+{
+  usb_debugf("vApplicationMallocFailedHook: request %u bytes, task %s\r\n",
+         (unsigned)xMallocFailedSize, pcTaskGetName(NULL));
+
+  for (uint32_t i = 0; i < CONFIG_MM_HEAP_COUNT; i++) {
+    mm_heap_t *heap = g_mem_manager.heaps[i];
+    if (!heap || !heap->is_active) continue;
+
+    const mm_allocator_t *allocator = g_mem_manager.allocators[heap->allocator_id];
+    if (!allocator || !allocator->get_usage_info) continue;
+
+    struct mm_usage_info usage;
+    uintptr_t flags = mm_lock_save();
+    allocator->get_usage_info(heap, &usage);
+    mm_unlock_restore(flags);
+
+    usb_debugf("  heap %u (%s): total %u, free %u, largest free block %u\r\n",
+           (unsigned)i, heap->name, (unsigned)usage.total_size,
+           (unsigned)usage.free_size, (unsigned)usage.max_free_size);
+  }
+
+  abort();
 }
 
 void usbh_msc_stop(struct usbh_msc *msc_class)

@@ -117,6 +117,16 @@ void vApplicationMallocFailedHook(void);
 void vAssertCalled(void);
 
 #include <stdio.h>
+#include <stddef.h>
+
+/* remember the size of a failed pvPortMalloc() for vApplicationMallocFailedHook() */
+extern volatile size_t xMallocFailedSize;
+#define traceMALLOC(pvAddress, uiSize)          \
+    do {                                        \
+        if ((pvAddress) == NULL) {              \
+            xMallocFailedSize = (uiSize);       \
+        }                                       \
+    } while (0)
 
 #define configASSERT(x)                        \
     if ((x) == 0) {                            \
