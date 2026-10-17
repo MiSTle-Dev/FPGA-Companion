@@ -107,6 +107,7 @@ typedef struct {
 // menu state is a stack since as the menu is hierarchical
 static menu_state_t *menu_state = NULL;
 static fsel_state_t fsel_state;
+// static const config_menu_entry_t system_menu_bluetooth;
 
 /* =========== handling of variables ============= */
 static menu_variable_t *variables = NULL;
@@ -1297,6 +1298,15 @@ void menu_init(void) {
   menu_setup_variables();
     
   menu_debugf("Processing init action");
+
+  #ifdef ENABLE_BLUETOOTH
+  config_menu_entry_t* last_entry = cfg->menu->entries;
+  while (last_entry->next != NULL) {
+    last_entry = last_entry->next;
+  }
+  last_entry->next = &system_menu_bluetooth;
+  #endif
+
   sys_run_action_by_name("init");
 
   menu_goto(cfg->menu);    
@@ -1562,7 +1572,7 @@ static const config_menu_entry_t system_menu_usb_core_fsel = {
   .next = (config_menu_entry_t*)&system_menu_sdc_core_fsel
 #else
 #ifdef ENABLE_BLUETOOTH
-  .next = (config_menu_entry_t*)&system_menu_bluetooth
+  .next = (config_menu_entry_t*) &system_menu_bluetooth
 #endif
 #endif
 };

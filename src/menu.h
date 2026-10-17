@@ -53,5 +53,6 @@ void menu_joystick_state(unsigned char state);
 void menu_button_state(unsigned char state);
 void menu_run_current_image_action(void);
 void menu_draw_dialog(const char *title, const char *msg);
+static const config_menu_entry_t system_menu_bluetooth;
 
 #endif // MENU_H
