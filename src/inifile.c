@@ -312,6 +312,9 @@ static const struct {
   // MENU/OSD
   { "MENU", "GAMEPAD_TRIGGER", CONFIG_TYPE_INT, NULL },
   
+  // JOYSTICK special buttons
+  { "HID", "GAMEPAD_LEAVEGAME", CONFIG_TYPE_INT, NULL}, //made for AGS typical keypresses to leave a game
+
   { NULL, NULL, 0, NULL }
 };
 

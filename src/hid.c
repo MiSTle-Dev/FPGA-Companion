@@ -199,36 +199,93 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
   mcu_hw_spi_end();
 }
 
-static void joystick_push(uint8_t index, uint8_t joy, uint8_t ax, uint8_t ay, uint8_t btn_extra) {    
-  // check if there's a gamepad menu button enabled in the config
-  if(inifile_config_has("menu", "gamepad_trigger")) {
-    int btn = inifile_config_get_int("menu", "gamepad_trigger", 0);
+// Optional gamepad button
+// Enabled by this entry in the config file:
+//   [hid]
+//   gamepad_leavegame = 8       ; DS4: 8 = Share, 9 = Options
+// One gamepad button ("GAMPAD_LEAVEGAME") that sends this whole set of keys at once
+static const uint8_t leavegame_keys[] = {
+  0x43,    // F10
+  0x4C,    // Delete
+};
+#define NUM_LEAVEGAME_KEYS ((int)sizeof(leavegame_keys))
 
-    // buttons 0..3 are encoded in the upper bits of 'joy', further
-    // 8 buttons are in btn_extra
+// config values used on the report hot path, read once instead of per report
+static struct {
+  bool valid;
+  int8_t menu_trigger;         // [menu] gamepad_trigger, -1 = disabled
+  int8_t leavegame_button;    // [hid] GAMPAD_LEAVEGAME, -1 = disabled
+} hid_cfg;
 
-    static bool last_detected = false;
-    bool detected = false;
-    if(btn < 4) {
-      if(joy & (1<<(btn+4)))
-	detected = true;      
-    } else if(btn < 12) {
-      if(btn_extra & (1<<(btn-4)))
-	detected = true;      
-    }
+static void hid_cfg_load(void) {
+  int v;
 
-    if(detected && !last_detected) {
+  v = inifile_config_has("menu", "gamepad_trigger") ?
+      inifile_config_get_int("menu", "gamepad_trigger", -1) : -1;
+  hid_cfg.menu_trigger = (v >= 0 && v < 12) ? v : -1;
+
+  v = inifile_config_has("hid", "GAMPAD_LEAVEGAME") ?
+      inifile_config_get_int("hid", "GAMPAD_LEAVEGAME", -1) : -1;
+  hid_cfg.leavegame_button = (v >= 0 && v < 32) ? v : -1;
+
+  hid_cfg.valid = true;
+}
+
+// menu state for up to two joysticks (more joysticks share slot 1)
+static uint8_t menu_joy[2];          // last 'joy' value of each pad
+static uint8_t menu_joy_merged;      // what the menu has been told last
+static bool    trigger_down[2];      // menu trigger button held, per pad
+static bool    leave_down[2];        // game leave keys held, per pad
+
+// buttons 0..3 are encoded in the upper bits of 'joy', further 8 buttons are in btn_extra
+static inline bool pad_button(int btn, uint8_t joy, uint8_t btn_extra) {
+  return (btn < 4) ? (joy & (1<<(btn+4))) != 0
+                   : (btn_extra & (1<<(btn-4))) != 0;
+}
+
+static void joystick_push(uint8_t index, uint8_t joy, uint8_t ax, uint8_t ay, uint8_t btn_extra) {
+  uint8_t slot = (index < 2) ? index : 1;
+
+  if(!hid_cfg.valid) hid_cfg_load();
+
+  // gamepad button that toggles the menu
+  if(hid_cfg.menu_trigger >= 0) {
+    bool detected = pad_button(hid_cfg.menu_trigger, joy, btn_extra);
+
+    if(detected && !trigger_down[slot]) {
       usb_debugf("menu trigger pressed");
       menu_notify(MENU_EVENT_TOGGLE);
     }
-
-    last_detected = detected;
+    trigger_down[slot] = detected;
   }
-      
+
+  // gamepad button that sends the "game leave" keys, regardless of the menu
+  if(hid_cfg.leavegame_button >= 0) {
+    bool detected = pad_button(hid_cfg.leavegame_button, joy, btn_extra);
+
+    if(detected != leave_down[slot]) {
+      hidp_debugf("detected game leave button");
+      leave_down[slot] = detected;
+      for(int i=0;i<NUM_LEAVEGAME_KEYS;i++) {
+	if(detected) kbd_tx_hid_ps2_make(leavegame_keys[i], 0);
+	else         kbd_tx_hid_ps2_break(leavegame_keys[i], 0);
+      }
+    }
+  }
+
   if(osd_is_visible()) {
-    // if OSD is visible, then process events locally
-    menu_joystick_state(joy);	      
+    // if OSD is visible, then process events locally. Both pads control the
+    // menu together and it is only told when the combined state changes.
+    menu_joy[slot] = joy;
+    uint8_t merged = menu_joy[0] | menu_joy[1];
+    if(merged != menu_joy_merged) {
+      menu_joy_merged = merged;
+      menu_joystick_state(merged);
+    }
   } else {
+    menu_joy[0] = menu_joy[1] = 0;
+    menu_joy_merged = 0;
+
     mcu_hw_spi_begin();
     mcu_hw_spi_tx_u08(SPI_TARGET_HID);
     mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
@@ -738,6 +795,8 @@ void parse_with_sdl_mapping(const hid_report_t *report,
 #undef READ_HAT_DIR
 }
 
+
+
 void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* data, uint16_t len) {
   //  usb_debugf("hid parse %d, expect %d", len, report->report_size);
   if(!len) return;
@@ -774,13 +833,14 @@ void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* da
       mouse_parse(report, &state->mouse, data, len);
     
     if(report->type == REPORT_TYPE_JOYSTICK) {
+
       if (report->map_found && report->map) {
         // use SDL
         parse_with_sdl_mapping(report, &state->joystick, data, len, report->map);
       }
       else {
         // fallback
-	joystick_parse(report, &state->joystick, data, len);
+	      joystick_parse(report, &state->joystick, data, len);
       }
     }
 
