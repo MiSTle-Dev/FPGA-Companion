@@ -83,6 +83,14 @@ typedef struct {
   config_action_t *action;
 } config_button_t;
 
+// selector for core specific ini files, e.g.
+// <cfgselector label="Config" ext="amiga.ini" default="amiga.ini"/>
+typedef struct {
+  char *label;
+  char *def;     // default ini, also stores the last selection
+  char **ext;    // only files ending in ".<ext>" (or being <ext>) are offered
+} config_cfgsel_t;
+
 typedef struct {
   char index;
   char *label;
@@ -117,6 +125,7 @@ typedef struct {
 #define CONFIG_MENU_ENTRY_IMAGE         5
 #define CONFIG_MENU_ENTRY_TOGGLE        6
 #define CONFIG_MENU_ENTRY_RANGE         7
+#define CONFIG_MENU_ENTRY_CFGSELECTOR   8
 
 typedef struct config_menu_entry_S {
   unsigned char type;
@@ -128,6 +137,7 @@ typedef struct config_menu_entry_S {
     config_image_t *image;
     config_toggle_t *toggle;
     config_range_t *range;
+    config_cfgsel_t *cfgsel;
   };  
   struct config_menu_entry_S *next;
 } config_menu_entry_t;

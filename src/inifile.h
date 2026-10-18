@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define INIFILE_OPTION_HOTKEY   0   // HID key code
 #define INIFILE_OPTION_LED      1   // 0 = blink, 1 = on, 0 = off
@@ -15,6 +16,10 @@
 int inifile_read(char *);
 int inifile_write(char *);   // 0 = written, -1 = failed
 int inifile_option_get(int id);
+
+// the ini selected through a <cfgselector> is stored in the default ini
+int inifile_selection_get(const char *def, char *buf, size_t size);  // 0 = def read, buf empty if none stored
+int inifile_selection_set(const char *def, const char *name);        // 0 = stored
 
 // handle the global ini file (config.ini)
 void inifile_config_read(void);

@@ -102,6 +102,9 @@ typedef struct {
   // by default this is "[X] No Disk"
   char *none_str;
   unsigned char *none_icn;
+
+  // set if this is the list of a <cfgselector> and not a file selector
+  const config_cfgsel_t *cfgsel;
 } fsel_state_t;
 
 // menu state is a stack since as the menu is hierarchical
@@ -230,6 +233,45 @@ void menu_set_value(unsigned char id, int8_t value) {
     menu_variable_set(id, value);
 }
 
+/* =========== config selector: the ini currently selected ============= */
+
+// name of the ini selected through the <cfgselector>. NULL means the default
+// ini. Only one cfgselector per core is supported.
+static char *cfgsel_current = NULL;
+
+static const char *menu_cfgsel_current(const config_cfgsel_t *sel) {
+  return cfgsel_current?cfgsel_current:sel->def;
+}
+
+static void menu_cfgsel_set_current(const char *name) {
+  char *n = pvPortMalloc(strlen(name)+1);
+  strcpy(n, name);
+  if(cfgsel_current) vPortFree(cfgsel_current);
+  cfgsel_current = n;
+}
+
+// "game.amiga.ini" -> "game". A name that is the extension alone stays as it is.
+static void menu_cfgsel_strip(char *name, char **exts) {
+  size_t nl = strlen(name);
+  for(int i=0;exts && exts[i];i++) {
+    size_t el = strlen(exts[i]);
+    if(el && nl > el+1 && !strcasecmp(name+nl-el, exts[i]) && name[nl-el-1] == '.') {
+      name[nl-el-1] = '\0';
+      return;
+    }
+  }
+}
+
+// What is shown for an ini: "game.amiga.ini" -> "game", the default ini ->
+// "Default Config". buf needs room for strlen(name)+1 characters, the result
+// is either buf or a constant string.
+static const char *menu_cfgsel_pretty(char *buf, const char *name, const config_cfgsel_t *sel) {
+  if(sel->def && strcasecmp(name, sel->def) == 0) return "Default Config";
+  strcpy(buf, name);
+  menu_cfgsel_strip(buf, sel->ext);
+  return buf;
+}
+
 // various 8x8 icons
 static const unsigned char icn_right_bits[]  = { 0x00,0x04,0x0c,0x1c,0x3c,0x1c,0x0c,0x04 };
 static const unsigned char icn_left_bits[]   = { 0x00,0x20,0x30,0x38,0x3c,0x38,0x30,0x20 };
@@ -283,7 +325,10 @@ static void menu_fs_scroll_entry(void) {
   int width = u8g2_GetDisplayWidth(&u8g2);
 
   // jump to the row'th entry in the dir listing
-  int swid = u8g2_GetStrWidth(&u8g2, dir_entry(menu_state->dir, row)->name) + 1;
+  const char *name = dir_entry(menu_state->dir, row)->name;
+  char pbuf[strlen(name)+1];
+  if(fsel_state.cfgsel) name = menu_cfgsel_pretty(pbuf, name, fsel_state.cfgsel);
+  int swid = u8g2_GetStrWidth(&u8g2, name) + 1;
 
   // fill the area where the scrolling entry would show
   u8g2_SetClipWindow(&u8g2, FS_ICON_WIDTH, y-MENU_ENTRY_BASE, width, y+MENU_ENTRY_H-MENU_ENTRY_BASE);  
@@ -295,7 +340,7 @@ static void menu_fs_scroll_entry(void) {
   if(scroll < 0) scroll = 0;
   if(scroll > swid-width+FS_ICON_WIDTH) scroll = swid-width+FS_ICON_WIDTH;
   
-  u8g2_DrawStr(&u8g2, FS_ICON_WIDTH-scroll, y, dir_entry(menu_state->dir, row)->name);
+  u8g2_DrawStr(&u8g2, FS_ICON_WIDTH-scroll, y, name);
   
   // restore previous draw mode
   u8g2_SetDrawColor(&u8g2, 1);
@@ -317,8 +362,11 @@ static void menu_fs_draw_entry(int row, sdc_dir_entry_t *entry) {
     if(fsel_state.none_str) u8g2_DrawStr(&u8g2, FS_ICON_WIDTH, y, fsel_state.none_str);
     else                    u8g2_DrawStr(&u8g2, FS_ICON_WIDTH, y, "No Disk");
   } else {
-    char str[strlen(entry->name)+1];
-    strcpy(str, entry->name);
+    const char *name = entry->name;
+    char pbuf[strlen(name)+1];
+    if(fsel_state.cfgsel) name = menu_cfgsel_pretty(pbuf, name, fsel_state.cfgsel);
+    char str[strlen(name)+1];
+    strcpy(str, name);
   
     // properly ellipsize string
     int dotlen = u8g2_GetStrWidth(&u8g2, "...");
@@ -503,6 +551,8 @@ static char *menuentry_get_label(config_menu_entry_t *entry) {
     return entry->toggle->label;
   if(entry->type == CONFIG_MENU_ENTRY_RANGE)
     return entry->range->label;
+  if(entry->type == CONFIG_MENU_ENTRY_CFGSELECTOR)
+    return entry->cfgsel->label;
   
   return NULL;
 }
@@ -562,6 +612,23 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected) 
 		 sdc_get_image_name(entry->fsel->index)?icn_floppy_bits:icn_empty_bits);
   }
   
+  else if(entry->type == CONFIG_MENU_ENTRY_CFGSELECTOR) {
+    // the current config is shown right aligned, like the value of a list
+    const char *cur = menu_cfgsel_current(entry->cfgsel);
+    if(cur) {
+      char pbuf[strlen(cur)+1];
+      const char *shown = menu_cfgsel_pretty(pbuf, cur, entry->cfgsel);
+      char str[strlen(shown)+1];
+      strcpy(str, shown);
+
+      // only the right half is available
+      while(strlen(str) > 1 && u8g2_GetStrWidth(&u8g2, str) + 1 > width/2)
+	str[strlen(str)-1] = '\0';
+      u8g2_DrawStr(&u8g2, width-u8g2_GetStrWidth(&u8g2, str)-1, ypos, str);
+    }
+    // the whole row is highlighted, hl_w stays at the full width
+  }
+
   else if(entry->type == CONFIG_MENU_ENTRY_TOGGLE) 
     u8g2_DrawXBM(&u8g2, hl_w-MENU_ENTRY_BASE, ypos-8, 8, 8,
 		 menu_variable_get(entry->toggle->id)?icn_on_bits:icn_off_bits);
@@ -771,6 +838,7 @@ void menu_goto(const config_menu_t *menu) {
 
 static void menu_file_selector_open(config_menu_entry_t *entry) {
   menu_debugf("menu_file_selector_open()");
+  fsel_state.cfgsel = NULL;
 
   // the file selector can either be opened from disk image file
   // selectors or from rom image selectors  
@@ -864,6 +932,149 @@ static void menu_pop(void) {
   vPortFree(m);
 }
 
+/* ============================================================================ */
+/* ============================ config selector =============================== */
+/* ============================================================================ */
+
+static void menu_cfgsel_open(config_menu_entry_t *entry) {
+  const config_cfgsel_t *sel = entry->cfgsel;
+  menu_debugf("menu_cfgsel_open()");
+
+  // only the ini files meant for this core are listed
+  sdc_dir_entry_t *dir = sdc_readdir_cfg(sel->ext);
+  if(!dir) {
+    menu_draw_dialog("Config", "No matching ini\nfiles found");
+    return;
+  }
+
+  // the list is drawn by the file selector code
+  fsel_state.ext = sel->ext;
+  fsel_state.index = -1;
+  fsel_state.action = NULL;
+  fsel_state.none_str = NULL;
+  fsel_state.none_icn = NULL;
+  fsel_state.cfgsel = sel;
+
+  menu_push();
+  menu_state->label = sel->label?sel->label:"Config";
+  menu_state->selected = 1;
+  menu_state->scroll = 0;
+  menu_state->type = MENU_TYPE_FILESELECTOR;
+  menu_state->dir = dir;
+
+  // jump to the config currently in use
+  const char *cur = menu_cfgsel_current(sel);
+  int len = dir_len(dir);
+  for(int i=0;cur && i<len;i++) {
+    if(strcasecmp(dir_entry(dir, i)->name, cur) == 0) {
+      menu_state->selected = i+1;
+      if(len > 4 && menu_state->selected > 3) {
+	if(menu_state->selected < len-1) menu_state->scroll = menu_state->selected - 3;
+	else                             menu_state->scroll = len-4;
+      }
+    }
+  }
+}
+
+// let the core run again, like at the end of the boot process
+static void menu_core_release(void) {
+  if(config_get_action("ready")) sys_run_action_by_name("ready");
+  else                           sys_set_val('R', 0);
+}
+
+// Switch to another ini. The images have to be exchanged while nothing is
+// using them, so this is done with the core held in reset: Before, a running
+// core was changed under its feet, there was no reset afterwards and some
+// images were not mounted properly.
+static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name) {
+  menu_debugf("Config: switching to '%s'", name);
+
+  // 1. Hold the core in reset. It won't ask for any more sectors then. Wait
+  //    until the sd card is done with whatever it was doing for the core.
+  sys_set_val('R', 1);
+  sdc_wait_idle();
+
+  // 2. Read the settings: the default ini first and the selected one on top,
+  //    just like it happens at power up. This only changes the variables and the
+  //    names of the images to be used, nothing is mounted, yet.
+  bool is_default = !sel->def || (strcasecmp(name, sel->def) == 0);
+  if(!is_default) inifile_read(sel->def);
+  if(inifile_read((char*)name) != 0) {
+    menu_draw_dialog("Config", "Loading failed");
+    menu_core_release();
+    return;
+  }
+
+  // 3. Mount all the images, one by one, each one closed and opened under
+  //    the sd lock. The core has been told that its disks are gone before.
+  int failed = sdc_mount_defaults();
+
+  // 4. Remember the selection and store it in the default ini
+  menu_cfgsel_set_current(name);
+  int saved = !sel->def || inifile_selection_set(sel->def, name) == 0;
+
+  // 5. Let the core run. If rom images are being uploaded this happens once
+  //    they are done, as it does at power up.
+  if(!sdc_image_upload_in_progress()) menu_core_release();
+  else                                menu_debugf("Image upload in progress, delaying ready action");
+
+  if(failed || !saved) {
+    // tell what went wrong, the menu stays open
+    char msg[96];
+    snprintf(msg, sizeof(msg), "%s\n%s", name, failed?"(image file missing)":"(not saved)");
+    menu_draw_dialog("Config", msg);
+  } else
+    osd_enable(OSD_INVISIBLE);   // all fine: close the menu
+}
+
+static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
+  const config_cfgsel_t *sel = fsel_state.cfgsel;
+  fsel_state.cfgsel = NULL;
+
+  // the entry is part of a list that is released with the next listing
+  char name[strlen(entry->name)+1];
+  strcpy(name, entry->name);
+  
+  // return to the menu and switch
+  menu_pop();
+  menu_cfgsel_apply(sel, name);
+}
+
+// at power up: load the ini that was selected last. The default ini itself has
+// been loaded by the init action by now.
+static const config_cfgsel_t *menu_find_cfgsel(const config_menu_t *menu) {
+  for(config_menu_entry_t *me = menu->entries; me; me = me->next) {
+    if(me->type == CONFIG_MENU_ENTRY_CFGSELECTOR) return me->cfgsel;
+    if(me->type == CONFIG_MENU_ENTRY_MENU) {
+      const config_cfgsel_t *sel = menu_find_cfgsel(me->menu);
+      if(sel) return sel;
+    }
+  }
+  return NULL;
+}
+
+static void menu_cfgsel_boot(void) {
+  const config_cfgsel_t *sel = menu_find_cfgsel(cfg->menu);
+  if(!sel || !sel->def || !sel->ext) return;
+
+  char name[FF_LFN_BUF+1];
+  if(inifile_selection_get(sel->def, name, sizeof(name)) != 0 || !name[0]) return;
+
+  // only a file meant for this core is accepted
+  if(!sdc_cfg_name_ok(name, sel->ext)) {
+    menu_debugf("Config: ignoring stored selection '%s'", name);
+    return;
+  }
+
+  if(strcasecmp(name, sel->def) != 0 && inifile_read(name) != 0) {
+    menu_debugf("Config: '%s' not found, using the default", name);
+    return;
+  }
+
+  menu_debugf("Config: '%s' selected", name);
+  menu_cfgsel_set_current(name);
+}
+
 static void menu_fileselector_select(sdc_dir_entry_t *entry) {
   int drive = fsel_state.index;
   menu_debugf("%s %d: file selected '%s'", drive>=MAX_DRIVES?"IMG":"DRV",
@@ -871,6 +1082,12 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
     
   // stop any scroll timer that might be running
   menu_timer_enable(false);
+
+  // the list of a config selector
+  if(fsel_state.cfgsel) {
+    menu_cfgsel_selected(entry);
+    return;
+  }
     
   if(entry->is_dir) {
     if(entry->name[0] == '/') {
@@ -1059,6 +1276,10 @@ static void menu_select(void) {
   case CONFIG_MENU_ENTRY_RANGE:
     // selecting a range entry enables changing its value
     entry->range->edit = true;
+    break;
+
+  case CONFIG_MENU_ENTRY_CFGSELECTOR:
+    menu_cfgsel_open(entry);
     break;
     
   default:
@@ -1298,6 +1519,9 @@ void menu_init(void) {
     
   menu_debugf("Processing init action");
   sys_run_action_by_name("init");
+
+  // load the config selected last, if there's a config selector
+  menu_cfgsel_boot();
 
   menu_goto(cfg->menu);    
 
