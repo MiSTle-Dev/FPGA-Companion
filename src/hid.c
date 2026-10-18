@@ -203,7 +203,7 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
 // Enabled by this entry in the config file:
 //   [hid]
 //   gamepad_leavegame = 8       ; DS4: 8 = Share, 9 = Options
-// One gamepad button ("GAMPAD_LEAVEGAME") that sends this whole set of keys at once
+// One gamepad button ("GAMEPAD_LEAVEGAME") that sends this whole set of keys at once
 static const uint8_t leavegame_keys[] = {
   0x43,    // F10
   0x4C,    // Delete
@@ -214,7 +214,7 @@ static const uint8_t leavegame_keys[] = {
 static struct {
   bool valid;
   int8_t menu_trigger;         // [menu] gamepad_trigger, -1 = disabled
-  int8_t leavegame_button;    // [hid] GAMPAD_LEAVEGAME, -1 = disabled
+  int8_t leavegame_button;    // [hid] GAMEPAD_LEAVEGAME, -1 = disabled
 } hid_cfg;
 
 static void hid_cfg_load(void) {
@@ -224,8 +224,8 @@ static void hid_cfg_load(void) {
       inifile_config_get_int("menu", "gamepad_trigger", -1) : -1;
   hid_cfg.menu_trigger = (v >= 0 && v < 12) ? v : -1;
 
-  v = inifile_config_has("hid", "GAMPAD_LEAVEGAME") ?
-      inifile_config_get_int("hid", "GAMPAD_LEAVEGAME", -1) : -1;
+  v = inifile_config_has("hid", "GAMEPAD_LEAVEGAME") ?
+      inifile_config_get_int("hid", "GAMEPAD_LEAVEGAME", -1) : -1;
   hid_cfg.leavegame_button = (v >= 0 && v < 32) ? v : -1;
 
   hid_cfg.valid = true;
