@@ -77,5 +77,6 @@ like the [Darkforce BBS](ttps://www.telnetbbsguide.com/bbs/dark-force-bbs/). Thi
 would be accessed using the following command:
 
 ```
-atd darkforce-bbs.dyndns.org:1040
+atd darkforce-bbs.dyndns.org:1040  
+atd bbs.retro32.com:1337
 ```
