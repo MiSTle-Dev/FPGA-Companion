@@ -29,12 +29,11 @@
 
 // #define  ENABLE_BTSTACK_LOGGING
 
-#define HID_DESCRIPTOR_STORAGE_SIZE 1024
+#define HID_DESCRIPTOR_STORAGE_SIZE 2048
 #define BT_CONNECT_TIMEOUT_MS 15000
 
-#define MAX_BT_HID_DEVICES 2
-#define MAX_BT_HID_REPORTS                                                     \
-  4 // up to four different resports per device supported
+#define MAX_BT_HID_DEVICES 4
+#define MAX_BT_HID_REPORTS 4 // up to four different resports per device supported
 
 static btstack_timer_source_t connect_timer;
 static void connect_next_detected(void);
