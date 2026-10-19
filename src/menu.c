@@ -262,6 +262,9 @@ static void menu_cfgsel_strip(char *name, char **exts) {
   }
 }
 
+// number of characters of the current config shown in the menu
+#define CFGSEL_SHOWN_CHARS 20
+
 // What is shown for an ini: "game.amiga.ini" -> "game", the default ini ->
 // "Default Config". buf needs room for strlen(name)+1 characters, the result
 // is either buf or a constant string.
@@ -621,8 +624,10 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected) 
       char str[strlen(shown)+1];
       strcpy(str, shown);
 
-      // only the right half is available
-      while(strlen(str) > 1 && u8g2_GetStrWidth(&u8g2, str) + 1 > width/2)
+      // up to CFGSEL_SHOWN_CHARS characters, as far as they fit next to the label
+      if(strlen(str) > CFGSEL_SHOWN_CHARS) str[CFGSEL_SHOWN_CHARS] = '\0';
+      int avail = width - u8g2_GetStrWidth(&u8g2, s) - 8;
+      while(strlen(str) > 1 && u8g2_GetStrWidth(&u8g2, str) + 1 > avail)
 	str[strlen(str)-1] = '\0';
       u8g2_DrawStr(&u8g2, width-u8g2_GetStrWidth(&u8g2, str)-1, ypos, str);
     }
@@ -1019,12 +1024,11 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name) {
   else                                menu_debugf("Image upload in progress, delaying ready action");
 
   if(failed || !saved) {
-    // tell what went wrong, the menu stays open
+    // tell what went wrong. The dialog shows the OSD for a moment
     char msg[96];
     snprintf(msg, sizeof(msg), "%s\n%s", name, failed?"(image file missing)":"(not saved)");
     menu_draw_dialog("Config", msg);
-  } else
-    osd_enable(OSD_INVISIBLE);   // all fine: close the menu
+  }
 }
 
 static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
@@ -1035,8 +1039,9 @@ static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
   char name[strlen(entry->name)+1];
   strcpy(name, entry->name);
   
-  // return to the menu and switch
+  // return to the menu, close it right away and switch
   menu_pop();
+  osd_enable(OSD_INVISIBLE);
   menu_cfgsel_apply(sel, name);
 }
 
