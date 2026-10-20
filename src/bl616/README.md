@@ -115,9 +115,7 @@ cd bl616
 edit buildall.sh and edit following line:
 boards=("m0sdock" "nano20k" "console60k" "mega60k" "mega138kpro" "primer25k")
 into
-boards=("nano20k")
-
-to be quick and then:
+boards=("nano20k") to be quick and then:
 ```bash
 ./buildall.sh
 ```
