@@ -1080,6 +1080,17 @@ static void menu_cfgsel_boot(void) {
   menu_cfgsel_set_current(name);
 }
 
+// The file a save action has to write. The xml names the default ini for it
+// ("amiga.ini"), but while another config is selected the settings belong to
+// that config. Saving them into the default ini would overwrite it and the
+// default would then contain the settings of the other config.
+const char *menu_cfgsel_save_name(const char *file) {
+  const config_cfgsel_t *sel = cfg?menu_find_cfgsel(cfg->menu):NULL;
+  if(file && sel && sel->def && cfgsel_current && strcasecmp(file, sel->def) == 0)
+    return cfgsel_current;
+  return file;
+}
+
 static void menu_fileselector_select(sdc_dir_entry_t *entry) {
   int drive = fsel_state.index;
   menu_debugf("%s %d: file selected '%s'", drive>=MAX_DRIVES?"IMG":"DRV",
