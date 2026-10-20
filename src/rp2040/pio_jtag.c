@@ -26,41 +26,37 @@
 // only rp2350 supports three pios
 #ifdef PICO_RP2350
 #define PIO_FUNC(a)  ((PIO_INDEX(a)==2)?GPIO_FUNC_PIO2:(PIO_INDEX(a)==1)?GPIO_FUNC_PIO1:GPIO_FUNC_PIO0)
-#define PIO_TX(a)    ((PIO_INDEX(a)==2)? DREQ_PIO2_TX0:(PIO_INDEX(a)==1)? DREQ_PIO1_TX0: DREQ_PIO0_TX0)
-#define PIO_RX(a)    ((PIO_INDEX(a)==2)? DREQ_PIO2_RX0:(PIO_INDEX(a)==1)? DREQ_PIO1_RX0: DREQ_PIO0_RX0)
 #else
 #define PIO_FUNC(a)  ((PIO_INDEX(a)==1)?GPIO_FUNC_PIO1:GPIO_FUNC_PIO0)
-#define PIO_TX(a)    ((PIO_INDEX(a)==1)? DREQ_PIO1_TX0: DREQ_PIO0_TX0)
-#define PIO_RX(a)    ((PIO_INDEX(a)==1)? DREQ_PIO1_RX0: DREQ_PIO0_RX0)
 #endif
 
 static void dma_init(pio_jtag_inst_t* jtag) {
   // Configure a channel to write a buffer to PIO
-  // SM0's TX FIFO, paced by the data request signal from that peripheral.
+  // TX FIFO of the claimed SM, paced by its data request signal.
   jtag->tx_dma_chan = dma_claim_unused_channel(true);
   jtag->tx_c = dma_channel_get_default_config(jtag->tx_dma_chan);
   channel_config_set_transfer_data_size(&jtag->tx_c, DMA_SIZE_8);
   channel_config_set_read_increment(&jtag->tx_c, true);
-  channel_config_set_dreq(&jtag->tx_c, PIO_TX(jtag));
+  channel_config_set_dreq(&jtag->tx_c, pio_get_dreq(jtag->pio, jtag->sm, true));
   dma_channel_configure(jtag->tx_dma_chan,
 			&jtag->tx_c,
-			&jtag->pio->txf[0], // Write address (only need to set this once)
+			&jtag->pio->txf[jtag->sm], // Write address (only need to set this once)
 			NULL,               // Don't provide a read address yet
 			0,                  // Don't provide the count yet
 			false               // Don't start yet
 			);
   // Configure a channel to read a buffer from PIO
-  // SM0's RX FIFO, paced by the data request signal from that peripheral.
+  // RX FIFO of the claimed SM, paced by its data request signal.
   jtag->rx_dma_chan = dma_claim_unused_channel(true);
   jtag->rx_c = dma_channel_get_default_config(jtag->rx_dma_chan);
   channel_config_set_transfer_data_size(&jtag->rx_c, DMA_SIZE_8);
   channel_config_set_write_increment(&jtag->rx_c, false);
   channel_config_set_read_increment(&jtag->rx_c, false);
-  channel_config_set_dreq(&jtag->rx_c, PIO_RX(jtag));
+  channel_config_set_dreq(&jtag->rx_c, pio_get_dreq(jtag->pio, jtag->sm, false));
   dma_channel_configure(jtag->rx_dma_chan,
 			&jtag->rx_c,
 			NULL,               // Dont provide a write address yet
-			&jtag->pio->rxf[0], // Read address (only need to set this once)
+			&jtag->pio->rxf[jtag->sm], // Read address (only need to set this once)
 			0,                  // Don't provide the count yet
 			false               // Don't start yet
 			);
