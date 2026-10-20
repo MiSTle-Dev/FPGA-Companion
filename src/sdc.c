@@ -1146,9 +1146,10 @@ static bool sdc_cfg_ext_match(const char *name, char **exts) {
 
 // List the files in the root of the sd card which end in one of the extensions
 // given. This is what a <cfgselector> offers, so a core only gets to see the
-// ini files meant for it. Hidden and system files are left out, as are the
-// "._*" files macOS adds to FAT volumes. The list is sorted and remains valid
-// until the next call.
+// ini files meant for it. Files with the hidden attribute are listed on purpose,
+// so the ini files can be hidden to keep the root directory tidy. System files
+// are left out, as are names starting with a dot like the "._*" files macOS adds
+// to FAT volumes. The list is sorted and remains valid until the next call.
 sdc_dir_entry_t *sdc_readdir_cfg(char **exts) {
   static sdc_dir_entry_t *list = NULL;
   
@@ -1170,7 +1171,7 @@ sdc_dir_entry_t *sdc_readdir_cfg(char **exts) {
   sdc_lock();
   if(f_opendir(&dir, CARD_MOUNTPOINT) == FR_OK) {
     while(f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
-      if((fno.fattrib & (AM_DIR|AM_HID|AM_SYS)) || fno.fname[0] == '.') continue;
+      if((fno.fattrib & (AM_DIR|AM_SYS)) || fno.fname[0] == '.') continue;
       if(!sdc_cfg_ext_match(fno.fname, exts)) continue;
 
       sdc_dir_entry_t *entry = pvPortMalloc(sizeof(sdc_dir_entry_t));
