@@ -99,6 +99,7 @@ git clone --recurse-submodules https://github.com/MiSTle-Dev/bouffalo_sdk.git
 ```bash
 export BL_SDK_BASE=/home/<username>/downloads/bouffalo_sdk
 ```
+download the FPGA-Companion repository
 ```bash
 git clone https://github.com/MiSTle-Dev/FPGA-Companion.git --recursive
 ```
