@@ -80,13 +80,45 @@ Primer25K BL616 debug console can be used after a required hardware modification
 
 Download the Bouffalo toolchain:
 
-```bash
-git clone https://github.com/bouffalolab/toolchain_gcc_t-head_linux.git
-```
+https://github.com/bouffalolab/toolchain/releases/tag/default
 
-and the patched Bouffalo SDK with latest version common CherryUSB Stack:  
+download: ```xuantie-gcc-riscv-v2.6.1-linux-x86_64.tar.xz```  
+
+unpack:
+```bash
+tar -xf xuantie-gcc-riscv-v2.6.1-linux-x86_64.tar.xz
+```
+set path: 
+```bash
+PATH=$PATH:/home/<username>/downloads/xuantie-gcc-riscv-v2.6.1-linux-x86_64/bin
+```
+and the patched Bouffalo SDK with latest version common CherryUSB Stack:
 ```bash
 git clone --recurse-submodules https://github.com/MiSTle-Dev/bouffalo_sdk.git
+```
+```bash
+export BL_SDK_BASE=/home/<username>/downloads/bouffalo_sdk
+```
+```bash
+git clone https://github.com/MiSTle-Dev/FPGA-Companion.git --recursive
+```
+```bash
+cd FPGA-Companion 
+git submodule init 
+git submodule update
+```
+```bash
+cd src 
+cd bl616
+```
+edit buildall.sh and edit following line:
+boards=("m0sdock" "nano20k" "console60k" "mega60k" "mega138kpro" "primer25k")
+into
+boards=("nano20k")
+
+to be quick and then:
+```bash
+./buildall.sh
 ```
 
 Compile the firmware for **M0S Dock**
