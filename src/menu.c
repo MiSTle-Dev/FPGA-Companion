@@ -262,6 +262,9 @@ static void menu_cfgsel_strip(char *name, char **exts) {
   }
 }
 
+// last entry of the config list and title of its dialog
+#define SAVE_AS "Save as..."
+
 // number of characters of the current config shown in the menu
 #define CFGSEL_SHOWN_CHARS 20
 
@@ -947,7 +950,7 @@ static void menu_pop(void) {
 static void menu_cfgsel_list(const config_cfgsel_t *sel, const char *focus) {
   menu_debugf("menu_cfgsel_list()");
 
-  // only the ini files meant for this core are listed, followed by "New Config"
+  // only the ini files meant for this core are listed, followed by "Save as..."
   sdc_dir_entry_t *dir = sdc_readdir_cfg(sel->ext);
 
   // the list is drawn by the file selector code
@@ -955,7 +958,7 @@ static void menu_cfgsel_list(const config_cfgsel_t *sel, const char *focus) {
   fsel_state.ext = sel->ext;
   fsel_state.index = -1;
   fsel_state.action = NULL;
-  fsel_state.none_str = "New Config";
+  fsel_state.none_str = SAVE_AS;
   fsel_state.none_icn = (unsigned char*)plus_icon;
   fsel_state.cfgsel = sel;
 
@@ -1002,26 +1005,31 @@ static int newcfg_length(void) { return 0; }
 
 static void newcfg_draw(void) {
   int width = u8g2_GetDisplayWidth(&u8g2);
+  int y = MENU_LINE_Y + 2*MENU_ENTRY_H;
 
-  // the name with a cursor. Only its end is shown if it's too long
+  // what is added to the name, right aligned
+  const char *ext = (newcfg.sel && newcfg.sel->ext && newcfg.sel->ext[0])?newcfg.sel->ext[0]:"";
+  char suffix[strlen(ext)+2];
+  snprintf(suffix, sizeof(suffix), ".%s", ext);
+  int sw = u8g2_GetStrWidth(&u8g2, suffix);
+  u8g2_DrawStr(&u8g2, width-sw-2, y, suffix);
+
+  // the name with a cursor in front of it. Only its end is shown if it doesn't fit
   char str[NEWCFG_MAX+2];
   strcpy(str, newcfg.name);
   strcat(str, "_");
   const char *show = str;
-  while(show[1] && u8g2_GetStrWidth(&u8g2, show) > width-4) show++;
-  u8g2_DrawStr(&u8g2, 2, MENU_LINE_Y + 1*MENU_ENTRY_H, show);
+  while(show[1] && u8g2_GetStrWidth(&u8g2, show) > width-sw-6) show++;
+  u8g2_DrawStr(&u8g2, 2, y, show);
 
-  // what is added to the name
-  const char *ext = (newcfg.sel && newcfg.sel->ext && newcfg.sel->ext[0])?newcfg.sel->ext[0]:"";
-  char suffix[strlen(ext)+2];
-  snprintf(suffix, sizeof(suffix), ".%s", ext);
-  u8g2_DrawStr(&u8g2, width-u8g2_GetStrWidth(&u8g2, suffix)-2, MENU_LINE_Y + 2*MENU_ENTRY_H, suffix);
-
-  u8g2_DrawStr(&u8g2, 2, MENU_LINE_Y + 3*MENU_ENTRY_H, "Enter=OK  Esc=Cancel");
+  // the keys
+  y = MENU_LINE_Y + 3*MENU_ENTRY_H;
+  u8g2_DrawStr(&u8g2, 2, y, "Esc=Cancel");
+  u8g2_DrawStr(&u8g2, width-u8g2_GetStrWidth(&u8g2, "Enter=OK")-2, y, "Enter=OK");
 }
 
 static const config_custom_t newcfg_custom = {
-  .label = "New Config",
+  .label = SAVE_AS,
   .length = newcfg_length,
   .draw = newcfg_draw
 };
@@ -1080,8 +1088,8 @@ static void menu_newcfg_create(void) {
   while(name[0] && (name[strlen(name)-1] == ' ' || name[strlen(name)-1] == '.'))
     name[strlen(name)-1] = '\0';
 
-  if(!ext)          { menu_draw_dialog("New Config", "Config has no\nextension"); return; }
-  if(!name[0])      { menu_draw_dialog("New Config", "Please enter\na name");      return; }
+  if(!ext)          { menu_draw_dialog(SAVE_AS, "Config has no\nextension"); return; }
+  if(!name[0])      { menu_draw_dialog(SAVE_AS, "Please enter\na name");      return; }
 
   // "name.ext", unless the name already ends like that
   char file[strlen(name)+strlen(ext)+2];
@@ -1089,8 +1097,8 @@ static void menu_newcfg_create(void) {
   else                                snprintf(file, sizeof(file), "%s.%s", name, ext);
 
   int ret = inifile_create(file);
-  if(ret == 1) { menu_draw_dialog("New Config", "A config with this\nname exists"); return; }
-  if(ret != 0) { menu_draw_dialog("New Config", "Creating the\nfile failed");       return; }
+  if(ret == 1) { menu_draw_dialog(SAVE_AS, "A config with this\nname exists"); return; }
+  if(ret != 0) { menu_draw_dialog(SAVE_AS, "Creating the\nfile failed");       return; }
 
   menu_debugf("Config: created '%s'", file);
 
@@ -1098,6 +1106,7 @@ static void menu_newcfg_create(void) {
   menu_pop();
   menu_pop();
   menu_cfgsel_list(sel, file);
+  menu_do(0);   // and draw it, the editor is still on the screen
 }
 
 // a key typed in
@@ -1118,6 +1127,116 @@ static void menu_newcfg_key(uint8_t code) {
     return;
 
   menu_do(0);   // redraw
+}
+
+/* ============================ delete a config =============================== */
+
+// Pressing the Delete key in the list of the configs asks if the selected config
+// is to be deleted. Yes is chosen with y, No with n or escape. Tab, left and
+// right (joystick) switch between the two, enter or fire chooses.
+
+static struct {
+  const config_cfgsel_t *sel;
+  char file[FF_LFN_BUF+1];
+  char next[FF_LFN_BUF+1];     // the entry behind it, to be selected afterwards
+  bool yes;                    // the button that is highlighted
+} delcfg;
+
+static int delcfg_length(void) { return 0; }
+
+static void delcfg_draw(void) {
+  int width = u8g2_GetDisplayWidth(&u8g2);
+
+  // "Delete <name>?", the name is shortened if needed
+  char pbuf[strlen(delcfg.file)+1];
+  const char *pretty = menu_cfgsel_pretty(pbuf, delcfg.file, delcfg.sel);
+  char name[strlen(pretty)+1];
+  strcpy(name, pretty);
+  char str[strlen(name)+10];
+  for(;;) {
+    snprintf(str, sizeof(str), "Delete %s?", name);
+    if(strlen(name) <= 1 || u8g2_GetStrWidth(&u8g2, str) <= width-4) break;
+    name[strlen(name)-1] = '\0';
+  }
+  u8g2_DrawStr(&u8g2, 2, MENU_LINE_Y + 1*MENU_ENTRY_H, str);
+
+  // No at the left, Yes at the right. The chosen one is highlighted
+  int y = MENU_LINE_Y + 3*MENU_ENTRY_H;
+  int xyes = width-u8g2_GetStrWidth(&u8g2, "Yes")-2;
+  u8g2_DrawStr(&u8g2, 2, y, "No");
+  u8g2_DrawStr(&u8g2, xyes, y, "Yes");
+  if(delcfg.yes) u8g2_DrawButtonFrame(&u8g2, xyes, y, U8G2_BTN_INV, u8g2_GetStrWidth(&u8g2, "Yes"), 1, 1);
+  else           u8g2_DrawButtonFrame(&u8g2, 2, y, U8G2_BTN_INV, u8g2_GetStrWidth(&u8g2, "No"), 1, 1);
+}
+
+static const config_custom_t delcfg_custom = {
+  .label = "Delete Config",
+  .length = delcfg_length,
+  .draw = delcfg_draw
+};
+
+static bool menu_delcfg_active(void) {
+  return menu_state && menu_state->type == MENU_TYPE_CUSTOM && menu_state->custom == &delcfg_custom;
+}
+
+// the delete key was pressed in the list: ask
+static void menu_delcfg_open(void) {
+  if(menu_state->selected < 1) return;     // the title
+  const config_cfgsel_t *sel = fsel_state.cfgsel;
+  sdc_dir_entry_t *entry = dir_entry(menu_state->dir, menu_state->selected-1);
+
+  // not the "Save as..." entry and nothing that isn't a config of this core
+  if(entry->name[0] == '/' || !sdc_cfg_name_ok(entry->name, sel->ext)) return;
+
+  // The default ini holds the selection and is loaded at power up. The config in
+  // use is what the settings are saved into.
+  if(sel->def && strcasecmp(entry->name, sel->def) == 0) {
+    menu_draw_dialog("Delete Config", "The default config\ncan't be deleted");
+    return;
+  }
+  const char *cur = menu_cfgsel_current(sel);
+  if(cur && strcasecmp(entry->name, cur) == 0) {
+    menu_draw_dialog("Delete Config", "This config is\nin use");
+    return;
+  }
+
+  delcfg.sel = sel;
+  delcfg.yes = false;                      // the safe choice
+  snprintf(delcfg.file, sizeof(delcfg.file), "%s", entry->name);
+  snprintf(delcfg.next, sizeof(delcfg.next), "%s", entry->next?entry->next->name:"");
+
+  menu_push();
+  menu_state->type = MENU_TYPE_CUSTOM;
+  menu_state->custom = &delcfg_custom;
+  menu_state->selected = 0;
+  menu_state->scroll = 0;
+  menu_do(0);   // draw the question, a key press does not do that
+}
+
+static void menu_delcfg_choose(bool yes) {
+  const config_cfgsel_t *sel = delcfg.sel;
+  menu_pop();                               // back to the list
+
+  if(yes) {
+    if(inifile_remove(delcfg.file) == 0) {
+      menu_debugf("Config: deleted '%s'", delcfg.file);
+      // show the list again, now without it
+      menu_pop();
+      menu_cfgsel_list(sel, delcfg.next);
+    } else
+      menu_draw_dialog("Delete Config", "Deleting failed");
+  }
+  menu_do(0);   // draw the list
+}
+
+// a key typed in
+static void menu_delcfg_key(uint8_t code) {
+  if(code == 'y' || code == 'Y')      menu_delcfg_choose(true);
+  else if(code == 'n' || code == 'N') menu_delcfg_choose(false);
+  else if(code == 9) {                      // tab
+    delcfg.yes = !delcfg.yes;
+    menu_do(0);
+  }
 }
 
 // let the core run again, like at the end of the boot process
@@ -1484,6 +1603,16 @@ void menu_do(int event) {
   if(event == MENU_EVENT_SELECT && menu_select_swallowed())
     return;
 
+  // the question to delete a config: enter/fire chooses, left/right (joystick) switch
+  if(menu_delcfg_active() && !menu_dialog_is_open()) {
+    if(event == MENU_EVENT_SELECT) { menu_delcfg_choose(delcfg.yes); return; }
+    if(event == MENU_EVENT_LEFT || event == MENU_EVENT_RIGHT) {
+      delcfg.yes = (event == MENU_EVENT_RIGHT);
+      menu_do(0);
+      return;
+    }
+  }
+
   if(menu_dialog_is_open()) {
     // if the dialog is open, then any key event will close it
     if((event >= MENU_EVENT_UP) && (event <= MENU_EVENT_BACK))
@@ -1592,9 +1721,14 @@ static void menu_handle_latin1(uint8_t code) {
   if(code > 31) menu_debugf("menu_handle_latin1(%d/%c)", code, code);
   else          menu_debugf("menu_handle_latin1(%d)", code);
 
-  // typing in the name of a new config
-  if(menu_newcfg_active() && !menu_dialog_is_open())
+  if(menu_dialog_is_open()) return;
+
+  if(menu_newcfg_active())                 // typing in the name of a new config
     menu_newcfg_key(code);
+  else if(menu_delcfg_active())            // yes or no
+    menu_delcfg_key(code);
+  else if(code == 127 && menu_state && menu_state->type == MENU_TYPE_FILESELECTOR && fsel_state.cfgsel)
+    menu_delcfg_open();                    // delete key in the list of configs
 }
 
 static void menu_task(__attribute__((unused)) void *parms) {

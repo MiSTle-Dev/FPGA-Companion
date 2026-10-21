@@ -20,6 +20,7 @@ int inifile_option_get(int id);
 // the ini selected through a <cfgselector> is stored in the default ini
 int inifile_selection_get(const char *def, char *buf, size_t size);  // 0 = def read, buf empty if none stored
 int inifile_selection_set(const char *def, const char *name);        // 0 = stored
+int inifile_remove(const char *name);   // 0 = deleted, -1 = failed
 int inifile_create(const char *name);   // 0 = created with current settings, 1 = exists, -1 = failed
 
 // handle the global ini file (config.ini)

@@ -99,6 +99,16 @@ static int ini_selection_read(const char *filename, char *buf, size_t size) {
   return 0;
 }
 
+// Deletes an ini file. 0 = deleted, -1 = failed
+int inifile_remove(const char *name) {
+  char *filename = ini_filename(name);
+  sdc_lock();
+  FRESULT r = f_unlink(filename);
+  sdc_unlock();
+  vPortFree(filename);
+  return (r == FR_OK) ? 0 : -1;
+}
+
 // Creates a new ini holding the current settings. An existing file is never
 // overwritten. 0 = created, 1 = exists already, -1 = failed
 int inifile_create(const char *name) {
