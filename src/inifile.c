@@ -99,6 +99,22 @@ static int ini_selection_read(const char *filename, char *buf, size_t size) {
   return 0;
 }
 
+// Creates a new ini holding the current settings. An existing file is never
+// overwritten. 0 = created, 1 = exists already, -1 = failed
+int inifile_create(const char *name) {
+  char *filename = ini_filename(name);
+  FIL fil;
+
+  sdc_lock();
+  bool exists = (f_open(&fil, filename, FA_OPEN_EXISTING | FA_READ) == FR_OK);
+  if(exists) f_close(&fil);
+  sdc_unlock();
+  vPortFree(filename);
+
+  if(exists) return 1;
+  return (inifile_write((char*)name) == 0) ? 0 : -1;
+}
+
 // 0 = ini could be read (buf is empty if no selection is stored in it), -1 = it couldn't
 int inifile_selection_get(const char *def, char *buf, size_t size) {
   char *filename = ini_filename(def);

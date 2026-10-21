@@ -1189,6 +1189,18 @@ sdc_dir_entry_t *sdc_readdir_cfg(char **exts) {
   }
   sdc_unlock();
 
+  // The last entry is no file but the "new config" entry of the selector. It
+  // is named "/" like the "no disk" entry of the image lists and never matches
+  // a real file name.
+  sdc_dir_entry_t *last = pvPortMalloc(sizeof(sdc_dir_entry_t));
+  last->name = StrDup("/");
+  last->len = 0;
+  last->is_dir = 1;
+  last->next = NULL;
+  sdc_dir_entry_t **pp = &list;
+  while(*pp) pp = &(*pp)->next;
+  *pp = last;
+
   return list;
 }
 

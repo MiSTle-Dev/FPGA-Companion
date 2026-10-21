@@ -329,6 +329,7 @@ static void menu_fs_scroll_entry(void) {
 
   // jump to the row'th entry in the dir listing
   const char *name = dir_entry(menu_state->dir, row)->name;
+  if(name[0] == '/') return;
   char pbuf[strlen(name)+1];
   if(fsel_state.cfgsel) name = menu_cfgsel_pretty(pbuf, name, fsel_state.cfgsel);
   int swid = u8g2_GetStrWidth(&u8g2, name) + 1;
@@ -941,23 +942,21 @@ static void menu_pop(void) {
 /* ============================ config selector =============================== */
 /* ============================================================================ */
 
-static void menu_cfgsel_open(config_menu_entry_t *entry) {
-  const config_cfgsel_t *sel = entry->cfgsel;
-  menu_debugf("menu_cfgsel_open()");
+// Opens the list of the configs. The entry named focus is selected, the config
+// in use if there is none.
+static void menu_cfgsel_list(const config_cfgsel_t *sel, const char *focus) {
+  menu_debugf("menu_cfgsel_list()");
 
-  // only the ini files meant for this core are listed
+  // only the ini files meant for this core are listed, followed by "New Config"
   sdc_dir_entry_t *dir = sdc_readdir_cfg(sel->ext);
-  if(!dir) {
-    menu_draw_dialog("Config", "No matching ini\nfiles found");
-    return;
-  }
 
   // the list is drawn by the file selector code
+  static const unsigned char plus_icon[] = { 0x00,0x18,0x18,0x7e,0x7e,0x18,0x18,0x00 };
   fsel_state.ext = sel->ext;
   fsel_state.index = -1;
   fsel_state.action = NULL;
-  fsel_state.none_str = NULL;
-  fsel_state.none_icn = NULL;
+  fsel_state.none_str = "New Config";
+  fsel_state.none_icn = (unsigned char*)plus_icon;
   fsel_state.cfgsel = sel;
 
   menu_push();
@@ -967,8 +966,8 @@ static void menu_cfgsel_open(config_menu_entry_t *entry) {
   menu_state->type = MENU_TYPE_FILESELECTOR;
   menu_state->dir = dir;
 
-  // jump to the config currently in use
-  const char *cur = menu_cfgsel_current(sel);
+  // jump to the config in focus
+  const char *cur = focus?focus:menu_cfgsel_current(sel);
   int len = dir_len(dir);
   for(int i=0;cur && i<len;i++) {
     if(strcasecmp(dir_entry(dir, i)->name, cur) == 0) {
@@ -979,6 +978,146 @@ static void menu_cfgsel_open(config_menu_entry_t *entry) {
       }
     }
   }
+}
+
+static void menu_cfgsel_open(config_menu_entry_t *entry) {
+  menu_debugf("menu_cfgsel_open()");
+  menu_cfgsel_list(entry->cfgsel, NULL);
+}
+
+/* ============================ "New Config" ================================== */
+
+// A name for a new config is typed in. The keyboard delivers latin1 events
+// for this (see menu_handle_latin1()), the text is shown by a custom dialog.
+
+#define NEWCFG_MAX      32     // characters of the name, without the extension
+#define MENU_SWALLOW_MS 150    // see menu_select_swallowed()
+
+static struct {
+  const config_cfgsel_t *sel;
+  char name[NEWCFG_MAX+1];
+} newcfg;
+
+static int newcfg_length(void) { return 0; }
+
+static void newcfg_draw(void) {
+  int width = u8g2_GetDisplayWidth(&u8g2);
+
+  // the name with a cursor. Only its end is shown if it's too long
+  char str[NEWCFG_MAX+2];
+  strcpy(str, newcfg.name);
+  strcat(str, "_");
+  const char *show = str;
+  while(show[1] && u8g2_GetStrWidth(&u8g2, show) > width-4) show++;
+  u8g2_DrawStr(&u8g2, 2, MENU_LINE_Y + 1*MENU_ENTRY_H, show);
+
+  // what is added to the name
+  const char *ext = (newcfg.sel && newcfg.sel->ext && newcfg.sel->ext[0])?newcfg.sel->ext[0]:"";
+  char suffix[strlen(ext)+2];
+  snprintf(suffix, sizeof(suffix), ".%s", ext);
+  u8g2_DrawStr(&u8g2, width-u8g2_GetStrWidth(&u8g2, suffix)-2, MENU_LINE_Y + 2*MENU_ENTRY_H, suffix);
+
+  u8g2_DrawStr(&u8g2, 2, MENU_LINE_Y + 3*MENU_ENTRY_H, "Enter=OK  Esc=Cancel");
+}
+
+static const config_custom_t newcfg_custom = {
+  .label = "New Config",
+  .length = newcfg_length,
+  .draw = newcfg_draw
+};
+
+static bool menu_newcfg_active(void) {
+  return menu_state && menu_state->type == MENU_TYPE_CUSTOM && menu_state->custom == &newcfg_custom;
+}
+
+// Enter and the space key do not only send a latin1 event but also a select
+// event, right behind it. While a name is typed in, that must neither cancel
+// the dialog (space) nor select something in the list that is shown after
+// the dialog was left (enter).
+static TickType_t menu_swallow_start;
+static bool menu_swallow_armed = false;
+
+static void menu_swallow_select(void) {
+  menu_swallow_start = xTaskGetTickCount();
+  menu_swallow_armed = true;
+}
+
+static bool menu_select_swallowed(void) {
+  // the select that belongs to the enter that was just handled
+  if(menu_swallow_armed) {
+    menu_swallow_armed = false;
+    if((xTaskGetTickCount() - menu_swallow_start) < pdMS_TO_TICKS(MENU_SWALLOW_MS))
+      return true;
+  }
+
+  // the select of the space key. If a dialog is open (e.g. "name exists"), a
+  // select is allowed to close it
+  return menu_newcfg_active() && !menu_dialog_is_open();
+}
+
+static void menu_newcfg_open(const config_cfgsel_t *sel) {
+  menu_debugf("menu_newcfg_open()");
+  newcfg.sel = sel;
+  newcfg.name[0] = '\0';
+
+  menu_push();
+  menu_state->type = MENU_TYPE_CUSTOM;
+  menu_state->custom = &newcfg_custom;
+  menu_state->selected = 0;
+  menu_state->scroll = 0;
+}
+
+// the name is complete: create the file with the current settings
+static void menu_newcfg_create(void) {
+  const config_cfgsel_t *sel = newcfg.sel;
+  const char *ext = (sel->ext && sel->ext[0])?sel->ext[0]:NULL;
+
+  // leading dots would hide the file from the list, trailing ones and spaces are no good on FAT
+  const char *b = newcfg.name;
+  while(*b == ' ' || *b == '.') b++;
+  char name[NEWCFG_MAX+1];
+  strcpy(name, b);
+  while(name[0] && (name[strlen(name)-1] == ' ' || name[strlen(name)-1] == '.'))
+    name[strlen(name)-1] = '\0';
+
+  if(!ext)          { menu_draw_dialog("New Config", "Config has no\nextension"); return; }
+  if(!name[0])      { menu_draw_dialog("New Config", "Please enter\na name");      return; }
+
+  // "name.ext", unless the name already ends like that
+  char file[strlen(name)+strlen(ext)+2];
+  if(sdc_cfg_name_ok(name, sel->ext)) strcpy(file, name);
+  else                                snprintf(file, sizeof(file), "%s.%s", name, ext);
+
+  int ret = inifile_create(file);
+  if(ret == 1) { menu_draw_dialog("New Config", "A config with this\nname exists"); return; }
+  if(ret != 0) { menu_draw_dialog("New Config", "Creating the\nfile failed");       return; }
+
+  menu_debugf("Config: created '%s'", file);
+
+  // leave the dialog and the old list and show a new list with the new entry
+  menu_pop();
+  menu_pop();
+  menu_cfgsel_list(sel, file);
+}
+
+// a key typed in
+static void menu_newcfg_key(uint8_t code) {
+  size_t len = strlen(newcfg.name);
+  
+  if(code == 8) {                                // backspace
+    if(!len) return;
+    newcfg.name[len-1] = '\0';
+  } else if(code == 10) {                        // enter
+    menu_newcfg_create();
+    menu_swallow_select();
+    return;
+  } else if(code >= 32 && code < 127 && len < NEWCFG_MAX && !strchr("\\/:*?\"<>|", code)) {
+    newcfg.name[len] = code;
+    newcfg.name[len+1] = '\0';
+  } else
+    return;
+
+  menu_do(0);   // redraw
 }
 
 // let the core run again, like at the end of the boot process
@@ -1033,6 +1172,13 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name) {
 
 static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
   const config_cfgsel_t *sel = fsel_state.cfgsel;
+
+  // the last entry of the list creates a new config
+  if(entry->name[0] == '/') {
+    menu_newcfg_open(sel);
+    return;
+  }
+  
   fsel_state.cfgsel = NULL;
 
   // the entry is part of a list that is released with the next listing
@@ -1334,7 +1480,10 @@ void menu_stop_repeat(void) {
 }
 
 void menu_do(int event) {
-  //
+  // see menu_select_swallowed()
+  if(event == MENU_EVENT_SELECT && menu_select_swallowed())
+    return;
+
   if(menu_dialog_is_open()) {
     // if the dialog is open, then any key event will close it
     if((event >= MENU_EVENT_UP) && (event <= MENU_EVENT_BACK))
@@ -1442,6 +1591,10 @@ static void menu_handle_latin1(uint8_t code) {
   // is meant to be used for complex text input in custom dialogs  
   if(code > 31) menu_debugf("menu_handle_latin1(%d/%c)", code, code);
   else          menu_debugf("menu_handle_latin1(%d)", code);
+
+  // typing in the name of a new config
+  if(menu_newcfg_active() && !menu_dialog_is_open())
+    menu_newcfg_key(code);
 }
 
 static void menu_task(__attribute__((unused)) void *parms) {
