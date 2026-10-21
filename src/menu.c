@@ -1135,12 +1135,13 @@ static void menu_newcfg_key(uint8_t code) {
 // is to be deleted. Yes is chosen with y, No with n or escape. Tab, left and
 // right (joystick) switch between the two, enter or fire chooses.
 
-static struct {
-  const config_cfgsel_t *sel;
-  char file[FF_LFN_BUF+1];
-  char next[FF_LFN_BUF+1];     // the entry behind it, to be selected afterwards
-  bool yes;                    // the button that is highlighted
-} delcfg;
+static bool delcfg_yes = false;       // the button that is highlighted
+
+// The dialog sits on top of the list. The entry to be deleted is the selected one
+// there, so no copy of its name is kept (this is RAM that is scarce on the RP2040).
+static sdc_dir_entry_t *delcfg_entry(void) {
+  return dir_entry(menu_state->prev->dir, menu_state->prev->selected-1);
+}
 
 static int delcfg_length(void) { return 0; }
 
@@ -1148,8 +1149,9 @@ static void delcfg_draw(void) {
   int width = u8g2_GetDisplayWidth(&u8g2);
 
   // "Delete <name>?", the name is shortened if needed
-  char pbuf[strlen(delcfg.file)+1];
-  const char *pretty = menu_cfgsel_pretty(pbuf, delcfg.file, delcfg.sel);
+  const char *file = delcfg_entry()->name;
+  char pbuf[strlen(file)+1];
+  const char *pretty = menu_cfgsel_pretty(pbuf, file, fsel_state.cfgsel);
   char name[strlen(pretty)+1];
   strcpy(name, pretty);
   char str[strlen(name)+10];
@@ -1165,7 +1167,7 @@ static void delcfg_draw(void) {
   int xyes = width-u8g2_GetStrWidth(&u8g2, "Yes")-2;
   u8g2_DrawStr(&u8g2, 2, y, "No");
   u8g2_DrawStr(&u8g2, xyes, y, "Yes");
-  if(delcfg.yes) u8g2_DrawButtonFrame(&u8g2, xyes, y, U8G2_BTN_INV, u8g2_GetStrWidth(&u8g2, "Yes"), 1, 1);
+  if(delcfg_yes) u8g2_DrawButtonFrame(&u8g2, xyes, y, U8G2_BTN_INV, u8g2_GetStrWidth(&u8g2, "Yes"), 1, 1);
   else           u8g2_DrawButtonFrame(&u8g2, 2, y, U8G2_BTN_INV, u8g2_GetStrWidth(&u8g2, "No"), 1, 1);
 }
 
@@ -1200,10 +1202,7 @@ static void menu_delcfg_open(void) {
     return;
   }
 
-  delcfg.sel = sel;
-  delcfg.yes = false;                      // the safe choice
-  snprintf(delcfg.file, sizeof(delcfg.file), "%s", entry->name);
-  snprintf(delcfg.next, sizeof(delcfg.next), "%s", entry->next?entry->next->name:"");
+  delcfg_yes = false;                      // the safe choice
 
   menu_push();
   menu_state->type = MENU_TYPE_CUSTOM;
@@ -1214,18 +1213,27 @@ static void menu_delcfg_open(void) {
 }
 
 static void menu_delcfg_choose(bool yes) {
-  const config_cfgsel_t *sel = delcfg.sel;
-  menu_pop();                               // back to the list
+  const config_cfgsel_t *sel = fsel_state.cfgsel;
 
   if(yes) {
-    if(inifile_remove(delcfg.file) == 0) {
-      menu_debugf("Config: deleted '%s'", delcfg.file);
-      // show the list again, now without it
-      menu_pop();
-      menu_cfgsel_list(sel, delcfg.next);
+    // The names are copied: the list they are in is released when the new one is read.
+    // The entry behind the deleted one is selected afterwards.
+    sdc_dir_entry_t *entry = delcfg_entry();
+    char file[strlen(entry->name)+1];
+    char next[(entry->next?strlen(entry->next->name):0)+1];
+    strcpy(file, entry->name);
+    strcpy(next, entry->next?entry->next->name:"");
+
+    menu_pop();                             // the question
+    if(inifile_remove(file) == 0) {
+      menu_debugf("Config: deleted '%s'", file);
+      menu_pop();                           // the old list
+      menu_cfgsel_list(sel, next);
     } else
       menu_draw_dialog("Delete Config", "Deleting failed");
-  }
+  } else
+    menu_pop();
+
   menu_do(0);   // draw the list
 }
 
@@ -1234,7 +1242,7 @@ static void menu_delcfg_key(uint8_t code) {
   if(code == 'y' || code == 'Y')      menu_delcfg_choose(true);
   else if(code == 'n' || code == 'N') menu_delcfg_choose(false);
   else if(code == 9) {                      // tab
-    delcfg.yes = !delcfg.yes;
+    delcfg_yes = !delcfg_yes;
     menu_do(0);
   }
 }
@@ -1605,9 +1613,9 @@ void menu_do(int event) {
 
   // the question to delete a config: enter/fire chooses, left/right (joystick) switch
   if(menu_delcfg_active() && !menu_dialog_is_open()) {
-    if(event == MENU_EVENT_SELECT) { menu_delcfg_choose(delcfg.yes); return; }
+    if(event == MENU_EVENT_SELECT) { menu_delcfg_choose(delcfg_yes); return; }
     if(event == MENU_EVENT_LEFT || event == MENU_EVENT_RIGHT) {
-      delcfg.yes = (event == MENU_EVENT_RIGHT);
+      delcfg_yes = (event == MENU_EVENT_RIGHT);
       menu_do(0);
       return;
     }
