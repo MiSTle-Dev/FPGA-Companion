@@ -51,7 +51,8 @@ void jtag_shiftDR(uint8_t *tx, uint8_t *rx, uint16_t len) {
   // send TMS 1/1/0 to return into RUN-TEST/IDLE state, the first
   // transaction carries the last payload bit
   uint8_t lrx = mcu_hw_jtag_tms(tx?((tx[(len-1)/8]&0x80)?1:0):1, 0b1, 1);
-  if(rx) rx[(len-1)/8] = (rx[(len-1)/8] & 0x7f) | (lrx & 0x80);   
+  // Partial-byte replies are left-aligned; make room for the final DR bit.
+  if(rx) rx[(len-1)/8] = (rx[(len-1)/8] >> 1) | (lrx & 0x80);
 
   mcu_hw_jtag_tms(1, 0b01, 2);
 }
@@ -68,7 +69,7 @@ void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, bool last) {
     // send TMS 1/1/0 to return into RUN-TEST/IDLE state, the first
     // transaction carries the last payload bit
     uint8_t lrx = mcu_hw_jtag_tms(tx?((tx[(len-1)/8]&0x80)?1:0):1, 0b1, 1);
-    if(rx) rx[(len-1)/8] = (rx[(len-1)/8] & 0x7f) | (lrx & 0x80);   
+    if(rx) rx[(len-1)/8] = (rx[(len-1)/8] >> 1) | (lrx & 0x80);
     mcu_hw_jtag_tms(1, 0b01, 2);
   } else
     mcu_hw_jtag_data(tx, rx, len);  
