@@ -181,6 +181,9 @@ On the regular Pico, the FPGA Companion uses the following pins:
 
 Location JTAG connection TN20k PCBA top side.  
 
+> [!WARNING]
+>If you are using stock ```20K's FRIEND``` BL616 firmware the JTAG pins are **blocked** and Pico JTAG loader won't work. On fused (encrypted) boards update to 'partner' and on unfused ones you need to keep BL616 in reset / fw update mode ```Bouffalo CDC DEMO```.
+
 ![Tang Nano 20k JTAG](jtag_tn20k.png)
 
 ## Using the internal micro USB connector

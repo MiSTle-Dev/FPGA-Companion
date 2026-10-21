@@ -1908,6 +1908,7 @@ static bool jtag_is_active = false;
 #ifdef USE_PIO_JTAG
 static pio_jtag_inst_t pio_jtag;
 static uint32_t pio_jtag_clock_value = 6000000;
+enum { PIO_JTAG_MAX_BITS = sizeof(pio_jtag.write_buffer) * 4 };
 #else
 // Using the gpio functions directly without any further delay results
 // in a max clock rate of about 6Mhz.
@@ -2139,9 +2140,9 @@ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data) {
 // send up to 8 TMS bits with a given fixed TDI state
 uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
 #ifdef USE_PIO_JTAG
-  uint8_t rx = 0;
-  pio_jtag_write_tms(&pio_jtag, true, tdi, &data, &rx, len);
-  return rx;
+  uint8_t rx[2] = {0};
+  pio_jtag_write_tms(&pio_jtag, true, tdi, &data, rx, len);
+  return rx[0];
 #else
   int dlen = len & 7;
   uint8_t mask = 1;
@@ -2181,7 +2182,19 @@ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len) {
 void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len) {
 #ifdef USE_PIO_JTAG
   // jtag_debugf("mcu_hw_jtag_data(%p,%p,%d)", txd, rxd, len);  
-  pio_jtag_write_tdi_read_tdo(&pio_jtag, true, txd, rxd, len);
+  // Each JTAG bit expands to two bits in the PIO driver's write buffer.
+  while(len > 0) {
+    int bits = len > PIO_JTAG_MAX_BITS ? PIO_JTAG_MAX_BITS : len;
+    // The PIO driver also receives a trailing byte for byte-aligned transfers.
+    uint8_t rx[PIO_JTAG_MAX_BITS / 8 + 1];
+    pio_jtag_write_tdi_read_tdo(&pio_jtag, true, txd, rxd ? rx : NULL, bits);
+    if(rxd) {
+      memcpy(rxd, rx, (bits + 7) / 8);
+      rxd += bits / 8;
+    }
+    if(txd) txd += bits / 8;
+    len -= bits;
+  }
 #else
   uint8_t mask = 1;
   int dlen = len & 7;
@@ -2266,7 +2279,11 @@ void mcu_hw_jtag_toggleClk(uint32_t clk_len) {
 #ifdef USE_PIO_JTAG
   // this is being used if the MCU is locally generating JTAG signales e.g. when
   // uploading a core from sd card
-  pio_jtag_write_tdi(&pio_jtag, true, NULL, clk_len);
+  while(clk_len > PIO_JTAG_MAX_BITS) {
+    pio_jtag_write_tdi(&pio_jtag, true, NULL, PIO_JTAG_MAX_BITS);
+    clk_len -= PIO_JTAG_MAX_BITS;
+  }
+  if(clk_len) pio_jtag_write_tdi(&pio_jtag, true, NULL, clk_len);
 #else
   while(clk_len--) {
     MCU_HW_JTAG_CLK_HI();
