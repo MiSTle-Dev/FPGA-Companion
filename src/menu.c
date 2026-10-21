@@ -1022,8 +1022,8 @@ static void newcfg_draw(void) {
   while(show[1] && u8g2_GetStrWidth(&u8g2, show) > width-sw-6) show++;
   u8g2_DrawStr(&u8g2, 2, y, show);
 
-  // the keys
-  y = MENU_LINE_Y + 3*MENU_ENTRY_H;
+  // the keys, in the last line
+  y = MENU_LINE_Y + 4*MENU_ENTRY_H;
   u8g2_DrawStr(&u8g2, 2, y, "Esc=Cancel");
   u8g2_DrawStr(&u8g2, width-u8g2_GetStrWidth(&u8g2, "Enter=OK")-2, y, "Enter=OK");
 }
