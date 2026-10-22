@@ -2,8 +2,6 @@
   main.c - MiSTeryNano FPGA Companion Pi Pico variant
 */
 
-const char *companion_version = "Companion v1.4.33";
-
 #include "../mcu_hw.h"
 
 #include "../config.h"
@@ -17,6 +15,8 @@ const char *companion_version = "Companion v1.4.33";
 #include "../telnetd.h"
 #include "../xml.h"
 #include "../at_wifi.h"
+
+const char *companion_version = "Companion v1.4.33";
 
 /*-----------------------------------------------------------*/
 /*---            main FPGA communication task            ----*/
