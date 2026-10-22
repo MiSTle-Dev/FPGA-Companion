@@ -109,20 +109,20 @@ int inifile_remove(const char *name) {
   return (r == FR_OK) ? 0 : -1;
 }
 
-// Creates a new ini holding the current settings. An existing file is never
-// overwritten. 0 = created, 1 = exists already, -1 = failed
+// Creates a new, empty ini. An existing file is never overwritten.
+// 0 = created, 1 = exists already, -1 = failed
 int inifile_create(const char *name) {
   char *filename = ini_filename(name);
   FIL fil;
 
   sdc_lock();
-  bool exists = (f_open(&fil, filename, FA_OPEN_EXISTING | FA_READ) == FR_OK);
-  if(exists) f_close(&fil);
+  FRESULT r = f_open(&fil, filename, FA_WRITE | FA_CREATE_NEW);
+  if(r == FR_OK) r = f_close(&fil);
   sdc_unlock();
   vPortFree(filename);
 
-  if(exists) return 1;
-  return (inifile_write((char*)name) == 0) ? 0 : -1;
+  if(r == FR_EXIST) return 1;
+  return (r == FR_OK) ? 0 : -1;
 }
 
 // 0 = ini could be read (buf is empty if no selection is stored in it), -1 = it couldn't
