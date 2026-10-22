@@ -11,7 +11,7 @@ rm -rf build/*
 cd build
 
 export PICO_SDK_PATH=$HOME/downloads/pico-sdk
-export PICOTOOL_FETCH_FROM_GIT_PATH=$HOME/downloads/pico-sdk
+export PICOTOOL_FETCH_FROM_GIT_PATH=$HOME/pico-sdk
 
 cmake -DBOARD=MSP20K ..
 make
@@ -30,8 +30,8 @@ make clean
 
 rm -r *
 
-export PICO_SDK_PATH=$HOME/downloads/pico-sdk2
-export PICOTOOL_FETCH_FROM_GIT_PATH=$HOME/downloads/pico-sdk2
+export PICO_SDK_PATH=$HOME/downloads/pico2-sdk
+export PICOTOOL_FETCH_FROM_GIT_PATH=$HOME/pico2-sdk
 
 cmake -DBOARD=MSP2_20K ..
 make
