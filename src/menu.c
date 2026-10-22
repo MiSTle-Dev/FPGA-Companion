@@ -518,7 +518,8 @@ static void menu_entry_go(int step) {
   } while(!menu_entry_is_usable());
 }
 
-static void menu_draw_title(const char *s, bool arrow, bool selected) {
+// hint: optional text shown right aligned in the title line, e.g. "DEL=Delete"
+static void menu_draw_title(const char *s, bool arrow, bool selected, const char *hint) {
   int x = 1;
 
   // draw left arrow for submenus
@@ -538,6 +539,15 @@ static void menu_draw_title(const char *s, bool arrow, bool selected) {
   // draw title in bold and seperator line
   u8g2_SetFont(&u8g2, u8g2_font_helvB08_tr);
   u8g2_DrawStr(&u8g2, x, MENU_ENTRY_BASE, s);
+
+  // the hint in the regular font, if there's room for it behind the title
+  if(hint) {
+    int xtitle = x + u8g2_GetStrWidth(&u8g2, s);
+    u8g2_SetFont(&u8g2, font_helvR08_te);
+    int xhint = u8g2_GetDisplayWidth(&u8g2) - u8g2_GetStrWidth(&u8g2, hint) - 2;
+    if(xtitle + 4 <= xhint) u8g2_DrawStr(&u8g2, xhint, MENU_ENTRY_BASE, hint);
+  }
+  
   u8g2_DrawHLine(&u8g2, 0, MENU_LINE_Y, u8g2_GetDisplayWidth(&u8g2));
 
   if(selected)
@@ -797,7 +807,7 @@ static void menu_draw(const config_menu_t *menu, int selected, int scroll) {
   menu_debugf("drawing '%s'", menu->label);  
     
   // draw the title
-  menu_draw_title(menu->label, !menu_is_root(menu), selected == 0);
+  menu_draw_title(menu->label, !menu_is_root(menu), selected == 0, NULL);
 
   config_menu_entry_t *entry = menu->entries;
   for(int i=0;i<scroll;i++) entry=entry->next;  // skip first "scroll" entries
@@ -813,7 +823,8 @@ static void menu_fsel_draw(const char *label, sdc_dir_entry_t *dir, int selected
   // =============== draw a fileselector =================    
   menu_debugf("drawing '%s'", label);
   
-  menu_draw_title(label, true, selected == 0);
+  // the list of configs shows what the delete key does
+  menu_draw_title(label, true, selected == 0, fsel_state.cfgsel?"DEL=Delete":NULL);
   menu_timer_enable(false);
   fs_scroll_cur = -1;
 
@@ -832,7 +843,7 @@ static void menu_custom_draw(config_custom_t *custom, int selected, int scroll) 
   menu_debugf("drawing custom '%s' (%d)", custom->label, selected);
 
   // title is a regular entry
-  menu_draw_title(custom->label, true, selected == 0);
+  menu_draw_title(custom->label, true, selected == 0, NULL);
 
   if(custom->draw)
     custom->draw();
@@ -1174,13 +1185,13 @@ static void delcfg_draw(void) {
   }
   u8g2_DrawStr(&u8g2, 2, MENU_LINE_Y + 1*MENU_ENTRY_H, str);
 
-  // No at the left, Yes at the right. The chosen one is highlighted
-  int y = MENU_LINE_Y + 3*MENU_ENTRY_H;
-  int xyes = width-u8g2_GetStrWidth(&u8g2, "Yes")-2;
-  u8g2_DrawStr(&u8g2, 2, y, "No");
-  u8g2_DrawStr(&u8g2, xyes, y, "Yes");
-  if(delcfg_yes) u8g2_DrawButtonFrame(&u8g2, xyes, y, U8G2_BTN_INV, u8g2_GetStrWidth(&u8g2, "Yes"), 1, 1);
-  else           u8g2_DrawButtonFrame(&u8g2, 2, y, U8G2_BTN_INV, u8g2_GetStrWidth(&u8g2, "No"), 1, 1);
+  // The keys, in the last line: No at the left, Yes at the right. No is the
+  // default and not highlighted, Yes is once it has been chosen.
+  int y = MENU_LINE_Y + 4*MENU_ENTRY_H;
+  int xyes = width-u8g2_GetStrWidth(&u8g2, "Y=Yes")-2;
+  u8g2_DrawStr(&u8g2, 2, y, "N=No");
+  u8g2_DrawStr(&u8g2, xyes, y, "Y=Yes");
+  if(delcfg_yes) u8g2_DrawButtonFrame(&u8g2, xyes, y, U8G2_BTN_INV, u8g2_GetStrWidth(&u8g2, "Y=Yes"), 1, 1);
 }
 
 static const config_custom_t delcfg_custom = {
