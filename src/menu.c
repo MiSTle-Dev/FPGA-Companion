@@ -239,6 +239,11 @@ void menu_set_value(unsigned char id, int8_t value) {
 // ini. Only one cfgselector per core is supported.
 static char *cfgsel_current = NULL;
 
+// Set while a config is being switched. The rom uploads it starts are served by
+// another task and may be done before the switch has mounted everything. They
+// must not release the core then, the switch does that itself when it's done.
+static volatile bool menu_switching = false;
+
 static const char *menu_cfgsel_current(const config_cfgsel_t *sel) {
   return cfgsel_current?cfgsel_current:sel->def;
 }
@@ -971,6 +976,7 @@ static void menu_cfgsel_list(const config_cfgsel_t *sel, const char *focus) {
 
   // jump to the config in focus
   const char *cur = focus?focus:menu_cfgsel_current(sel);
+  menu_debugf("Config list: %d entries, focus '%s'", dir_len(dir), cur?cur:"-");
   int len = dir_len(dir);
   for(int i=0;cur && i<len;i++) {
     if(strcasecmp(dir_entry(dir, i)->name, cur) == 0) {
@@ -1054,13 +1060,19 @@ static bool menu_select_swallowed(void) {
   // the select that belongs to the enter that was just handled
   if(menu_swallow_armed) {
     menu_swallow_armed = false;
-    if((xTaskGetTickCount() - menu_swallow_start) < pdMS_TO_TICKS(MENU_SWALLOW_MS))
+    if((xTaskGetTickCount() - menu_swallow_start) < pdMS_TO_TICKS(MENU_SWALLOW_MS)) {
+      menu_debugf("select ignored (belongs to enter)");
       return true;
+    }
   }
 
   // the select of the space key. If a dialog is open (e.g. "name exists"), a
   // select is allowed to close it
-  return menu_newcfg_active() && !menu_dialog_is_open();
+  if(menu_newcfg_active() && !menu_dialog_is_open()) {
+    menu_debugf("select ignored (name is typed in)");
+    return true;
+  }
+  return false;
 }
 
 static void menu_newcfg_open(const config_cfgsel_t *sel) {
@@ -1259,6 +1271,7 @@ static void menu_core_release(void) {
 // images were not mounted properly.
 static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name) {
   menu_debugf("Config: switching to '%s'", name);
+  menu_switching = true;
 
   // 1. Hold the core in reset. It won't ask for any more sectors then. Wait
   //    until the sd card is done with whatever it was doing for the core.
@@ -1271,23 +1284,31 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name) {
   bool is_default = !sel->def || (strcasecmp(name, sel->def) == 0);
   if(!is_default) inifile_read(sel->def);
   if(inifile_read((char*)name) != 0) {
+    menu_debugf("Config: reading '%s' failed", name);
+    menu_switching = false;
     menu_draw_dialog("Config", "Loading failed");
     menu_core_release();
     return;
   }
 
-  // 3. Mount all the images, one by one, each one closed and opened under
-  //    the sd lock. The core has been told that its disks are gone before.
-  int failed = sdc_mount_defaults();
-
-  // 4. Remember the selection and store it in the default ini
+  // 3. Remember the selection and store it in the default ini. This is done
+  //    before the images are mounted: that starts the rom uploads, which run
+  //    on another task and use the file system and the spi bus as well.
   menu_cfgsel_set_current(name);
   int saved = !sel->def || inifile_selection_set(sel->def, name) == 0;
 
-  // 5. Let the core run. If rom images are being uploaded this happens once
-  //    they are done, as it does at power up.
-  if(!sdc_image_upload_in_progress()) menu_core_release();
-  else                                menu_debugf("Image upload in progress, delaying ready action");
+  // 4. Mount all the images, one by one, each one closed and opened under
+  //    the sd lock. The core has been told that its disks are gone before.
+  int failed = sdc_mount_defaults();
+
+  // 5. Let the core run. If rom images are still being uploaded this happens once
+  //    they are done, as it does at power up. Uploads that were finished meanwhile
+  //    did not do that, see menu_switching.
+  menu_switching = false;
+  if(!sdc_image_upload_in_progress() && !sdc_check_for_pending_image_uploads())
+    menu_core_release();
+  else
+    menu_debugf("Image upload in progress, delaying ready action");
 
   if(failed || !saved) {
     // tell what went wrong. The dialog shows the OSD for a moment
@@ -1306,6 +1327,7 @@ static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
     return;
   }
   
+  menu_debugf("Config: '%s' selected", entry->name);
   fsel_state.cfgsel = NULL;
 
   // the entry is part of a list that is released with the next listing
@@ -1438,6 +1460,8 @@ void menu_run_current_image_action(void) {
   // The same is true for mounted disk images
   
   if(!menu_state) return;
+
+  if(menu_switching) return;
 
   // the current menu state will be a open file selector if the image transfer
   // has been started through the OSD by the user

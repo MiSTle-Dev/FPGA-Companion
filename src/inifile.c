@@ -359,8 +359,8 @@ int inifile_write(char *name) {
 
     menu_variable_t *vars = menu_get_variables();
     while(vars) {
-      char str[10];
-      sprintf(str, "var %c=%d\n", vars->id, vars->value);
+      char str[16];   // "var X=-128\n" needs 12 bytes, 10 were not enough (stack overflow)
+      snprintf(str, sizeof(str), "var %c=%d\n", vars->id, vars->value);
       f_puts(str, &file);
       vars = vars->next;
     }
