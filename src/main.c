@@ -1,7 +1,8 @@
 /*
   main.c - MiSTeryNano FPGA Companion Pi Pico variant
-
 */
+
+const char *companion_version = "Companion v1.4.33";
 
 #include "../mcu_hw.h"
 
