@@ -35,7 +35,7 @@ export PICOTOOL_FETCH_FROM_GIT_PATH=$HOME/pico2-sdk
 
 cmake -DBOARD=MSP2_20K ..
 make
-mv fpga_companion.uf2 ../buildall/fpga_companion_MSP2_20.uf2
+mv fpga_companion.uf2 ../buildall/fpga_companion_MSP2_20K.uf2
 make clean
 
 cmake -DBOARD=PICO2 ..
