@@ -99,6 +99,19 @@ static int ini_selection_read(const char *filename, char *buf, size_t size) {
   return 0;
 }
 
+// true if the ini file can be opened
+int inifile_exists(const char *name) {
+  char *filename = ini_filename(name);
+  FIL fil;
+
+  sdc_lock();
+  int ok = (f_open(&fil, filename, FA_OPEN_EXISTING | FA_READ) == FR_OK);
+  if(ok) f_close(&fil);
+  sdc_unlock();
+  vPortFree(filename);
+  return ok;
+}
+
 // Deletes an ini file. 0 = deleted, -1 = failed
 int inifile_remove(const char *name) {
   char *filename = ini_filename(name);

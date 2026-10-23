@@ -1273,7 +1273,8 @@ static void menu_delcfg_choose(bool yes) {
 
 // a key typed in
 static void menu_delcfg_key(uint8_t code) {
-  if(code == 'y' || code == 'Y')      menu_delcfg_choose(true);
+  // the key labelled Y of a german keyboard delivers a z (the keyboard table is american)
+  if(code == 'y' || code == 'Y' || code == 'z' || code == 'Z') menu_delcfg_choose(true);
   else if(code == 'n' || code == 'N') menu_delcfg_choose(false);
 }
 
@@ -1287,9 +1288,10 @@ static void menu_core_release(void) {
 // using them, so this is done with the core held in reset: Before, a running
 // core was changed under its feet, there was no reset afterwards and some
 // images were not mounted properly.
-// With fresh the config is a new one: it starts like after power up without any ini
-// file. The variables are set to the values of the xml, all drives are ejected and the
-// ini file is written with this state. Neither the default ini nor the new ini is read.
+// Switches to a config. All drives are ejected first, so no drive of the previous
+// config is left behind. With fresh the config is a new one: it starts like after power
+// up without any ini file. The variables are set to the values of the xml and the ini
+// file is written with this state. Neither the default ini nor the new ini is read.
 static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh) {
   menu_debugf("Config: switching to '%s'", name);
   menu_switching = true;
@@ -1299,18 +1301,30 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool
   sys_set_val('R', 1);
   sdc_wait_idle();
 
+  // The config to switch to has to be there. Nothing is changed otherwise.
+  if(!fresh && !inifile_exists(name)) {
+    menu_debugf("Config: '%s' not found", name);
+    menu_switching = false;
+    menu_draw_dialog("Config", "Loading failed");
+    menu_core_release();
+    return;
+  }
+
+  // 2. Eject all drives, the names of the images are forgotten. The drives of the old
+  //    config must not stay: afterwards only the ones the default ini and the new
+  //    config ask for are mounted, as after power up. The rom images keep their names,
+  //    they are not drives and are uploaded again below.
+  for(int drive=0;drive<MAX_DRIVES;drive++) sdc_image_open(drive, NULL);
+
   bool written = true;
   if(fresh) {
-    // 2. Everything as after power up without ini file. The rom images keep their
-    //    names, they are not drives and are uploaded again below.
+    // 3. Everything as after power up without ini file: the variables have the
+    //    values of the xml and no drive is mounted. The new ini is written with that.
     menu_reset_variables();
-    for(int drive=0;drive<MAX_DRIVES;drive++) sdc_image_open(drive, NULL);
-
-    //    The new ini is written with that state
     written = (inifile_write((char*)name) == 0);
     if(!written) menu_debugf("Config: writing '%s' failed", name);
   } else {
-    // 2. Read the settings: the default ini first and the selected one on top,
+    // 3. Read the settings: the default ini first and the selected one on top,
     //    just like it happens at power up. This only changes the variables and the
     //    names of the images to be used, nothing is mounted, yet.
     bool is_default = !sel->def || (strcasecmp(name, sel->def) == 0);
@@ -1324,17 +1338,17 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool
     }
   }
 
-  // 3. Remember the selection and store it in the default ini. This is done
+  // 4. Remember the selection and store it in the default ini. This is done
   //    before the images are mounted: that starts the rom uploads, which run
   //    on another task and use the file system and the spi bus as well.
   menu_cfgsel_set_current(name);
   int saved = written && (!sel->def || inifile_selection_set(sel->def, name) == 0);
 
-  // 4. Mount all the images, one by one, each one closed and opened under
+  // 5. Mount all the images, one by one, each one closed and opened under
   //    the sd lock. The core has been told that its disks are gone before.
   int failed = sdc_mount_defaults();
 
-  // 5. Let the core run. If rom images are still being uploaded this happens once
+  // 6. Let the core run. If rom images are still being uploaded this happens once
   //    they are done, as it does at power up. Uploads that were finished meanwhile
   //    did not do that, see menu_switching.
   menu_switching = false;
