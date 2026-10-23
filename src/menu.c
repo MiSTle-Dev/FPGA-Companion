@@ -174,25 +174,32 @@ static void menu_setup_variable(char id, int value) {
   sys_set_val(id, value);
 }
 
-static void menu_setup_menu_variables(const config_menu_t *menu) {
+// At start the variables are created with the default values from the xml. With
+// reset they are set to these values again.
+static void menu_init_variable(char id, int value, bool reset) {
+  if(reset) menu_variable_set(id, value);
+  else      menu_setup_variable(id, value);
+}
+
+static void menu_setup_menu_variables(const config_menu_t *menu, bool reset) {
   config_menu_entry_t *me = menu->entries;
   while(me) {
     if(me->type == CONFIG_MENU_ENTRY_MENU)
-      menu_setup_menu_variables(me->menu);
+      menu_setup_menu_variables(me->menu, reset);
     
     if(me->type == CONFIG_MENU_ENTRY_LIST) {
       // setup variable ...
-      menu_setup_variable(me->list->id, me->list->def);
+      menu_init_variable(me->list->id, me->list->def, reset);
     }
     
     if(me->type == CONFIG_MENU_ENTRY_TOGGLE) {
       // setup variable ...
-      menu_setup_variable(me->toggle->id, me->toggle->def);
+      menu_init_variable(me->toggle->id, me->toggle->def, reset);
     }
     
     if(me->type == CONFIG_MENU_ENTRY_RANGE) {
       // setup variable ...
-      menu_setup_variable(me->range->id, me->range->def);
+      menu_init_variable(me->range->id, me->range->def, reset);
     }
     
     me = me->next;
@@ -208,7 +215,12 @@ static void menu_setup_variables(void) {
   // Action variables are sent into the core and processed there.
   
   // search through menu tree for lists
-  menu_setup_menu_variables(cfg->menu);  
+  menu_setup_menu_variables(cfg->menu, false);
+}
+
+// all variables of the menu back to the values given in the xml
+static void menu_reset_variables(void) {
+  menu_setup_menu_variables(cfg->menu, true);
 }
 
 
@@ -1005,7 +1017,7 @@ static void menu_cfgsel_open(config_menu_entry_t *entry) {
   menu_cfgsel_list(entry->cfgsel, NULL);
 }
 
-static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name);
+static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh);
 
 /* ========================== "New Config File" =============================== */
 
@@ -1100,9 +1112,10 @@ static void menu_newcfg_open(const config_cfgsel_t *sel) {
   menu_state->scroll = 0;
 }
 
-// The name is complete: an empty config file is created, the menu is closed and the
-// new config is switched to. That resets the core, so it starts with the default
-// settings, and from then on the settings are saved into the new file.
+// The name is complete: the file is reserved (it is never overwritten), the menu is
+// closed and the new config is started: all values at their defaults, all drives
+// ejected, the file written with that state and the core reset. From then on the
+// settings are saved into the new file.
 static void menu_newcfg_create(void) {
   const config_cfgsel_t *sel = newcfg.sel;
   const char *ext = (sel->ext && sel->ext[0])?sel->ext[0]:NULL;
@@ -1129,12 +1142,12 @@ static void menu_newcfg_create(void) {
 
   menu_debugf("Config: created '%s'", file);
 
-  // leave the dialog and the config selector, close the menu and switch
+  // leave the dialog and the config selector, close the menu and start the new config
   fsel_state.cfgsel = NULL;
   menu_pop();
   menu_pop();
   osd_enable(OSD_INVISIBLE);
-  menu_cfgsel_apply(sel, file);
+  menu_cfgsel_apply(sel, file, true);
 }
 
 // a key typed in
@@ -1274,7 +1287,10 @@ static void menu_core_release(void) {
 // using them, so this is done with the core held in reset: Before, a running
 // core was changed under its feet, there was no reset afterwards and some
 // images were not mounted properly.
-static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name) {
+// With fresh the config is a new one: it starts like after power up without any ini
+// file. The variables are set to the values of the xml, all drives are ejected and the
+// ini file is written with this state. Neither the default ini nor the new ini is read.
+static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh) {
   menu_debugf("Config: switching to '%s'", name);
   menu_switching = true;
 
@@ -1283,24 +1299,36 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name) {
   sys_set_val('R', 1);
   sdc_wait_idle();
 
-  // 2. Read the settings: the default ini first and the selected one on top,
-  //    just like it happens at power up. This only changes the variables and the
-  //    names of the images to be used, nothing is mounted, yet.
-  bool is_default = !sel->def || (strcasecmp(name, sel->def) == 0);
-  if(!is_default) inifile_read(sel->def);
-  if(inifile_read((char*)name) != 0) {
-    menu_debugf("Config: reading '%s' failed", name);
-    menu_switching = false;
-    menu_draw_dialog("Config", "Loading failed");
-    menu_core_release();
-    return;
+  bool written = true;
+  if(fresh) {
+    // 2. Everything as after power up without ini file. The rom images keep their
+    //    names, they are not drives and are uploaded again below.
+    menu_reset_variables();
+    for(int drive=0;drive<MAX_DRIVES;drive++) sdc_image_open(drive, NULL);
+
+    //    The new ini is written with that state
+    written = (inifile_write((char*)name) == 0);
+    if(!written) menu_debugf("Config: writing '%s' failed", name);
+  } else {
+    // 2. Read the settings: the default ini first and the selected one on top,
+    //    just like it happens at power up. This only changes the variables and the
+    //    names of the images to be used, nothing is mounted, yet.
+    bool is_default = !sel->def || (strcasecmp(name, sel->def) == 0);
+    if(!is_default) inifile_read(sel->def);
+    if(inifile_read((char*)name) != 0) {
+      menu_debugf("Config: reading '%s' failed", name);
+      menu_switching = false;
+      menu_draw_dialog("Config", "Loading failed");
+      menu_core_release();
+      return;
+    }
   }
 
   // 3. Remember the selection and store it in the default ini. This is done
   //    before the images are mounted: that starts the rom uploads, which run
   //    on another task and use the file system and the spi bus as well.
   menu_cfgsel_set_current(name);
-  int saved = !sel->def || inifile_selection_set(sel->def, name) == 0;
+  int saved = written && (!sel->def || inifile_selection_set(sel->def, name) == 0);
 
   // 4. Mount all the images, one by one, each one closed and opened under
   //    the sd lock. The core has been told that its disks are gone before.
@@ -1342,7 +1370,7 @@ static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
   // return to the menu, close it right away and switch
   menu_pop();
   osd_enable(OSD_INVISIBLE);
-  menu_cfgsel_apply(sel, name);
+  menu_cfgsel_apply(sel, name, false);
 }
 
 // at power up: load the ini that was selected last. The default ini itself has
