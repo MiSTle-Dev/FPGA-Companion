@@ -41,7 +41,7 @@ pid3=$!
 wait $pid1 $pid2 $pid3
 
 # --- GRUPPE 2: pico2-sdk (Läuft parallel im Hintergrund) ---
-build_target "MSP2_20K" "$HOME/pico2-sdk" "fpga_companion_MSP2_20" &
+build_target "MSP2_20K" "$HOME/pico2-sdk" "fpga_companion_MSP2_20K" &
 pid4=$!
 
 build_target "PICO2" "$HOME/pico2-sdk" "fpga_companion_PICO2" &
