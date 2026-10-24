@@ -1288,10 +1288,10 @@ static void menu_core_release(void) {
 // using them, so this is done with the core held in reset: Before, a running
 // core was changed under its feet, there was no reset afterwards and some
 // images were not mounted properly.
-// Switches to a config. All drives are ejected first, so no drive of the previous
-// config is left behind. With fresh the config is a new one: it starts like after power
-// up without any ini file. The variables are set to the values of the xml and the ini
-// file is written with this state. Neither the default ini nor the new ini is read.
+// Switches to a config. Only the drives of the selected ini are mounted, none of the
+// previous config or of the default ini. With fresh the config is a new one: it starts
+// like after power up without any ini file: no drives, the variables at the values of the
+// xml, and the ini file is written with this state. No ini is read then.
 static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh) {
   menu_debugf("Config: switching to '%s'", name);
   menu_switching = true;
@@ -1310,25 +1310,29 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool
     return;
   }
 
-  // 2. Eject all drives, the names of the images are forgotten. The drives of the old
-  //    config must not stay: afterwards only the ones the default ini and the new
-  //    config ask for are mounted, as after power up. The rom images keep their names,
-  //    they are not drives and are uploaded again below.
-  for(int drive=0;drive<MAX_DRIVES;drive++) sdc_image_open(drive, NULL);
-
   bool written = true;
   if(fresh) {
-    // 3. Everything as after power up without ini file: the variables have the
-    //    values of the xml and no drive is mounted. The new ini is written with that.
+    // 2. A new config: everything as after power up without ini file. All drives are
+    //    ejected and the variables have the values of the xml. The rom images keep
+    //    their names, they are not drives and are uploaded again below.
+    for(int drive=0;drive<MAX_DRIVES;drive++) sdc_image_open(drive, NULL);
     menu_reset_variables();
+
+    // 3. The new ini is written with that state
     written = (inifile_write((char*)name) == 0);
     if(!written) menu_debugf("Config: writing '%s' failed", name);
   } else {
-    // 3. Read the settings: the default ini first and the selected one on top,
-    //    just like it happens at power up. This only changes the variables and the
-    //    names of the images to be used, nothing is mounted, yet.
+    // 2. The settings: the default ini is the base for the variables and the rom
+    //    images ...
     bool is_default = !sel->def || (strcasecmp(name, sel->def) == 0);
     if(!is_default) inifile_read(sel->def);
+
+    // ... but the drives are only the ones of the selected ini. All drives are ejected,
+    // so those of the old config and of the default ini are gone.
+    for(int drive=0;drive<MAX_DRIVES;drive++) sdc_image_open(drive, NULL);
+
+    // 3. The selected ini on top. This only changes the variables and the names of the
+    //    images to be used, nothing is mounted, yet.
     if(inifile_read((char*)name) != 0) {
       menu_debugf("Config: reading '%s' failed", name);
       menu_switching = false;
@@ -1413,9 +1417,15 @@ static void menu_cfgsel_boot(void) {
     return;
   }
 
-  if(strcasecmp(name, sel->def) != 0 && inifile_read(name) != 0) {
-    menu_debugf("Config: '%s' not found, using the default", name);
-    return;
+  if(strcasecmp(name, sel->def) != 0) {
+    if(!inifile_exists(name)) {
+      menu_debugf("Config: '%s' not found, using the default", name);
+      return;
+    }
+
+    // as with a switch: the drives are the ones of the selected ini, not those of the default ini
+    for(int drive=0;drive<MAX_DRIVES;drive++) sdc_image_open(drive, NULL);
+    inifile_read(name);
   }
 
   menu_debugf("Config: '%s' selected", name);
