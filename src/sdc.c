@@ -1149,8 +1149,9 @@ static bool sdc_cfg_ext_match(const char *name, char **exts) {
 // ini files meant for it. Files with the hidden attribute are listed on purpose,
 // so the ini files can be hidden to keep the root directory tidy. System files
 // are left out, as are names starting with a dot like the "._*" files macOS adds
-// to FAT volumes. The list is sorted and remains valid until the next call.
-sdc_dir_entry_t *sdc_readdir_cfg(char **exts) {
+// to FAT volumes. The file named skip (the default ini) is left out, too. The list
+// is sorted and remains valid until the next call.
+sdc_dir_entry_t *sdc_readdir_cfg(char **exts, const char *skip) {
   static sdc_dir_entry_t *list = NULL;
   
   // free the previous list
@@ -1173,6 +1174,7 @@ sdc_dir_entry_t *sdc_readdir_cfg(char **exts) {
     while(f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
       if((fno.fattrib & (AM_DIR|AM_SYS)) || fno.fname[0] == '.') continue;
       if(!sdc_cfg_ext_match(fno.fname, exts)) continue;
+      if(skip && strcasecmp(fno.fname, skip) == 0) continue;
 
       sdc_dir_entry_t *entry = pvPortMalloc(sizeof(sdc_dir_entry_t));
       entry->name = StrDup(fno.fname);

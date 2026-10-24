@@ -978,8 +978,9 @@ static void menu_pop(void) {
 static void menu_cfgsel_list(const config_cfgsel_t *sel, const char *focus) {
   menu_debugf("menu_cfgsel_list()");
 
-  // only the ini files meant for this core are listed, followed by "New Config File"
-  sdc_dir_entry_t *dir = sdc_readdir_cfg(sel->ext);
+  // Only the ini files meant for this core are listed, but not the default ini, followed
+  // by "New Config File"
+  sdc_dir_entry_t *dir = sdc_readdir_cfg(sel->ext, sel->def);
 
   // the list is drawn by the file selector code
   static const unsigned char plus_icon[] = { 0x00,0x18,0x18,0x7e,0x7e,0x18,0x18,0x00 };
