@@ -44,6 +44,7 @@ extern TaskHandle_t menu_handle;
 
 void menu_init(void);
 menu_variable_t *menu_get_variables(void);
+const char *menu_cfgsel_save_name(const char *file);
 void menu_set_value(unsigned char id, int8_t value);
 void menu_do(int);
 void menu_notify(unsigned long msg);

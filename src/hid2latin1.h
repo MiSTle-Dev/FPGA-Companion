@@ -133,7 +133,7 @@ static const uint8_t hid2latin1_us[] = {
         0x31|SHIFT,    // |
         0x30|SHIFT,    // }
         0x35|SHIFT,    // ~
-        0x00           // DEL  
+        0x4c           // DEL (the Delete key)
 };
 
 #ifdef SDL
