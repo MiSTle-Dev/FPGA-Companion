@@ -17,8 +17,8 @@
 #define MAX_NR_HCI_CONNECTIONS 4
 #define MAX_NR_HID_HOST_CONNECTIONS 4
 
+#define MAX_NR_L2CAP_CHANNELS  10      // per device: control + interrupt, plus SDP in/out while connecting
 #define MAX_NR_L2CAP_SERVICES  4
-#define MAX_NR_L2CAP_CHANNELS  4
 
 #define HCI_ACL_CHUNK_SIZE_ALIGNMENT 4
 #define HCI_ACL_PAYLOAD_SIZE (1691 + 4)

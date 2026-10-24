@@ -15,6 +15,8 @@
 #define hidp_extreme_debugf(...)
 #endif
 
+#define BT_DEBUG_REPORTS 0     // 1 = dump every incoming report (only for single device debugging!)
+
 typedef struct {
   uint8_t bSize: 2;
   uint8_t bType: 2;
@@ -616,6 +618,11 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
 							report_complete = 0;
 							report_has_input = false;
 							buttons = 0;
+
+                            // don't let a rejected collection leak into the next one
+                            conf->type = REPORT_TYPE_NONE;
+                            memset(&conf->joystick_mouse, 0, sizeof(conf->joystick_mouse));
+                            for (int c = 0; c < MAX_AXES; c++) conf->joystick_mouse.axis[c].index = -1;
                     }
                 }
                 else
@@ -770,26 +777,28 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                 if (usage_list_len < HID_LOCAL_USAGE_MAX)
                     usage_list[usage_list_len++] = (uint16_t)value;
 
-                if (!collection_depth && value == USAGE_KEYBOARD)
+                const bool gd = (g.usage_page == USAGE_PAGE_GENERIC_DESKTOP);
+
+                if (!collection_depth && gd && value == USAGE_KEYBOARD)
                 {
-						hidp_debugf(" -> Keyboard");
-						conf->type = REPORT_TYPE_KEYBOARD;
+                    hidp_debugf(" -> Keyboard");
+                    conf->type = REPORT_TYPE_KEYBOARD;
                 }
-                else if (!collection_depth && value == USAGE_MOUSE)
+                else if (!collection_depth && gd && value == USAGE_MOUSE)
                 {
-						hidp_debugf(" -> Mouse");
-						conf->type = REPORT_TYPE_MOUSE;
+                    hidp_debugf(" -> Mouse");
+                    conf->type = REPORT_TYPE_MOUSE;
                 }
-                else if (!collection_depth && (value == USAGE_GAMEPAD || value == USAGE_JOYSTICK))
+                else if (!collection_depth && gd && (value == USAGE_GAMEPAD || value == USAGE_JOYSTICK))
                 {
-							hidp_debugf(" -> Gamepad/Joystick");
-							conf->type = REPORT_TYPE_JOYSTICK;
+                    hidp_debugf(" -> Gamepad/Joystick");
+                    conf->type = REPORT_TYPE_JOYSTICK;
                 }
-		else if (!collection_depth && value == USAGE_CONSUMER_CONTROL && g.usage_page == USAGE_PAGE_CONSUMER)
-		{
-							hidp_debugf("  -> Consumer");
-							conf->type = REPORT_TYPE_CONSUMER;
-		}
+                else if (!collection_depth && value == USAGE_CONSUMER_CONTROL && g.usage_page == USAGE_PAGE_CONSUMER)
+                {
+                    hidp_debugf("  -> Consumer");
+                    conf->type = REPORT_TYPE_CONSUMER;
+                }
                 else if (value == USAGE_POINTER && app_collection)
                     hidp_debugf(" -> Pointer");
 
