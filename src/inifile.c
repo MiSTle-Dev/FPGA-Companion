@@ -195,8 +195,8 @@ int inifile_selection_set(const char *def, const char *name) {
     }
     if(w > buf && w[-1] != '\n') *w++ = '\n';
     
-    // ... add the new one ...
-    w += sprintf(w, "%s=%s\n", INIFILE_SELECTION_KEY, name);
+    // ... add the new one (the buffer has room for it, see above) ...
+    w += snprintf(w, (size_t)((buf + size + nlen + 16) - w), "%s=%s\n", INIFILE_SELECTION_KEY, name);
 
     // ... and write it back
     if(f_open(&fil, filename, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {

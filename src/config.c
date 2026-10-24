@@ -813,7 +813,6 @@ static void config_xml_cfgselector_attribute(char *name, char *value) {
       cs->ext = config_parse_strlist(value, ';');
     else if(strcasecmp(name, "default") == 0 && !cs->def)
       cs->def = StrDup(value);
-
     else
       debugf("WARNING: Unused cfgselector attribute '%s'", name);
   }

@@ -262,6 +262,7 @@ static const char *menu_cfgsel_current(const config_cfgsel_t *sel) {
 
 static void menu_cfgsel_set_current(const char *name) {
   char *n = pvPortMalloc(strlen(name)+1);
+  if(!n) return;
   strcpy(n, name);
   if(cfgsel_current) vPortFree(cfgsel_current);
   cfgsel_current = n;
@@ -1000,8 +1001,8 @@ static void menu_cfgsel_list(const config_cfgsel_t *sel, const char *focus) {
 
   // jump to the config in focus
   const char *cur = focus?focus:menu_cfgsel_current(sel);
-  menu_debugf("Config list: %d entries, focus '%s'", dir_len(dir), cur?cur:"-");
   int len = dir_len(dir);
+  menu_debugf("Config list: %d entries, focus '%s'", len, cur?cur:"-");
   for(int i=0;cur && i<len;i++) {
     if(strcasecmp(dir_entry(dir, i)->name, cur) == 0) {
       menu_state->selected = i+1;
@@ -1113,10 +1114,10 @@ static void menu_newcfg_open(const config_cfgsel_t *sel) {
   menu_state->scroll = 0;
 }
 
-// The name is complete: the file is reserved (it is never overwritten), the menu is
-// closed and the new config is started: all values at their defaults, all drives
-// ejected, the file written with that state and the core reset. From then on the
-// settings are saved into the new file.
+// The name is complete: the file is reserved (it is never overwritten) and the new config
+// is started: all values at their defaults, all drives ejected, the file written with
+// that state and the core reset. From then on the settings are saved into the new file.
+// The menu stays open, in the menu the selector was opened from.
 static void menu_newcfg_create(void) {
   const config_cfgsel_t *sel = newcfg.sel;
   const char *ext = (sel->ext && sel->ext[0])?sel->ext[0]:NULL;
@@ -1143,12 +1144,15 @@ static void menu_newcfg_create(void) {
 
   menu_debugf("Config: created '%s'", file);
 
-  // leave the dialog and the config selector, close the menu and start the new config
+  // Leave the dialog and the config selector: back to the menu the selector was opened
+  // from, it stays open. It is drawn before the new config is started, and again with
+  // the new config in it afterwards (a key press does not draw anything by itself).
   fsel_state.cfgsel = NULL;
   menu_pop();
   menu_pop();
-  osd_enable(OSD_INVISIBLE);
+  menu_do(0);
   menu_cfgsel_apply(sel, file, true);
+  menu_do(0);
 }
 
 // a key typed in
@@ -1227,8 +1231,8 @@ static void menu_delcfg_open(void) {
   // not the "New Config File" entry and nothing that isn't a config of this core
   if(entry->name[0] == '/' || !sdc_cfg_name_ok(entry->name, sel->ext)) return;
 
-  // The default ini holds the selection and is loaded at power up. The config in
-  // use is what the settings are saved into.
+  // The default ini is not listed, this is a safeguard: it holds the selection and
+  // is loaded at power up. The config in use is what the settings are saved into.
   if(sel->def && strcasecmp(entry->name, sel->def) == 0) {
     menu_draw_dialog("Delete Config", "The default config\ncan't be deleted");
     return;
@@ -1285,14 +1289,15 @@ static void menu_core_release(void) {
   else                           sys_set_val('R', 0);
 }
 
-// Switch to another ini. The images have to be exchanged while nothing is
-// using them, so this is done with the core held in reset: Before, a running
-// core was changed under its feet, there was no reset afterwards and some
-// images were not mounted properly.
-// Switches to a config. Only the drives of the selected ini are mounted, none of the
-// previous config or of the default ini. With fresh the config is a new one: it starts
-// like after power up without any ini file: no drives, the variables at the values of the
-// xml, and the ini file is written with this state. No ini is read then.
+// Switches to a config. The images have to be exchanged while nothing is using them, so
+// the core is held in reset meanwhile and released when everything is mounted.
+//
+// Only the drives of the selected ini are mounted, none of the previous config or of
+// the default ini. The default ini is the base for the variables and the rom images.
+//
+// With fresh the config is a new one and starts like after power up without any ini file:
+// no drives, the variables at the values of the xml. The ini file is written with this
+// state, no ini is read.
 static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh) {
   menu_debugf("Config: switching to '%s'", name);
   menu_switching = true;
@@ -1386,9 +1391,11 @@ static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
   char name[strlen(entry->name)+1];
   strcpy(name, entry->name);
   
-  // return to the menu, close it right away and switch
+  // Back to the menu the selector was opened from, it stays open. It is drawn right away
+  // as the switch takes some time. (Drawing it again, now with the new config, is done
+  // by menu_do() once this returns.)
   menu_pop();
-  osd_enable(OSD_INVISIBLE);
+  menu_do(0);
   menu_cfgsel_apply(sel, name, false);
 }
 
@@ -1521,9 +1528,10 @@ void menu_run_current_image_action(void) {
 
   if(menu_switching) return;
 
-  // the current menu state will be a open file selector if the image transfer
-  // has been started through the OSD by the user
-  if(menu_state->type != MENU_TYPE_FILESELECTOR) {
+  // The current menu state will be a open file selector if the image transfer
+  // has been started through the OSD by the user. The list of the configs is not one
+  // (it is open when the uploads of a config switch are still running).
+  if(menu_state->type != MENU_TYPE_FILESELECTOR || fsel_state.cfgsel) {
     menu_debugf("finished download was ini file triggered during boot");
 
     if(!sdc_check_for_pending_image_uploads()) {
