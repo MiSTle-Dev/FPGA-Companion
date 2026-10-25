@@ -501,20 +501,20 @@ bool sdc_image_upload_in_progress(void) {
 }
 
 static void image_send_chunk(int image, uint32_t len) {  
+  // The state of the image is only looked at with the file system locked. The menu task
+  // sets it up under that lock, and the core may ask for the first data right after the
+  // image has been selected, before that is done. The request used to be dropped then.
+  sdc_lock();
   
-  // send as many bytes as buffer space is available
-  if(!image_bytes2send[image]) {
-    sdc_debugf("IMG %d: no image to send!", image);
-    return;
-  }
-    
-  if(!fil[MAX_DRIVES+image].flag) {
+  if(!image_bytes2send[image] || !fil[MAX_DRIVES+image].flag) {
+    sdc_unlock();
     sdc_debugf("IMG %d: no image to send!", image);
     return;
   }
     
   // send as many bytes as buffer space is available
   if(!len) {
+    sdc_unlock();
     sdc_debugf("IMG %d: no data requested", image);
     return;
   }
@@ -523,8 +523,6 @@ static void image_send_chunk(int image, uint32_t len) {
   if(len > image_bytes2send[image]) len = image_bytes2send[image];
 
   sdc_debugf("IMG %d: sending %lu of %lu", image, len, image_bytes2send[image]);
-
-  sdc_lock();
 
   // read data from image file
   unsigned char buffer[len];
@@ -540,11 +538,11 @@ static void image_send_chunk(int image, uint32_t len) {
   unsigned char *p = buffer;
   while(len--) mcu_hw_spi_tx_u08(*p++);
   mcu_hw_spi_end();
-  
-  sdc_unlock();
 
-  // check if last block has been sent
-  if(!image_bytes2send[image]) {
+  // check if last block has been sent. The file is closed and the core is told that the
+  // image is gone under the same lock, the slot may be used again right after.
+  bool done = !image_bytes2send[image];
+  if(done) {
     sdc_debugf("IMG %d: download done, closing file", image);
 
     f_close(&fil[MAX_DRIVES+image]);
@@ -557,12 +555,14 @@ static void image_send_chunk(int image, uint32_t len) {
     mcu_hw_spi_tx_u08(image);    
     for(int i=0;i<4;i++) mcu_hw_spi_tx_u08(0);    // send size of 0
     mcu_hw_spi_end();
-
-    // the image download have either been triggered by the ini file at
-    // boot time or by the user. run image action will take care of both
-    // cases.    
-    menu_run_current_image_action();
   }
+
+  sdc_unlock();
+
+  // the image download have either been triggered by the ini file at
+  // boot time or by the user. run image action will take care of both
+  // cases. This is done without the lock, it runs actions.
+  if(done) menu_run_current_image_action();
 }
     
 static int sdc_rom_image_get_buffer(char image) {
@@ -809,20 +809,21 @@ int sdc_image_open(int drive, char *name) {
     sdc_debugf("%s %d: closing file '%s'", (drive < MAX_DRIVES)?"DRV":"IMG",
 	       (drive < MAX_DRIVES)?drive:(drive-MAX_DRIVES),
 	       image_name[drive]?image_name[drive]:"<unknown>");
+    // A rom transfer that is still running is cancelled: the core is told that the image
+    // is gone. Its rest must not be sent as part of the next image.
+    if(drive >= MAX_DRIVES && drive < MAX_DRIVES+MAX_IMAGES)
+      sdc_rom_image_selected(drive-MAX_DRIVES, 0);
     f_close(&fil[drive]);
     memset(&fil[drive], 0, sizeof(FIL));
   }
+  if(drive >= MAX_DRIVES && drive < MAX_DRIVES+MAX_IMAGES)
+    image_bytes2send[drive-MAX_DRIVES] = 0;     // also for one that was delayed or rejected
   if(drive < MAX_DRIVES && lktbl[drive]) {
     sdc_debugf("DRV %d: freeing link table", drive);
     vPortFree(lktbl[drive]);
     lktbl[drive] = NULL;
   }
   sdc_unlock();
-  
-  if(drive >= MAX_DRIVES && drive < MAX_DRIVES+MAX_IMAGES) {
-    // report image de-selection
-    sdc_rom_image_selected(drive-MAX_DRIVES, 0);
-  }
 
   if(drive < MAX_DRIVES+MAX_IMAGES) {
     // forget about any previous name
