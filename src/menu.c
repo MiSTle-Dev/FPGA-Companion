@@ -255,6 +255,8 @@ static char *cfgsel_current = NULL;
 // another task and may be done before the switch has mounted everything. They
 // must not release the core then, the switch does that itself when it's done.
 static volatile bool menu_switching = false;
+// the core was left in reset by a config switch, released once the rom uploads are done
+static volatile bool menu_release_pending = false;
 
 static const char *menu_cfgsel_current(const config_cfgsel_t *sel) {
   return cfgsel_current?cfgsel_current:sel->def;
@@ -1301,6 +1303,7 @@ static void menu_core_release(void) {
 static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh) {
   menu_debugf("Config: switching to '%s'", name);
   menu_switching = true;
+  menu_release_pending = false;
 
   // 1. Hold the core in reset. It won't ask for any more sectors then. Wait
   //    until the sd card is done with whatever it was doing for the core.
@@ -1364,8 +1367,10 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool
   menu_switching = false;
   if(!sdc_image_upload_in_progress() && !sdc_check_for_pending_image_uploads())
     menu_core_release();
-  else
+  else {
     menu_debugf("Image upload in progress, delaying ready action");
+    menu_release_pending = true;
+  }
 
   if(failed || !saved) {
     // tell what went wrong. The dialog shows the OSD for a moment
@@ -1527,6 +1532,17 @@ void menu_run_current_image_action(void) {
   if(!menu_state) return;
 
   if(menu_switching) return;
+
+  // A config switch left the core in reset until the uploads are done. That must not
+  // depend on what the user has opened meanwhile: the menu stays open after a switch
+  // and a file selector for a drive is no reason to keep the core in reset.
+  if(menu_release_pending) {
+    if(!sdc_check_for_pending_image_uploads()) {
+      menu_release_pending = false;
+      menu_core_release();
+    }
+    return;
+  }
 
   // The current menu state will be a open file selector if the image transfer
   // has been started through the OSD by the user. The list of the configs is not one
