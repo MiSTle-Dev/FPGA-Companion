@@ -1021,7 +1021,8 @@ static void menu_cfgsel_open(config_menu_entry_t *entry) {
   menu_cfgsel_list(entry->cfgsel, NULL);
 }
 
-static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh);
+static bool menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh);
+static void menu_cfgsel_done(bool ok);
 
 /* ========================== "New Config File" =============================== */
 
@@ -1146,15 +1147,13 @@ static void menu_newcfg_create(void) {
 
   menu_debugf("Config: created '%s'", file);
 
-  // Leave the dialog and the config selector: back to the menu the selector was opened
-  // from, it stays open. It is drawn before the new config is started, and again with
-  // the new config in it afterwards (a key press does not draw anything by itself).
+  // Leave the dialog and the config selector. The menu is drawn before the new config is
+  // started, as that takes some time, and closed afterwards.
   fsel_state.cfgsel = NULL;
   menu_pop();
   menu_pop();
   menu_do(0);
-  menu_cfgsel_apply(sel, file, true);
-  menu_do(0);
+  menu_cfgsel_done(menu_cfgsel_apply(sel, file, true));
 }
 
 // a key typed in
@@ -1300,7 +1299,8 @@ static void menu_core_release(void) {
 // With fresh the config is a new one and starts like after power up without any ini file:
 // no drives, the variables at the values of the xml. The ini file is written with this
 // state, no ini is read.
-static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh) {
+// returns false if a dialog has been shown for a problem
+static bool menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool fresh) {
   menu_debugf("Config: switching to '%s'", name);
   menu_switching = true;
   menu_release_pending = false;
@@ -1316,7 +1316,7 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool
     menu_switching = false;
     menu_draw_dialog("Config", "Loading failed");
     menu_core_release();
-    return;
+    return false;
   }
 
   bool written = true;
@@ -1347,7 +1347,7 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool
       menu_switching = false;
       menu_draw_dialog("Config", "Loading failed");
       menu_core_release();
-      return;
+      return false;
     }
   }
 
@@ -1377,7 +1377,19 @@ static void menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool
     char msg[96];
     snprintf(msg, sizeof(msg), "%s\n%s", name, failed?"(image file missing)":"(not saved)");
     menu_draw_dialog("Config", msg);
+    return false;
   }
+  return true;
+}
+
+// the whole menu is closed once a config has been started, unless a dialog tells about
+// a problem: that one has to be seen, the menu stays as it is then
+static void menu_cfgsel_done(bool ok) {
+  if(ok) {
+    menu_timer_enable(false);
+    osd_enable(OSD_INVISIBLE);
+  } else
+    menu_do(0);
 }
 
 static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
@@ -1396,12 +1408,11 @@ static void menu_cfgsel_selected(sdc_dir_entry_t *entry) {
   char name[strlen(entry->name)+1];
   strcpy(name, entry->name);
   
-  // Back to the menu the selector was opened from, it stays open. It is drawn right away
-  // as the switch takes some time. (Drawing it again, now with the new config, is done
-  // by menu_do() once this returns.)
+  // Back to the menu the selector was opened from. It is drawn right away as the switch
+  // takes some time, and closed afterwards.
   menu_pop();
   menu_do(0);
-  menu_cfgsel_apply(sel, name, false);
+  menu_cfgsel_done(menu_cfgsel_apply(sel, name, false));
 }
 
 // at power up: load the ini that was selected last. The default ini itself has
