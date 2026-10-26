@@ -198,6 +198,25 @@ if(status & 0x01) {
   return 0;
 }
 
+// Wait until the sd controller isn't busy with a transfer for the core anymore.
+// Used after the core has been put into reset and before its images are swapped.
+// Returns false if it still is busy after SDC_BUSY_TIMEOUT_MS.
+bool sdc_wait_idle(void) {
+  unsigned char status;
+  TickType_t t0 = xTaskGetTickCount();
+  do {
+    sdc_spi_begin();
+    mcu_hw_spi_tx_u08(SPI_SDC_STATUS);
+    status = mcu_hw_spi_tx_u08(0);
+    mcu_hw_spi_end();
+    if(status & 0x02) vTaskDelay(1);
+  } while((status & 0x02) &&
+          (xTaskGetTickCount() - t0) < pdMS_TO_TICKS(SDC_BUSY_TIMEOUT_MS));
+
+  if(status & 0x02) sdc_debugf("SDC: still busy after %d ms", SDC_BUSY_TIMEOUT_MS);
+  return !(status & 0x02);
+}
+
 // -------------------- fatfs read/write interface to sd card connected to fpga -------------------
 
 #ifdef DEV_SD
@@ -421,8 +440,15 @@ void sdc_set_default(int drive, const char *name) {
     // name should consist of path and image name
     char *p = strrchr(name+strlen(CARD_MOUNTPOINT), '/');
     if(p && *p) {
+      // not strndup(): that allocates from the libc heap while everything
+      // here is released with vPortFree(), i.e. into the FreeRTOS heap. This
+      // corrupted the heap the second time a default was set for a drive
+      size_t len = p-name;
+      char *dir = pvPortMalloc(len+1);
+      memcpy(dir, name, len);
+      dir[len] = '\0';
       if(cwd[drive]) vPortFree(cwd[drive]);
-      cwd[drive] = strndup(name, p-name);
+      cwd[drive] = dir;
       if(image_name[drive]) vPortFree(image_name[drive]);
       image_name[drive] = StrDup(p+1);
     }
@@ -475,20 +501,20 @@ bool sdc_image_upload_in_progress(void) {
 }
 
 static void image_send_chunk(int image, uint32_t len) {  
+  // The state of the image is only looked at with the file system locked. The menu task
+  // sets it up under that lock, and the core may ask for the first data right after the
+  // image has been selected, before that is done. The request used to be dropped then.
+  sdc_lock();
   
-  // send as many bytes as buffer space is available
-  if(!image_bytes2send[image]) {
-    sdc_debugf("IMG %d: no image to send!", image);
-    return;
-  }
-    
-  if(!fil[MAX_DRIVES+image].flag) {
+  if(!image_bytes2send[image] || !fil[MAX_DRIVES+image].flag) {
+    sdc_unlock();
     sdc_debugf("IMG %d: no image to send!", image);
     return;
   }
     
   // send as many bytes as buffer space is available
   if(!len) {
+    sdc_unlock();
     sdc_debugf("IMG %d: no data requested", image);
     return;
   }
@@ -497,8 +523,6 @@ static void image_send_chunk(int image, uint32_t len) {
   if(len > image_bytes2send[image]) len = image_bytes2send[image];
 
   sdc_debugf("IMG %d: sending %lu of %lu", image, len, image_bytes2send[image]);
-
-  sdc_lock();
 
   // read data from image file
   unsigned char buffer[len];
@@ -514,11 +538,11 @@ static void image_send_chunk(int image, uint32_t len) {
   unsigned char *p = buffer;
   while(len--) mcu_hw_spi_tx_u08(*p++);
   mcu_hw_spi_end();
-  
-  sdc_unlock();
 
-  // check if last block has been sent
-  if(!image_bytes2send[image]) {
+  // check if last block has been sent. The file is closed and the core is told that the
+  // image is gone under the same lock, the slot may be used again right after.
+  bool done = !image_bytes2send[image];
+  if(done) {
     sdc_debugf("IMG %d: download done, closing file", image);
 
     f_close(&fil[MAX_DRIVES+image]);
@@ -531,12 +555,14 @@ static void image_send_chunk(int image, uint32_t len) {
     mcu_hw_spi_tx_u08(image);    
     for(int i=0;i<4;i++) mcu_hw_spi_tx_u08(0);    // send size of 0
     mcu_hw_spi_end();
-
-    // the image download have either been triggered by the ini file at
-    // boot time or by the user. run image action will take care of both
-    // cases.    
-    menu_run_current_image_action();
   }
+
+  sdc_unlock();
+
+  // the image download have either been triggered by the ini file at
+  // boot time or by the user. run image action will take care of both
+  // cases. This is done without the lock, it runs actions.
+  if(done) menu_run_current_image_action();
 }
     
 static int sdc_rom_image_get_buffer(char image) {
@@ -577,17 +603,21 @@ int sdc_handle_event(void) {
     int drive = 0;
     while(!(request & (1<<drive))) drive++;
 
+    // The drive may just be re-mounted by the menu task (e.g. on a config
+    // change), so look at it with the file system locked. Otherwise the file
+    // and its link table could vanish while the sector is being looked up.
+    sdc_lock();
     if(!fil[drive].flag) {
       // no file selected
       // this should actually never happen as the core won't request
       // data if it hasn't been told that an image is inserted
+      sdc_unlock();
       return -1;
     }
     
     // ---- figure out which physical sector to use ----
   
     // translate sector into a cluster number inside image
-    sdc_lock();
 #ifdef USE_FSEEK
     f_lseek(&fil[drive], (rsector+1)*512);
     // and add sector offset within cluster    
@@ -765,22 +795,35 @@ bool sdc_check_for_pending_image_uploads(void) {
 int sdc_image_open(int drive, char *name) {
   unsigned long start_sector = 0;
 
-  // close any file that may be open for this drive
+  // tell the core first that the "disk" has been removed, so it stops
+  // asking for sectors of the file that is closed below
+  if(drive < MAX_DRIVES)
+    sdc_image_inserted(drive, 0);
+
+  // Close any file that may be open for this drive. The file system is locked
+  // as sdc_handle_event() serves core requests from fil[] and lktbl[] on
+  // another task. The link table is released here, too. It used to be checked
+  // after the file had been cleared and thus never was released at all.
+  sdc_lock();
   if(fil[drive].flag) {
     sdc_debugf("%s %d: closing file '%s'", (drive < MAX_DRIVES)?"DRV":"IMG",
 	       (drive < MAX_DRIVES)?drive:(drive-MAX_DRIVES),
 	       image_name[drive]?image_name[drive]:"<unknown>");
+    // A rom transfer that is still running is cancelled: the core is told that the image
+    // is gone. Its rest must not be sent as part of the next image.
+    if(drive >= MAX_DRIVES && drive < MAX_DRIVES+MAX_IMAGES)
+      sdc_rom_image_selected(drive-MAX_DRIVES, 0);
     f_close(&fil[drive]);
     memset(&fil[drive], 0, sizeof(FIL));
   }
-  
-  if(drive < MAX_DRIVES) {
-    // tell core that the "disk" has been removed
-    sdc_image_inserted(drive, 0);
-  } else if(drive < MAX_DRIVES+MAX_IMAGES) {
-    // report image de-selection
-    sdc_rom_image_selected(drive-MAX_DRIVES, 0);
+  if(drive >= MAX_DRIVES && drive < MAX_DRIVES+MAX_IMAGES)
+    image_bytes2send[drive-MAX_DRIVES] = 0;     // also for one that was delayed or rejected
+  if(drive < MAX_DRIVES && lktbl[drive]) {
+    sdc_debugf("DRV %d: freeing link table", drive);
+    vPortFree(lktbl[drive]);
+    lktbl[drive] = NULL;
   }
+  sdc_unlock();
 
   if(drive < MAX_DRIVES+MAX_IMAGES) {
     // forget about any previous name
@@ -803,14 +846,6 @@ int sdc_image_open(int drive, char *name) {
   if(drive < MAX_DRIVES) {
     sdc_lock();
   
-    // close any previous image, especially free the link table
-    if(fil[drive].cltbl) {
-      sdc_debugf("DRV %d: freeing link table", drive);
-      vPortFree(lktbl[drive]);
-      lktbl[drive] = NULL;
-      fil[drive].cltbl = NULL;
-    }
-    
     sdc_debugf("DRV %d: Mounting %s", drive, fname);
     
     if(f_open(&fil[drive], fname, FA_OPEN_EXISTING | FA_READ) != 0) {
@@ -825,7 +860,14 @@ int sdc_image_open(int drive, char *name) {
 		 (unsigned long)fil[drive].obj.objsize / 512 / fs.csize);      
       
       // try with a 16 entry link table
-      lktbl[drive] = pvPortMalloc(16 * sizeof(DWORD));    
+      lktbl[drive] = pvPortMalloc(16 * sizeof(DWORD));
+      if(!lktbl[drive]) {
+	sdc_debugf("DRV %d: out of memory", drive);
+	f_close(&fil[drive]);
+	memset(&fil[drive], 0, sizeof(FIL));
+	sdc_unlock();
+	return -1;
+      }
       fil[drive].cltbl = lktbl[drive];
       lktbl[drive][0] = 16;
       
@@ -835,9 +877,20 @@ int sdc_image_open(int drive, char *name) {
 	sdc_debugf("DRV %d: Short link table creation failed, "
 		   "required size: %lu", drive, (unsigned long)lktbl[drive][0]);
 	
-	// re-alloc sufficient memory
+	// re-alloc sufficient memory. The size has to be read before the
+	// table is released.
+	DWORD entries = lktbl[drive][0];
 	vPortFree(lktbl[drive]);
-	lktbl[drive] = pvPortMalloc(sizeof(DWORD) * lktbl[drive][0]);
+	lktbl[drive] = pvPortMalloc(sizeof(DWORD) * entries);
+	if(!lktbl[drive]) {
+	  sdc_debugf("DRV %d: out of memory for link table", drive);
+	  f_close(&fil[drive]);
+	  memset(&fil[drive], 0, sizeof(FIL));
+	  sdc_unlock();
+	  return -1;
+	}
+	fil[drive].cltbl = lktbl[drive];
+	lktbl[drive][0] = entries;
 	
 	// and retry link table creation
 	if(f_lseek(&fil[drive], CREATE_LINKMAP)) {
@@ -845,7 +898,11 @@ int sdc_image_open(int drive, char *name) {
 		     "required size: %lu", drive, (unsigned long)lktbl[drive][0]);
 	  vPortFree(lktbl[drive]);
 	  lktbl[drive] = NULL;
-	  fil[drive].cltbl = NULL;
+
+	  // don't leave a half mounted file around, the core is not told
+	  // about this image
+	  f_close(&fil[drive]);
+	  memset(&fil[drive], 0, sizeof(FIL));
 	  
 	  sdc_unlock();
 	  return -1;
@@ -1075,6 +1132,86 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
   return sdc_dir;
 }
 
+// Does name end in "<ext>" and does that start a new extension? "amiga.ini" matches
+// "amiga.ini" and "game.amiga.ini" but neither "c64.ini" nor "xamiga.ini"
+static bool sdc_cfg_ext_match(const char *name, char **exts) {
+  size_t nl = strlen(name);
+  
+  for(int i=0;exts && exts[i];i++) {
+    size_t el = strlen(exts[i]);
+    if(el && nl >= el && !strcasecmp(name+nl-el, exts[i]) && (nl == el || name[nl-el-1] == '.'))
+      return true;
+  }
+  return false;
+}
+
+// List the files in the root of the sd card which end in one of the extensions
+// given. This is what a <cfgselector> offers, so a core only gets to see the
+// ini files meant for it. Files with the hidden attribute are listed on purpose,
+// so the ini files can be hidden to keep the root directory tidy. System files
+// are left out, as are names starting with a dot like the "._*" files macOS adds
+// to FAT volumes. The file named skip (the default ini) is left out, too. The list
+// is sorted and remains valid until the next call.
+sdc_dir_entry_t *sdc_readdir_cfg(char **exts, const char *skip) {
+  static sdc_dir_entry_t *list = NULL;
+  
+  // free the previous list
+  while(list) {
+    sdc_dir_entry_t *next = list->next;
+    vPortFree(list->name);
+    vPortFree(list);
+    list = next;
+  }
+
+#ifdef ESP_PLATFORM
+  FF_DIR dir;
+#else
+  DIR dir;
+#endif
+  FILINFO fno;
+
+  sdc_lock();
+  if(f_opendir(&dir, CARD_MOUNTPOINT) == FR_OK) {
+    while(f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+      if((fno.fattrib & (AM_DIR|AM_SYS)) || fno.fname[0] == '.') continue;
+      if(!sdc_cfg_ext_match(fno.fname, exts)) continue;
+      if(skip && strcasecmp(fno.fname, skip) == 0) continue;
+
+      sdc_dir_entry_t *entry = pvPortMalloc(sizeof(sdc_dir_entry_t));
+      entry->name = StrDup(fno.fname);
+      entry->len = fno.fsize;
+      entry->is_dir = 0;
+
+      // sorted insert
+      sdc_dir_entry_t **pp = &list;
+      while(*pp && strcasecmp((*pp)->name, entry->name) < 0) pp = &(*pp)->next;
+      entry->next = *pp;
+      *pp = entry;
+    }
+    f_closedir(&dir);
+  }
+  sdc_unlock();
+
+  // The last entry is no file but the "new config" entry of the selector. It
+  // is named "/" like the "no disk" entry of the image lists and never matches
+  // a real file name.
+  sdc_dir_entry_t *last = pvPortMalloc(sizeof(sdc_dir_entry_t));
+  last->name = StrDup("/");
+  last->len = 0;
+  last->is_dir = 1;
+  last->next = NULL;
+  sdc_dir_entry_t **pp = &list;
+  while(*pp) pp = &(*pp)->next;
+  *pp = last;
+
+  return list;
+}
+
+// true if name would be offered by sdc_readdir_cfg()
+bool sdc_cfg_name_ok(const char *name, char **exts) {
+  return name && name[0] != '.' && !strchr(name, '/') && sdc_cfg_ext_match(name, exts);
+}
+
 int sdc_init(void) {
   sdc_sem = xSemaphoreCreateMutex();
 
@@ -1107,7 +1244,9 @@ void sdc_set_cwd(int drive, char *path) {
   cwd[drive] = StrDup(path);  
 }
 
-void sdc_mount_defaults(void) {
+// returns the number of images that could not be mounted
+int sdc_mount_defaults(void) {
+  int failed = 0;
   sdc_debugf("Mounting all default images ...");
 
   // try to mount (default) images
@@ -1127,9 +1266,11 @@ void sdc_mount_defaults(void) {
 	// open failed, also reset the path
 	if(cwd[drive]) vPortFree(cwd[drive]);
 	cwd[drive] = StrDup(CARD_MOUNTPOINT);
+	failed++;
       }
     }
   }
+  return failed;
 }
 
 // use a locking mechanism to make sure the file system isn't modified
