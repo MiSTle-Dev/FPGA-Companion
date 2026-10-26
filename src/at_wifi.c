@@ -2,7 +2,7 @@
   at_wifi.c
 
   background process sending and receiving data from FPGA "port" which
-  usually us serial/rs232 data. This is parsed to provice an hayes at
+  usually is serial/rs232 data. This is parsed to provide an hayes at
   command like interface to e.g. wifi
 */
 
