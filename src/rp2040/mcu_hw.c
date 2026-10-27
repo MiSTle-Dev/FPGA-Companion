@@ -158,11 +158,13 @@
 #error "WS2812B and PIO USB cannot be used simultaneously!"
 #endif
 
+#define MAX_JS_PER_IFACE  2
+
 static struct {
   uint8_t dev_addr;
   uint8_t instance;
-  hid_state_t state;
-  hid_report_t rep;
+  hid_state_t state[MAX_JS_PER_IFACE];
+  hid_report_t rep[MAX_JS_PER_IFACE];
 } hid_device[MAX_HID_DEVICES];
 
 static struct {
@@ -219,8 +221,8 @@ uint8_t byteScaleAnalog(int16_t xbox_val)
 bool mcu_hw_hid_present(void) {
   for(int idx=0;idx<MAX_HID_DEVICES;idx++) {
     if(hid_device[idx].dev_addr != 0xff) {    
-      if(hid_device[idx].rep.type == REPORT_TYPE_KEYBOARD) return true;
-      if(hid_device[idx].rep.type == REPORT_TYPE_JOYSTICK) return true;
+      if(hid_device[idx].rep[0].type == REPORT_TYPE_KEYBOARD) return true;
+      if(hid_device[idx].rep[0].type == REPORT_TYPE_JOYSTICK) return true;
     }
   }
     
@@ -246,13 +248,13 @@ static void usb_check_devices(void) {
   for(int idx=0;idx<MAX_HID_DEVICES;idx++) {
     if(hid_device[idx].dev_addr != 0xff) {    
 #ifdef LED_MOUSE_PIN
-      if(hid_device[idx].rep.type == REPORT_TYPE_MOUSE)    mice++;
+      if(hid_device[idx].rep[0].type == REPORT_TYPE_MOUSE)    mice++;
 #endif
 #ifdef LED_KEYBOARD_PIN
-      if(hid_device[idx].rep.type == REPORT_TYPE_KEYBOARD) keyboards++;
+      if(hid_device[idx].rep[0].type == REPORT_TYPE_KEYBOARD) keyboards++;
 #endif
 #ifdef LED_JOYSTICK_PIN
-      if(hid_device[idx].rep.type == REPORT_TYPE_JOYSTICK) joysticks++;
+      if(hid_device[idx].rep[0].type == REPORT_TYPE_JOYSTICK) joysticks++;
 #endif
     }
   }
@@ -377,13 +379,18 @@ static const UsbGamepadMap *find_usb_gamepad_map(uint16_t vid,
 
 static void show_map(const UsbGamepadMap *map) {
   char str0[8], str1[8], str2[8], str3[8];
+  char str4[16], str5[16], str6[16], str7[16];
       
-  if(map->btn_a>=0) sprintf(str0, " A=%d", map->btn_a); else str0[0] = '\0';      
-  if(map->btn_b>=0) sprintf(str1, " B=%d", map->btn_b); else str1[0] = '\0';
-  if(map->btn_x>=0) sprintf(str2, " X=%d", map->btn_x); else str2[0] = '\0';
-  if(map->btn_y>=0) sprintf(str3, " Y=%d", map->btn_y); else str3[0] = '\0';            
-  usb_debugf("  buttons:%s%s%s%s", str0, str1, str2, str3);
-  
+  if(map->btn_a>=0)    sprintf(str0, " A=%d", map->btn_a); else str0[0] = '\0';      
+  if(map->btn_b>=0)    sprintf(str1, " B=%d", map->btn_b); else str1[0] = '\0';
+  if(map->btn_x>=0)    sprintf(str2, " X=%d", map->btn_x); else str2[0] = '\0';
+  if(map->btn_y>=0)    sprintf(str3, " Y=%d", map->btn_y); else str3[0] = '\0';            
+  if(map->btn_back>=0) sprintf(str4, " SEL=%d", map->btn_back); else str4[0] = '\0';            
+  if(map->btn_start>=0) sprintf(str5, " STA=%d", map->btn_start); else str5[0] = '\0';            
+  if(map->btn_leftshoulder>=0) sprintf(str6, " LTRG=%d", map->btn_leftshoulder); else str6[0] = '\0';
+  if(map->btn_rightshoulder>=0) sprintf(str7, " RTRG=%d", map->btn_rightshoulder); else str7[0] = '\0';
+  usb_debugf("  buttons:%s%s%s%s%s%s%s%s", str0, str1, str2, str3, str4, str5, str6, str7);
+
   if(map->axis_lx>=0 || map->axis_ly>=0) {
     if(map->axis_lx>=0) sprintf(str0, " LX=%d", map->axis_lx); else str0[0] = '\0';      
     if(map->axis_ly>=0) sprintf(str1, " LY=%d", map->axis_ly); else str1[0] = '\0';      
@@ -484,43 +491,63 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
     // Some device return broken hid descriptor reports. Just like the Linux
     // kernel we replace these.
     fix_report_descriptor(desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice, desc_report, desc_len);
-    
-    if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].rep, NULL)) {
+
+    uint16_t rbytes = 0;
+    if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].rep[0], &rbytes)) {
       hid_device[idx].dev_addr = dev_addr;
       hid_device[idx].instance = instance;
-      if(hid_device[idx].rep.type == REPORT_TYPE_JOYSTICK)
-	      hid_device[idx].state.joystick.js_index = hid_allocate_joystick();
+      if(hid_device[idx].rep[0].type == REPORT_TYPE_JOYSTICK) {
+	// mark all js_index fields as unused
+	for(int i=0;i<MAX_JS_PER_IFACE;i++)
+	  hid_device[idx].state[i].joystick.js_index = NO_JOYSTICK;
+
+	// use first entry
+	hid_device[idx].state[0].joystick.js_index = hid_allocate_joystick();
+
+	// Check if there's significant unused data in the report desciptor.
+	// This likely means that there's annother report to be parsed.
+	if(desc_len - rbytes > 0) {
+	  usb_debugf("Trying to parse remaining %d bytes", desc_len - rbytes);
+	      
+	  desc_report += rbytes;
+	  desc_len -= rbytes;
+	  if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].rep[1], &rbytes)) {
+	    if(hid_device[idx].rep[1].type == REPORT_TYPE_JOYSTICK) {
+	      usb_debugf("Found second joystick report decriptor");
+	      hid_device[idx].state[1].joystick.js_index = hid_allocate_joystick();	      
+	    }
+	  }
+	}
+      }      
     } else
       usb_debugf("Ignoring device");
   } else
     usb_debugf("Error, no more free HID entries");
-  
+
   const UsbGamepadMap *map;
-  if(hid_device[idx].rep.type == REPORT_TYPE_JOYSTICK)
-  {
-    // lookup for VID/PID/Version
-    map = find_usb_gamepad_map(desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
-
-    if (map)
-    {
-      usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
-                 map->name, map->vid, map->pid, map->version);
-
-      show_map(map);
+  for(int i=0;i<MAX_JS_PER_IFACE;i++) {
+    if(hid_device[idx].rep[i].type == REPORT_TYPE_JOYSTICK) {
+      // lookup for VID/PID/Version
+      map = find_usb_gamepad_map(desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
       
-      hid_device[idx].rep.map = map;
-      hid_device[idx].rep.map_found = 1;
-      hid_device[idx].rep.map_checked = 1;
-    }
-    else
-    {
-      usb_debugf("No map for VID=%04x PID=%04x, VERSION=%04x",desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
-        hid_device[idx].rep.map = NULL;
-        hid_device[idx].rep.map_found = 0;
-        hid_device[idx].rep.map_checked = 1;
+      if (map) {
+	usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
+		   map->name, map->vid, map->pid, map->version);
+	
+	show_map(map);
+	
+	hid_device[idx].rep[i].map = map;
+	hid_device[idx].rep[i].map_found = 1;
+	hid_device[idx].rep[i].map_checked = 1;
+      } else {
+	usb_debugf("No map for VID=%04x PID=%04x, VERSION=%04x",desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
+	hid_device[idx].rep[i].map = NULL;
+	hid_device[idx].rep[i].map_found = 0;
+	hid_device[idx].rep[i].map_checked = 1;
+      }
     }
   }
-
+    
   // tuh_hid_report_received_cb() will be invoked when report is available
   if (!tuh_hid_receive_report(dev_addr, instance) ) 
     usb_debugf("Error: cannot request report");
@@ -537,8 +564,11 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
     if(hid_device[idx].dev_addr == dev_addr && hid_device[idx].instance == instance) {
       usb_debugf("releasing %d", idx);
       hid_device[idx].dev_addr = 0xff;
-      if(hid_device[idx].rep.type == REPORT_TYPE_JOYSTICK)
-	hid_release_joystick(hid_device[idx].state.joystick.js_index);
+      if(hid_device[idx].rep[0].type == REPORT_TYPE_JOYSTICK) {
+	for(int i=0;i<MAX_JS_PER_IFACE;i++)
+	  if(hid_device[idx].state[0].joystick.js_index != NO_JOYSTICK)	
+	    hid_release_joystick(hid_device[idx].state[i].joystick.js_index);
+      }
     }
   }
   usb_check_devices();
@@ -549,8 +579,25 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
 
   // find matching hid report
   for(int idx=0;idx<MAX_HID_DEVICES;idx++)
-    if(hid_device[idx].dev_addr == dev_addr && hid_device[idx].instance == instance)
-      hid_parse(&hid_device[idx].rep, &hid_device[idx].state, report, len);
+    if(hid_device[idx].dev_addr == dev_addr && hid_device[idx].instance == instance) {
+      const hid_report_t *report_desc = &hid_device[idx].rep[0];
+      // if there's no report id at all, then just use the first entry as these are
+      // indistinguishable without report id
+      if(!report_desc->report_id_present)      
+	hid_parse(report_desc, &hid_device[idx].state[0], report, len);
+      else {
+	// there is a report id, so choose the right report descriptor for the
+	// hid layer to parse against
+	for(int i=0;i<MAX_JS_PER_IFACE;i++) {
+	  const hid_report_t *report_desc = &hid_device[idx].rep[i];	
+	  if(report_desc->report_id_present && report[0] == report_desc->report_id) {
+	    //usb_debugf("parsing report %d, id %d", i, report[0]);
+	    //hexdump(report, len);
+	    hid_parse(report_desc, &hid_device[idx].state[i], report, len);
+	  }
+	}
+      }
+    }
   
   // continue to request to receive report
   if ( report && !tuh_hid_receive_report(dev_addr, instance) )

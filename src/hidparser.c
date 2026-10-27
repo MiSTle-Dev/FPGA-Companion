@@ -131,6 +131,8 @@ typedef struct
 void fix_report_descriptor(uint16_t vid, uint16_t pid, uint16_t version, uint8_t *desc, uint16_t len) {
   hidp_debugf("fix_report_descriptor(%04x, %04x, %04x, %d)", vid, pid, version, len);
 
+  // TODO: suppress the use of the USB mapping which is meant for the Linux patches reports
+  
   // retrolink gamepad v1.06
   if(vid == 0x0079 && pid == 0x0011 && version == 0x0106 && len == 101) {  
     // the retrolink devices use a very broken report descriptor

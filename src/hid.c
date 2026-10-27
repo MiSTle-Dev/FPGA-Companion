@@ -1,5 +1,5 @@
 // hid.c
- 
+
 #include "hid.h"
 #include "debug.h"
 #include "sysctrl.h"
@@ -129,13 +129,13 @@ static uint16_t collect_bits(const uint8_t *p, uint16_t offset, uint8_t size, bo
   uint8_t byte = offset/8;
   uint8_t bits = size;
   uint8_t shift = offset&7;
-  
+
   // usb_debugf("0 m:%x by:%d bi=%d sh=%d ->", mask, byte, bits, shift);
   uint16_t rval = (p[byte++] & mask) >> shift;
   mask = 0xff;
   shift = 8-shift;
   bits -= shift;
-  
+
   // first byte already contained more bits than we need
   if(shift > size) {
     // mask unused bits
@@ -149,7 +149,7 @@ static uint16_t collect_bits(const uint8_t *p, uint16_t offset, uint8_t size, bo
       bits -= (bits>8)?8:bits;
     }
   }
-  
+
   if(is_signed) {
     // do sign expansion
     uint16_t sign_bit = 1<<(size-1);
@@ -160,7 +160,7 @@ static uint16_t collect_bits(const uint8_t *p, uint16_t offset, uint8_t size, bo
       }
     }
   }
-  
+
   return rval;
 }
 
@@ -171,12 +171,12 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
 
   // collect info about at least two axes, third is optional scroll wheel
   int a[3] = { 0,0,0 };
-  for(int i=0;i<3;i++) {  
-    if(report->joystick_mouse.axis[i].size) {    
-      bool is_signed = report->joystick_mouse.axis[i].logical.min > 
+  for(int i=0;i<3;i++) {
+    if(report->joystick_mouse.axis[i].size) {
+      bool is_signed = report->joystick_mouse.axis[i].logical.min >
 	report->joystick_mouse.axis[i].logical.max;
 
-      a[i] = collect_bits(buffer, report->joystick_mouse.axis[i].offset, 
+      a[i] = collect_bits(buffer, report->joystick_mouse.axis[i].offset,
 			  report->joystick_mouse.axis[i].size, is_signed);
     }
   }
@@ -184,7 +184,7 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
   // ... and at least two buttons
   uint8_t btns = 0;
   for(int i=0;i<3;i++)
-    if(buffer[report->joystick_mouse.button[i].byte_offset] & 
+    if(buffer[report->joystick_mouse.button[i].byte_offset] &
        report->joystick_mouse.button[i].bitmask)
       btns |= (1<<i);
 
@@ -199,7 +199,9 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
   mcu_hw_spi_end();
 }
 
-static void joystick_push(uint8_t index, uint8_t joy, uint8_t ax, uint8_t ay, uint8_t btn_extra) {    
+static void joystick_push(uint8_t index, uint8_t joy, uint8_t ax, uint8_t ay, uint8_t btn_extra) {
+  usb_debugf("JOY%d: D %02x X %02x Y %02x EB %02x", index, joy, ax, ay, btn_extra);
+
   // check if there's a gamepad menu button enabled in the config
   if(inifile_config_has("menu", "gamepad_trigger")) {
     int btn = inifile_config_get_int("menu", "gamepad_trigger", 0);
@@ -211,10 +213,10 @@ static void joystick_push(uint8_t index, uint8_t joy, uint8_t ax, uint8_t ay, ui
     bool detected = false;
     if(btn < 4) {
       if(joy & (1<<(btn+4)))
-	detected = true;      
+	detected = true;
     } else if(btn < 12) {
       if(btn_extra & (1<<(btn-4)))
-	detected = true;      
+	detected = true;
     }
 
     if(detected && !last_detected) {
@@ -224,10 +226,10 @@ static void joystick_push(uint8_t index, uint8_t joy, uint8_t ax, uint8_t ay, ui
 
     last_detected = detected;
   }
-      
+
   if(osd_is_visible()) {
     // if OSD is visible, then process events locally
-    menu_joystick_state(joy);	      
+    menu_joystick_state(joy);
   } else {
     mcu_hw_spi_begin();
     mcu_hw_spi_tx_u08(SPI_TARGET_HID);
@@ -240,7 +242,7 @@ static void joystick_push(uint8_t index, uint8_t joy, uint8_t ax, uint8_t ay, ui
     mcu_hw_spi_end();
   }
 }
-  
+
 void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *state,
 		    const unsigned char *buffer, __attribute__((unused)) int nbytes) {
   //  usb_debugf("joystick: %d %02x %02x %02x %02x", nbytes,
@@ -248,11 +250,11 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
 
   // collect info about the two axes
   int a[2];
-  for(int i=0;i<2;i++) {  
-    bool is_signed = report->joystick_mouse.axis[i].logical.min > 
+  for(int i=0;i<2;i++) {
+    bool is_signed = report->joystick_mouse.axis[i].logical.min >
       report->joystick_mouse.axis[i].logical.max;
-    
-    a[i] = collect_bits(buffer, report->joystick_mouse.axis[i].offset, 
+
+    a[i] = collect_bits(buffer, report->joystick_mouse.axis[i].offset,
 			report->joystick_mouse.axis[i].size, is_signed);
 
     // scale axis down to 8 bits if required
@@ -263,15 +265,15 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
   // ... and four buttons
   unsigned char joy = 0;
   for(int i=0;i<4;i++)
-    if(buffer[report->joystick_mouse.button[i].byte_offset] & 
+    if(buffer[report->joystick_mouse.button[i].byte_offset] &
        report->joystick_mouse.button[i].bitmask)
       joy |= (0x10<<i);
 
   // ... and the eight extra buttons
   unsigned char btn_extra = 0;
   for(int i=4;i<12;i++)
-    if(buffer[report->joystick_mouse.button[i].byte_offset] & 
-      report->joystick_mouse.button[i].bitmask) 
+    if(buffer[report->joystick_mouse.button[i].byte_offset] &
+      report->joystick_mouse.button[i].bitmask)
       btn_extra |= (1<<(i-4));
 
   // map directions to digital
@@ -283,7 +285,7 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
   int ax = a[0];
   int ay = a[1];
 
-// directions in 'joy' 
+// directions in 'joy'
 #define DIR_RIGHT 0x01
 #define DIR_LEFT 0x02
 #define DIR_DOWN 0x04
@@ -295,10 +297,10 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
 
   // HAT present?
   if (report->joystick_mouse.hat.size > 0)
-  {
+    {
     // give HAT a priority and clear and ignore previous axix results
     unsigned char hat_dir = 0;
-      
+
     // HAT is unsigned
     int hat_raw = collect_bits(buffer,
                                report->joystick_mouse.hat.offset,
@@ -388,24 +390,23 @@ void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *sta
       // hat is actually being controlled by the user. Only problem:
       // if a gamepad reports a position != center on either the x or
       // y axis by default then the hat will not overwrite this while
-      // the hat is in neutral position.      
+      // the hat is in neutral position.
       joy &= ~(DIR_RIGHT | DIR_LEFT | DIR_DOWN | DIR_UP);
       joy |= hat_dir;
     }
 
-    usb_debugf("HAT raw=%d norm=%d steps=%d dir=0x%02x%s",
-               hat_raw, v, steps, hat_dir, neutral ? " (neutral)" : "");
+    //    usb_debugf("HAT raw=%d norm=%d steps=%d dir=0x%02x%s",
+    //               hat_raw, v, steps, hat_dir, neutral ? " (neutral)" : "");
   }
 
   if((joy != state->last_state) ||
-     (ax != state->last_state_x) || 
-     (ay != state->last_state_y) || 
+     (ax != state->last_state_x) ||
+     (ay != state->last_state_y) ||
      (btn_extra != state->last_state_btn_extra))  {
     state->last_state = joy;
     state->last_state_x = ax;
     state->last_state_y = ay;
     state->last_state_btn_extra = btn_extra;
-    usb_debugf("JOY%d: D %02x X %02x Y %02x EB %02x", state->js_index, joy, ax, ay, btn_extra);
 
     joystick_push(state->js_index, joy, ax, ay, btn_extra);
   }
@@ -417,7 +418,7 @@ void consumer_parse(const hid_report_t *report, struct hid_consumer_state_S *sta
 
   // search for button state changes
   for(int i=0;i<32;i++) {
-    if(buffer[report->joystick_mouse.button[i].byte_offset] & 
+    if(buffer[report->joystick_mouse.button[i].byte_offset] &
        report->joystick_mouse.button[i].bitmask) {
       if(!(state->last_state & (1<<i))) {
 	usb_debugf("press event %d", i);
@@ -435,7 +436,7 @@ void consumer_parse(const hid_report_t *report, struct hid_consumer_state_S *sta
     }
   }
 }
-  
+
 void rii_joy_parse(const unsigned char *buffer) {
   unsigned char b = 0;
   if(buffer[0] == 0xcd && buffer[1] == 0x00) b = 0x10;      // cd == play/pause  -> center
@@ -445,7 +446,7 @@ void rii_joy_parse(const unsigned char *buffer) {
   if(buffer[0] == 0xb5 && buffer[1] == 0x00) b = 0x01;      // b5 == skip next   -> right
 
   usb_debugf("RII Joy: %02x %02x", 0, b);
-  
+
   mcu_hw_spi_begin();
   mcu_hw_spi_tx_u08(SPI_TARGET_HID);
   mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
@@ -481,6 +482,107 @@ static int sanitize_trigger_axis(const UsbGamepadMap *map, int axis_idx,
   return axis_idx;
 }
 
+static inline bool read_button_idx(const uint8_t *buffer, const hid_report_t *report, int idx) {
+  if(idx < 0) return 0;
+  
+  return ((buffer[report->joystick_mouse.button[idx].byte_offset] & report->joystick_mouse.button[idx].bitmask) ? 1 : 0);
+}
+
+static inline uint8_t read_axis_u8(const uint8_t *buffer, const hid_report_t *report, int idx, bool physmap) {
+  if(idx < 0) return 0x80; /* neutral fallback */
+
+  /* re-assign index as the parser may have re-ordered the axes */
+  /* TODO: This prevents the data from twin gamepad from working */
+  /* which is thus now blacklisted in rp2040/mcu_hw.c */
+  /* but it makes the retro link SNES gamepad work */
+  if(physmap) {
+    idx = report->joystick_mouse.axis[idx].index;
+    if(idx < 0) return 0x80; /* neutral fallback */
+  }
+    
+  bool is_signed = report->joystick_mouse.axis[idx].logical.min >
+    report->joystick_mouse.axis[idx].logical.max;
+  int tmp = (int)collect_bits(buffer,
+			      report->joystick_mouse.axis[idx].offset,
+			      report->joystick_mouse.axis[idx].size,
+			      is_signed);
+  if(tmp < 0)   tmp = 0;
+  if(tmp > 255) tmp = 255;
+  return (uint8_t)tmp;
+}
+
+static inline uint8_t read_hat_dir(const uint8_t *buffer, const hid_report_t *report) {
+  uint8_t retval = 0;
+
+  if (report->joystick_mouse.hat.size <= 0)
+    return retval;
+
+  int hat_raw = (int)collect_bits(buffer,
+				  report->joystick_mouse.hat.offset,
+				  report->joystick_mouse.hat.size,
+				  /*is_signed=*/false);
+  
+  int lmin = report->joystick_mouse.hat.logical.min;
+  int lmax = report->joystick_mouse.hat.logical.max;
+  int steps = (lmax >= lmin) ? (lmax - lmin + 1) : 0;
+  int v = hat_raw - lmin;
+
+  int neutral = 0;
+  if (steps >= 8)
+    neutral = (v < 0 || v > 7);
+  else if (steps >= 4)
+    neutral = (v < 0 || v > 3);
+  else
+    neutral = 1;
+  
+  if (!neutral) {
+    if (steps >= 8) {
+      switch (v) {
+      case 0:
+	retval |= DIR_UP;
+	break;
+      case 1:
+	retval |= (DIR_UP | DIR_RIGHT);
+	break;
+      case 2:
+	retval |= DIR_RIGHT;
+	break;
+      case 3:
+	retval |= (DIR_RIGHT | DIR_DOWN);
+	break;
+      case 4:
+	retval |= DIR_DOWN;
+	break;
+      case 5:
+	retval |= (DIR_DOWN | DIR_LEFT);
+	break;
+      case 6:
+	retval |= DIR_LEFT;
+	break;
+      case 7:
+	retval |= (DIR_LEFT | DIR_UP);
+	break;
+      }
+    } else {
+      switch (v & 3) {
+      case 0:
+	retval |= DIR_UP;
+	break;
+      case 1:
+	retval |= DIR_RIGHT;
+	break;
+      case 2:
+	retval |= DIR_DOWN;
+	break;
+      case 3:
+	retval |= DIR_LEFT;
+	break;
+      }
+    }
+  }
+  return retval;
+}
+
 void parse_with_sdl_mapping(const hid_report_t *report,
                             struct hid_joystick_state_S *state,
                             const unsigned char *buffer, int nbytes,
@@ -489,132 +591,15 @@ void parse_with_sdl_mapping(const hid_report_t *report,
   (void)nbytes;
 
   // hexdump(buffer, nbytes);
-  
-#define READ_BUTTON_IDX(idx_) \
-  ((idx_) < 0 ? 0 : ((buffer[report->joystick_mouse.button[(idx_)].byte_offset] & report->joystick_mouse.button[(idx_)].bitmask) ? 1 : 0))
-
-#define READ_AXIS_U8(idx_, out_u8_)                                           \
-  do                                                                          \
-  {                                                                           \
-    int tmp_;								      \
-    if ((idx_) < 0)                                                           \
-    {                                                                         \
-      (out_u8_) = 0x80; /* neutral fallback */                                \
-    }                                                                         \
-    else                                                                      \
-    {                                                                         \
-      /* re-assign index as the parser may have re-ordered the axes */	      \
-      int pidx_ = report->joystick_mouse.axis[(idx_)].index;                  \
-      if ((pidx_) < 0)                                                        \
-      {                                                                       \
-        (out_u8_) = 0x80; /* neutral fallback */                              \
-      }                                                                       \
-      else                                                                    \
-      {                                                                       \
-        bool _is_signed = report->joystick_mouse.axis[(pidx_)].logical.min >  \
-                          report->joystick_mouse.axis[(pidx_)].logical.max;   \
-        tmp_ = (int)collect_bits(buffer,                                      \
-                                 report->joystick_mouse.axis[(pidx_)].offset, \
-                                 report->joystick_mouse.axis[(pidx_)].size,   \
-                                 _is_signed);                                 \
-        if (tmp_ < 0)                                                         \
-          tmp_ = 0;                                                           \
-        if (tmp_ > 255)                                                       \
-          tmp_ = 255;                                                         \
-        (out_u8_) = (uint8_t)tmp_;                                            \
-      }                                                                       \
-    }                                                                         \
-  } while (0)
-
-#define READ_HAT_DIR(out_bits_)                                          \
-  do                                                                     \
-  {                                                                      \
-    (out_bits_) = 0;                                                     \
-    if (report->joystick_mouse.hat.size > 0)                             \
-    {                                                                    \
-      int hat_raw = (int)collect_bits(buffer,                            \
-                                      report->joystick_mouse.hat.offset, \
-                                      report->joystick_mouse.hat.size,   \
-                                      /*is_signed=*/false);              \
-      int lmin = report->joystick_mouse.hat.logical.min;                 \
-      int lmax = report->joystick_mouse.hat.logical.max;                 \
-      int steps = (lmax >= lmin) ? (lmax - lmin + 1) : 0;                \
-      int v = hat_raw - lmin;                                            \
-      int neutral = 0;                                                   \
-      if (steps >= 8)                                                    \
-      {                                                                  \
-        neutral = (v < 0 || v > 7);                                      \
-      }                                                                  \
-      else if (steps >= 4)                                               \
-      {                                                                  \
-        neutral = (v < 0 || v > 3);                                      \
-      }                                                                  \
-      else                                                               \
-      {                                                                  \
-        neutral = 1;                                                     \
-      }                                                                  \
-      if (!neutral)                                                      \
-      {                                                                  \
-        if (steps >= 8)                                                  \
-        {                                                                \
-          switch (v)                                                     \
-          {                                                              \
-          case 0:                                                        \
-            (out_bits_) |= DIR_UP;                                       \
-            break;                                                       \
-          case 1:                                                        \
-            (out_bits_) |= (DIR_UP | DIR_RIGHT);                         \
-            break;                                                       \
-          case 2:                                                        \
-            (out_bits_) |= DIR_RIGHT;                                    \
-            break;                                                       \
-          case 3:                                                        \
-            (out_bits_) |= (DIR_RIGHT | DIR_DOWN);                       \
-            break;                                                       \
-          case 4:                                                        \
-            (out_bits_) |= DIR_DOWN;                                     \
-            break;                                                       \
-          case 5:                                                        \
-            (out_bits_) |= (DIR_DOWN | DIR_LEFT);                        \
-            break;                                                       \
-          case 6:                                                        \
-            (out_bits_) |= DIR_LEFT;                                     \
-            break;                                                       \
-          case 7:                                                        \
-            (out_bits_) |= (DIR_LEFT | DIR_UP);                          \
-            break;                                                       \
-          }                                                              \
-        }                                                                \
-        else                                                             \
-        {                                                                \
-          switch (v & 3)                                                 \
-          {                                                              \
-          case 0:                                                        \
-            (out_bits_) |= DIR_UP;                                       \
-            break;                                                       \
-          case 1:                                                        \
-            (out_bits_) |= DIR_RIGHT;                                    \
-            break;                                                       \
-          case 2:                                                        \
-            (out_bits_) |= DIR_DOWN;                                     \
-            break;                                                       \
-          case 3:                                                        \
-            (out_bits_) |= DIR_LEFT;                                     \
-            break;                                                       \
-          }                                                              \
-        }                                                                \
-      }                                                                  \
-    }                                                                    \
-  } while (0)
 
   unsigned char joy = 0;
-  if (READ_BUTTON_IDX(map->btn_a))
+  if (read_button_idx(buffer, report, map->btn_a))
     joy |= 0x10;
-  if (READ_BUTTON_IDX(map->btn_b))
+  if (read_button_idx(buffer, report, map->btn_b))
     joy |= 0x20;
-  if (READ_BUTTON_IDX(map->btn_x))
+  if (read_button_idx(buffer, report, map->btn_x))
     joy |= 0x40;
-  if (READ_BUTTON_IDX(map->btn_y))
+  if (read_button_idx(buffer, report, map->btn_y))
     joy |= 0x80;
 
   unsigned char dpad = 0;
@@ -623,28 +608,26 @@ void parse_with_sdl_mapping(const hid_report_t *report,
   if (map->btn_dpad_up >= 0 || map->btn_dpad_right >= 0 ||
       map->btn_dpad_down >= 0 || map->btn_dpad_left >= 0)
   {
-    if (READ_BUTTON_IDX(map->btn_dpad_up))
+    if (read_button_idx(buffer, report, map->btn_dpad_up))
       dpad |= DIR_UP;
-    if (READ_BUTTON_IDX(map->btn_dpad_right))
+    if (read_button_idx(buffer, report, map->btn_dpad_right))
       dpad |= DIR_RIGHT;
-    if (READ_BUTTON_IDX(map->btn_dpad_down))
+    if (read_button_idx(buffer, report, map->btn_dpad_down))
       dpad |= DIR_DOWN;
-    if (READ_BUTTON_IDX(map->btn_dpad_left))
+    if (read_button_idx(buffer, report, map->btn_dpad_left))
       dpad |= DIR_LEFT;
   }
 
   // otherwise parse directions from a hat
   if (dpad == 0 && map->dpad_hat >= 0 && report->joystick_mouse.hat.size > 0)
-  {
-    READ_HAT_DIR(dpad);
-  }
+    dpad = read_hat_dir(buffer, report);
 
   // otherwise parse dpad axes
   if (dpad == 0 && map->dpad_axis_up>=0 && map->dpad_axis_left>=0)
   {
-    uint8_t dpup_raw, dpleft_raw;
-    READ_AXIS_U8(map->dpad_axis_up, dpup_raw);
-    READ_AXIS_U8(map->dpad_axis_left, dpleft_raw);    
+    /* TODO: It seems only this needs the mapping to the physical index */
+    uint8_t dpup_raw = read_axis_u8(buffer, report, map->dpad_axis_up, true);
+    uint8_t dpleft_raw = read_axis_u8(buffer, report, map->dpad_axis_left, true);
     if (dpleft_raw > AX_HIGH)
       dpad |= DIR_RIGHT;
     if (dpleft_raw < AX_LOW)
@@ -657,10 +640,9 @@ void parse_with_sdl_mapping(const hid_report_t *report,
 
   // otherwise parse directions from analogue axes
   if (dpad == 0)
-  {
-    uint8_t lx_raw, ly_raw;
-    READ_AXIS_U8(map->axis_lx, lx_raw);
-    READ_AXIS_U8(map->axis_ly, ly_raw);
+    {
+      uint8_t lx_raw = read_axis_u8(buffer, report, map->axis_lx, false);
+      uint8_t ly_raw = read_axis_u8(buffer, report, map->axis_ly, false);
     if (lx_raw > AX_HIGH)
       dpad |= DIR_RIGHT;
     if (lx_raw < AX_LOW)
@@ -673,10 +655,9 @@ void parse_with_sdl_mapping(const hid_report_t *report,
 
   joy &= ~(DIR_RIGHT | DIR_LEFT | DIR_DOWN | DIR_UP);
   joy |= dpad;
-  
-  uint8_t ax = 0x80, ay = 0x80;
-  READ_AXIS_U8(map->axis_lx, ax);
-  READ_AXIS_U8(map->axis_ly, ay);
+
+  uint8_t ax = read_axis_u8(buffer, report, map->axis_lx, false);
+  uint8_t ay = read_axis_u8(buffer, report, map->axis_ly, false);
   if (map->axis_lx_invert)
     ax = 255 - ax;
   if (map->axis_ly_invert)
@@ -686,35 +667,33 @@ void parse_with_sdl_mapping(const hid_report_t *report,
   int axis_lt = sanitize_trigger_axis(map, map->axis_lt, map->axis_rt);
   int axis_rt = sanitize_trigger_axis(map, map->axis_rt, map->axis_lt);
 
-  if (READ_BUTTON_IDX(map->btn_leftshoulder))
+  if (read_button_idx(buffer, report, map->btn_leftshoulder))
     btn_extra |= 0x01;
-  if (READ_BUTTON_IDX(map->btn_rightshoulder))
+  if (read_button_idx(buffer, report, map->btn_rightshoulder))
     btn_extra |= 0x02;
-  if (READ_BUTTON_IDX(map->btn_back))
+  if (read_button_idx(buffer, report, map->btn_back))
     btn_extra |= 0x04;
-  if (READ_BUTTON_IDX(map->btn_start))
+  if (read_button_idx(buffer, report, map->btn_start))
     btn_extra |= 0x08;
 
   if (axis_lt >= 0) {
-    uint8_t lt = 0x00;
-    READ_AXIS_U8(axis_lt, lt);
+    uint8_t lt = read_axis_u8(buffer, report, axis_lt, false);
     if (map->axis_lt_invert)
       lt = 255 - lt;
     if (lt > 0x80)
       btn_extra |= 0x10;
   }
   if (axis_rt >= 0) {
-    uint8_t rt = 0x00;
-    READ_AXIS_U8(axis_rt, rt);
+    uint8_t rt = read_axis_u8(buffer, report, axis_rt, false);
     if (map->axis_rt_invert)
       rt = 255 - rt;
     if (rt > 0x80)
       btn_extra |= 0x20;
   }
 
-  if (READ_BUTTON_IDX(map->btn_leftstick))
+  if (read_button_idx(buffer, report, map->btn_leftstick))
     btn_extra |= 0x40;
-  if (READ_BUTTON_IDX(map->btn_rightstick))
+  if (read_button_idx(buffer, report, map->btn_rightstick))
     btn_extra |= 0x80;
 
   if ((joy != state->last_state) ||
@@ -727,21 +706,14 @@ void parse_with_sdl_mapping(const hid_report_t *report,
     state->last_state_y = ay;
     state->last_state_btn_extra = btn_extra;
 
-    usb_debugf("MAP%d: D %02x X %02x Y %02x EB %02x",
-               state->js_index, joy, ax, ay, btn_extra);
-
     joystick_push(state->js_index, joy, ax, ay, btn_extra);
   }
-
-#undef READ_BUTTON_IDX
-#undef READ_AXIS_U8
-#undef READ_HAT_DIR
 }
 
 void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* data, uint16_t len) {
   //  usb_debugf("hid parse %d, expect %d", len, report->report_size);
   if(!len) return;
-  
+
   // hexdump((void*)data, len);
 
   // the following is a hack for the Rii keyboard/touch combos to use the
@@ -758,10 +730,10 @@ void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* da
   // check and skip report id if present
   if(report->report_id_present && (len-1 == report->report_size)) {
     if(data[0] != report->report_id) {
-      usb_debugf("FAIL %d != %d", data[0], report->report_id);
+      // usb_debugf("report id mismatch %d != %d, ignoring report", data[0], report->report_id);
       return;
     }
-        
+
     // skip report id
     data++; len--;
   }
@@ -769,10 +741,10 @@ void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* da
   if(len == report->report_size) {
     if(report->type == REPORT_TYPE_KEYBOARD)
       kbd_parse(report, &state->kbd, data, len);
-    
+
     if(report->type == REPORT_TYPE_MOUSE)
       mouse_parse(report, &state->mouse, data, len);
-    
+
     if(report->type == REPORT_TYPE_JOYSTICK) {
       if (report->map_found && report->map) {
         // use SDL
