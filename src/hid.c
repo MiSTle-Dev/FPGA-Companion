@@ -53,9 +53,15 @@ void kbd_parse_usage_state(struct hid_kbd_state_S *state, uint8_t modifiers,
     if (was_pressed == is_pressed)
       continue;
 
+    // determine menu hotkey
+    int hotkey = inifile_config_get_int("menu", "hotkey", 0x45); // default is f12
+
+    // make sure hotkey is f12 if anything fails
+    if(!hotkey) hotkey = 0x45;
+    
     if (!is_pressed) {
       if (!osd_is_visible()) {
-        if (usage != inifile_option_get(INIFILE_OPTION_HOTKEY))
+        if (usage != hotkey)
           kbd_tx_hid_ps2_break((uint8_t)usage, 0);
       } else {
         menu_notify(MENU_EVENT_KEY_RELEASE);
@@ -64,7 +70,7 @@ void kbd_parse_usage_state(struct hid_kbd_state_S *state, uint8_t modifiers,
     }
 
     unsigned long msg = 0;
-    if (usage == inifile_option_get(INIFILE_OPTION_HOTKEY)) {
+    if (usage == hotkey) {
       msg = (modifiers & 0x22) ? MENU_EVENT_SYSTEM : MENU_EVENT_TOGGLE;
     } else if (osd_is_visible() && usage == 0x29) {
       msg = MENU_EVENT_BACK;

@@ -38,6 +38,8 @@
 #error "No MiSTle board type specified!"
 #endif
 
+#define DEFAULT_LED_MODE  1   // 0=blink, 1=on, 2=off
+
 // This is a custom SDL USB controller map entry for the
 // Data Frog PC07 pair of wireless SNES-like controllers.
 // This fixes the shoulder buttons.
@@ -1335,7 +1337,7 @@ static async_when_pending_worker_t led_worker_w = { .do_work = led_write_w };
 
 static void led_timer_w(__attribute__((unused)) TimerHandle_t pxTimer) {
   static char state = 0;
-  switch(inifile_option_get(INIFILE_OPTION_LED)) {
+  switch(inifile_config_get_int("system", "led", DEFAULT_LED_MODE)) {
   case 0:    
     led_state_w = state & 1;   // blink
     break;
@@ -1820,7 +1822,7 @@ bool mcu_hw_tcp_data(unsigned char byte) {
 #endif
 
 static void led_timer(__attribute__((unused)) TimerHandle_t pxTimer) {
-  switch(inifile_option_get(INIFILE_OPTION_LED)) {
+  switch(inifile_config_get_int("system", "led", DEFAULT_LED_MODE)) {
   case 0:    
     gpio_xor_mask( 1u << PICO_DEFAULT_LED_PIN );
     break;
@@ -1869,7 +1871,7 @@ static void wifi_task(__attribute__((unused)) void *parms) {
 
 static void ws_led_timer(__attribute__((unused)) TimerHandle_t pxTimer) {
   static char state = 0;
-  switch(inifile_option_get(INIFILE_OPTION_LED)) {
+  switch(inifile_config_get_int("system", "led", DEFAULT_LED_MODE)) {
   case 0:    
     pio_sm_put_blocking(pio0, 0, state?WS2812_COLOR:0);
     break;

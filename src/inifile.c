@@ -10,6 +10,7 @@
 #include "sdc.h"      // for CARD_MOUNTPOINT
 #include "menu.h"     // to access menu variables
 #include "config.h"
+#include "hidkeys.h"
 #include "debug.h"
 
 #ifdef ESP_PLATFORM
@@ -22,27 +23,6 @@
 
 static int iswhite(char c) {
   return c == ' ' || c == '\r' || c == '\n' || c == '\t';
-}
-
-static const struct option_S { char *name; char *info; int index; } option_ids[] = {
-  {"hotkey", "; HID key code of OSD/menu hotkey\n",  INIFILE_OPTION_HOTKEY },
-  {"led",    "; led state (0=blink, 1=on, 2=off)\n", INIFILE_OPTION_LED },
-  {NULL,     NULL,                                   -1 }
-};
-
-static int options[2] = { 0x45, 0 };  // default options: hotkey=F12, led=blink
-static void inifile_parse_option(char *id, char *value) {
-  for(const struct option_S *oid = option_ids;oid->name;oid++) {
-    if(!strcasecmp(oid->name, id)) {
-      options[oid->index] = atoi(value);
-      ini_debugf("option %s: %d", id, options[oid->index]);
-    }
-  }
-}
-
-int inifile_option_get(int id) {
-  if((id < 0) || (id > 1)) return -1;
-  return options[id];
 }
 
 // ------------ the config selected through a <cfgselector> ------------
@@ -300,34 +280,6 @@ int inifile_read(char *name) {
 	  }
 	}
       }
-
-      // check for firmware options
-      if(strncasecmp(buffer, "option ", 7) == 0) {
-	// skip "option"
-	char *p = buffer+7;
-	// skip to first char
-	while(*p && iswhite(*p)) p++;
-	if(*p) {	  
-	  char *id = p;
-	  // skip to end of if
-	  while(*p && !iswhite(*p) && *p != '=') p++;
-	  if(p && *p == '=') {
-	    *p++ = '\0'; // terminate id (overwrites the '=')
-	  } else {
-	    *p++ = '\0'; // terminate id
-	    // skip until '='
-	    while(*p && *p != '=') p++;
-	    p++;  // skip =
-	  }
-	    
-	  if(*p) {
-	    // skip all whites
-	    while(*p && iswhite(*p)) p++;
-	    if(*p)
-	      inifile_parse_option(id, p);
-	  }
-	}
-      }      
     }
     f_close(&fil);
   } else {
@@ -378,15 +330,6 @@ int inifile_write(char *name) {
       vars = vars->next;
     }
 
-    // write options
-    f_puts("\n; firmware options\n", &file);
-    for(const struct option_S *oid = option_ids;oid->name;oid++) {
-      char str[32];
-      f_puts(oid->info, &file);
-      sprintf(str, "option %s=%d\n", oid->name, options[oid->index]);
-      f_puts(str, &file);
-    }
-    
     // write disk and ROM image file names
     f_puts("\n; image files\n", &file);
 
@@ -439,6 +382,7 @@ enum {
   CONFIG_TYPE_STRING,
   CONFIG_TYPE_IP,
   CONFIG_TYPE_INT,
+  CONFIG_TYPE_HIDKEY,
   CONFIG_TYPE_CHOICE
 };
 
@@ -489,7 +433,11 @@ static const struct {
   { "NTP", "TIMEZONE", CONFIG_TYPE_INT, NULL },
 
   // MENU/OSD
-  { "MENU", "GAMEPAD_TRIGGER", CONFIG_TYPE_INT, NULL },
+  { "MENU", "GAMEPAD_TRIGGER", CONFIG_TYPE_INT, NULL },  
+  { "MENU", "HOTKEY", CONFIG_TYPE_HIDKEY, NULL },
+
+  // System
+  { "SYSTEM", "LED", CONFIG_TYPE_CHOICE, "blink,on,off" },
   
   { NULL, NULL, 0, NULL }
 };
@@ -532,6 +480,12 @@ static void inifile_config_dump(void) {
 	case CONFIG_TYPE_INT:
 	  ini_debugf("    %d", val->data.val);	
 	  break;
+	  
+	case CONFIG_TYPE_HIDKEY: {
+	  const char *name = hidkeys_get_name(val->data.val);
+	  if(name) ini_debugf("    %s (%d)", name, val->data.val);
+	  else     ini_debugf("    %d", val->data.val);	
+	} break;
 	  
 	case CONFIG_TYPE_IP:
 	  ini_debugf("    %lu.%lu.%lu.%lu",
@@ -705,6 +659,16 @@ static void inifile_config_parse_line(char *line) {
 	// parse integer	
 	inifile_config_append_value(cfg)->data.val = atoi(value);
 	break;
+	
+      case CONFIG_TYPE_HIDKEY: {
+	// try to get key code, if not a valid key code, then parse as
+	// integer
+	int8_t code = hidkeys_get_code(value);
+	if(code < 0) 	
+	  inifile_config_append_value(cfg)->data.val = atoi(value);
+	else
+	  inifile_config_append_value(cfg)->data.val = code;
+      } break;
 	
       case CONFIG_TYPE_CHOICE:
 	// check if the choice is actually a valid one
