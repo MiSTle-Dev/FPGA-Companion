@@ -217,6 +217,28 @@ static void mcu_hw_jtag_init(void);
 #define XINPUT_GAMEPAD_LEFT_SHOULDER 0x0100
 #define XINPUT_GAMEPAD_RIGHT_SHOULDER 0x0200
 
+static const UsbGamepadMap data_frog_pc07 =
+  { "03000000100800000100000010010000", "DATA FROG PC07 Twin SNES Adapter",
+    0x0810, 0x0001, 0x0110,
+    2, 1, 3, 0,
+    8, -1, 9,
+    4, 5,
+    -1, -1,
+    -1, -1, -1, -1,
+    0,
+    1, 2, 4, 8,
+    0, 1, 3, 2,
+    0, 0, 0, 0,
+    -1, -1,
+    0, 0,
+    -1, -1,
+    0, 0, 0, 0,
+    0, 0,
+    -1, -1, -1, -1,
+    0, 0, 0, 0,
+    0, 0, 0, 0
+  };
+
 extern void shell_init_with_task(struct bflb_device_s *shell);
 
 // Lookup if there is a map for current gamepad
@@ -679,6 +701,11 @@ static void usbh_hid_client_thread(void *argument) {
 
     map = find_usb_gamepad_map(vendor_id, product_id, version_id);
     if (map) {
+      if (hid->report_count > 1 &&
+          hid->report[1].type == REPORT_TYPE_JOYSTICK &&
+          map->vid == 0x0810 && map->pid == 0x0001)
+        map = &data_frog_pc07;
+
       usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
                  map->name, map->vid, map->pid, map->version);
       hid->report[i].map = map;
