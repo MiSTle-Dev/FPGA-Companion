@@ -47,6 +47,7 @@ target_sources(app PRIVATE
     ../hidparser.c
    	../hid.c
    	../inifile.c
+   	../hidkeys.c
    	../menu.c
    	../sdc.c
    	../osd_u8g2.c

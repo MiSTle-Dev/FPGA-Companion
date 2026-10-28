@@ -92,6 +92,7 @@ add_executable(${PROJECT}
 	../ps2helper.c
 	../ftpd.c
 	../telnetd.c
+	../hidkeys.c
 )
 
 family_add_pico_pio_usb(${PROJECT})

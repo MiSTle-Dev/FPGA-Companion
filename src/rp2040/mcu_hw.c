@@ -38,6 +38,33 @@
 #error "No MiSTle board type specified!"
 #endif
 
+#define DEFAULT_LED_MODE  1   // 0=blink, 1=on, 2=off
+
+// This is a custom SDL USB controller map entry for the
+// Data Frog PC07 pair of wireless SNES-like controllers.
+// This fixes the shoulder buttons.
+UsbGamepadMap data_frog_pc07 =
+  { "03000000100800000100000010010000", "DATA FROG PC07 Twin SNES Adapter",
+    0x0810, 0x0001, 0x0110,
+    2, 1, 3, 0,     // btn a, b, x, y
+    8, -1, 9,       // btn back (select), guide, start
+    4, 5,           // btn left shoulder, right shoulder
+    -1, -1,         // btn left stick, right stick
+    -1, -1, -1, -1, // dpad up, down, left, right
+    0,              // dpad hat
+    1, 2, 4, 8,     // dpad hat up, right, down, left
+    0, 1, 3, 2,     // axis lx, ly, rx, ry
+    0, 0, 0, 0,
+    -1, -1,
+    0, 0,
+    -1, -1,       // btn lt, rt
+    0, 0, 0, 0,
+    0, 0,
+    -1, -1, -1, -1,
+    0, 0, 0, 0,
+    0, 0, 0, 0
+  };
+    
 #if MISTLE_BOARD == 0
 #warning "Building for Raspberry Pi Pico or Pico-W"
 #elif MISTLE_BOARD == 1
@@ -531,6 +558,10 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
       map = find_usb_gamepad_map(desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
       
       if (map) {
+	// check of this is a data frog pc07 and force our custom map then
+	if(hid_device[idx].rep[1].type == REPORT_TYPE_JOYSTICK && map->vid == 0x0810 && map->pid == 0x0001)
+	  map = &data_frog_pc07;
+
 	usb_debugf("Found gamepad map: %s (VID=%04x PID=%04x VER=%04x)",
 		   map->name, map->vid, map->pid, map->version);
 	
@@ -547,7 +578,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
       }
     }
   }
-    
+
   // tuh_hid_report_received_cb() will be invoked when report is available
   if (!tuh_hid_receive_report(dev_addr, instance) ) 
     usb_debugf("Error: cannot request report");
@@ -1306,7 +1337,7 @@ static async_when_pending_worker_t led_worker_w = { .do_work = led_write_w };
 
 static void led_timer_w(__attribute__((unused)) TimerHandle_t pxTimer) {
   static char state = 0;
-  switch(inifile_option_get(INIFILE_OPTION_LED)) {
+  switch(inifile_config_get_int("system", "led", DEFAULT_LED_MODE)) {
   case 0:    
     led_state_w = state & 1;   // blink
     break;
@@ -1791,7 +1822,7 @@ bool mcu_hw_tcp_data(unsigned char byte) {
 #endif
 
 static void led_timer(__attribute__((unused)) TimerHandle_t pxTimer) {
-  switch(inifile_option_get(INIFILE_OPTION_LED)) {
+  switch(inifile_config_get_int("system", "led", DEFAULT_LED_MODE)) {
   case 0:    
     gpio_xor_mask( 1u << PICO_DEFAULT_LED_PIN );
     break;
@@ -1840,7 +1871,7 @@ static void wifi_task(__attribute__((unused)) void *parms) {
 
 static void ws_led_timer(__attribute__((unused)) TimerHandle_t pxTimer) {
   static char state = 0;
-  switch(inifile_option_get(INIFILE_OPTION_LED)) {
+  switch(inifile_config_get_int("system", "led", DEFAULT_LED_MODE)) {
   case 0:    
     pio_sm_put_blocking(pio0, 0, state?WS2812_COLOR:0);
     break;
