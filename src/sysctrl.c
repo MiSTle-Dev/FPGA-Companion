@@ -212,19 +212,25 @@ static uint8_t sys_port_rx_available(unsigned char port) {
   return rx_available;
 }
   
-// read status and byte from port out
-static int16_t sys_port_get(unsigned char port) {
-  uint8_t rx_avail = sys_port_rx_available(port);
-  if(!rx_avail) return -1;           // no such port or no data available
+// read up to max bytes from the port with a single transaction. Every byte
+// transferred with bit 0 set pops the core's fifo, its value is returned by the
+// following transfer; the last transfer has bit 0 clear so that it pops nothing.
+// With n = 1 this is exactly the former single byte read.
+#define SYS_PORT_BURST 16               // bytes per transaction, the caller loops until the core's fifo is empty
+static int sys_port_get(unsigned char port, unsigned char *buf, int max) {
+  int n = sys_port_rx_available(port);
+  if(!n) return 0;                      // no such port or no data available
+  if(n > max) n = max;
 
-  // TODO: we can actually read more than one byte at a time with this
-  sys_port_begin(SPI_SYS_PORT_GET);  // port command: get byte
+  sys_port_begin(SPI_SYS_PORT_GET);     // port command: get byte(s)
   mcu_hw_spi_tx_u08(port);
-  mcu_hw_spi_tx_u08(1);              // read one byte from fifo
-  uint8_t d = mcu_hw_spi_tx_u08(0);  // read last byte without increasing fifo pointer
+  mcu_hw_spi_tx_u08(1);                 // pop first byte, reply is not data yet
+  for(int i = 0; i < n - 1; i++)
+    buf[i] = mcu_hw_spi_tx_u08(1);      // reply: byte i, pop the next one
+  buf[n - 1] = mcu_hw_spi_tx_u08(0);    // reply: last byte, don't pop another
   mcu_hw_spi_end();
-  
-  return d;
+
+  return n;
 }
 
 // a timer to handle delayed reboot if the MCU detects that the core has changed but
@@ -258,11 +264,12 @@ static void sys_handle_event(bool ignore_coldboot) {
 
   if(irq_src & 2) {
     // read port 0 data for wifi emulation
-    int16_t byte = sys_port_get(0);
-    while(byte >= 0) {
-      at_wifi_port_byte(byte);
-      byte = sys_port_get(0);
-    }
+    unsigned char buf[SYS_PORT_BURST];
+    int n;
+    while((n = sys_port_get(0, buf, sizeof(buf))) > 0)
+      for(int i = 0; i < n; i++)
+        at_wifi_port_byte(buf[i]);
+    at_wifi_port_end();
   }
   
   if(irq_src & 4) {

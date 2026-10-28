@@ -36,7 +36,12 @@
 #define MEM_ALIGNMENT               4
 #define MEM_SIZE                    (MAX_CONCURRENT_CX_HINT * TCP_MSS)
 #define MEMP_NUM_ARP_QUEUE          10
+#if defined(ENABLE_PPP_SERVER) && !(defined(PICO_RP2350) && PICO_RP2350)
+// RP2040 (Pico W) runs out of ram with the ppp server: lwIP's default pool size, about 12 kB less
+#define PBUF_POOL_SIZE              16
+#else
 #define PBUF_POOL_SIZE              24
+#endif
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
 #define LWIP_ICMP                   1
@@ -71,10 +76,30 @@
 #define DHCP_DOES_ARP_CHECK         0
 #define LWIP_DHCP_DOES_ACD_CHECK    0
 
-// enable PPP for wireless via esp32
-#if MISTLE_BOARD == 6
+// enable PPP for wireless via esp32 (client) and as server for the serial port of the core
+#if (MISTLE_BOARD == 6) || defined(ENABLE_PPP_SERVER)
 #define PPP_SUPPORT                 1
 #define PPPOS_SUPPORT               1
+#endif
+
+#ifdef ENABLE_PPP_SERVER
+#define PPP_SERVER                  1
+// notice a peer that has been reset or switched off
+#define LCP_ECHOINTERVAL            10
+// lwIP waits this long (seconds) for a peer to hang up after its Terminate-Request,
+// during that time the serial port can't be used for AT commands
+#define FSM_DEFTIMEOUT              3
+// small mtu for the slow serial line: a 1500 byte packet blocks it for more than 130 ms
+#define PPP_MRU                     576
+#define PPP_MAXMRU                  576
+// forward between the lan and the peer (own code, not IP_FORWARD), see ppp_port.c
+struct netif;
+struct pbuf;
+struct ip4_addr;
+struct netif *ppp_port_route(const struct ip4_addr *dest);
+int ppp_port_ip4_input(struct pbuf *p, struct netif *inp);
+#define LWIP_HOOK_IP4_ROUTE(dest)   ppp_port_route(dest)
+#define LWIP_HOOK_IP4_INPUT(p, inp) ppp_port_ip4_input(p, inp)
 #endif
 
 #define LWIP_DHCP_GET_NTP_SRV       1
