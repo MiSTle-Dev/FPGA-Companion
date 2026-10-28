@@ -29,6 +29,13 @@
 #include "debug.h"
 #include "mcu_hw.h"
 
+#ifdef ENABLE_PPP_SERVER
+#include <ctype.h>
+#include <strings.h>
+#include "menu.h"
+#include "ppp_port.h"
+#endif
+
 #define AT_WIFI_STATE_OFFLINE      0
 #define AT_WIFI_STATE_ONLINE       1
 #define AT_WIFI_STATE_USER_OFFLINE 2
@@ -40,6 +47,91 @@ static int at_wifi_escape_state = 0;
 static TickType_t at_wifi_escape_tick = 0;
 
 static QueueHandle_t rx_queue = NULL;
+
+#ifdef ENABLE_PPP_SERVER
+/* In PPP mode the port carries PPP frames instead of AT commands. PPP is
+   either started by the OSD setting "Serial: PPP" (variable 'N', no AT
+   dialog) or by dialing ATD*99# from the AT interpreter. */
+static volatile bool ppp_mode = false;
+static bool ppp_by_dial = false;
+static bool ppp_closing = false;
+
+static bool ppp_selected(void) {
+  for(menu_variable_t *v = menu_get_variables(); v; v = v->next)
+    if(v->id == 'N') return v->value == 1;
+  return false;
+}
+
+static bool ppp_start(bool by_dial) {
+  if(!ppp_port_listen()) return false;
+  ppp_by_dial = by_dial;
+  ppp_closing = false;
+  ppp_mode = true;           // from now on port bytes go to ppp
+  return true;
+}
+
+// ATD*99# or ATD ppp. The peer may send its first PPP frame right after CONNECT
+static bool ppp_dial(char *s) {
+  while(*s == ' ') s++;
+  if(strchr("tTpP", *s) && (s[1] == '*' || !strcasecmp(s+1, "ppp"))) s++;   // tone/pulse
+  if(strncmp(s, "*99", 3) && strcasecmp(s, "ppp")) return false;
+
+  at_wifi_puts(ppp_start(true) ? "CONNECT\r\n" : "NO CARRIER\r\n");
+  return true;
+}
+
+// port bytes are collected here and handed to lwIP in blocks
+static unsigned char ppp_rx_buf[64];
+static int ppp_rx_len = 0;
+
+static void ppp_rx_flush(void) {
+  if(ppp_rx_len) ppp_port_input(ppp_rx_buf, ppp_rx_len);
+  ppp_rx_len = 0;
+}
+
+// called by at_wifi_task, handles start and end of PPP sessions
+static void ppp_poll(void) {
+  bool selected = ppp_selected();
+
+  if(!ppp_mode) {
+    if(selected && ppp_start(false)) debugf("AT WIFI: PPP mode");
+    return;
+  }
+
+  if(ppp_port_ended()) {
+    if(ppp_by_dial || !selected) {
+      ppp_port_flush(200);              // don't mix the last ppp bytes with our text
+      ppp_mode = false;
+      if(ppp_by_dial) at_wifi_puts("\r\nNO CARRIER\r\n");
+    } else {
+      ppp_closing = false;
+      ppp_port_listen();                // wait for the next session
+    }
+  } else if(!ppp_by_dial && !selected && !ppp_closing) {
+    ppp_closing = true;                 // switched to AT modem, mode changes once lwIP is done
+    ppp_port_close();
+  }
+}
+
+// in ppp mode no bytes arrive in the queue, poll quickly to notice the end of a session
+#define AT_POLL_MS (ppp_mode ? 50 : 1000)
+
+// answer init strings of dialers (ATZ, ATE0, AT&F, ATM0, ATX3, ATS0=0 ...) with OK
+static bool at_init_cmd(const char *c) {
+  if(strcasecmp(c, "at") == 0) return true;
+  if(strncasecmp(c, "at", 2) != 0) return false;
+
+  switch(tolower((unsigned char)c[2])) {
+  case 'z': case 'e': case 'm': case 'l': case 'x': case 'q': case 'v': case '&':
+    return true;
+  case 's':                                          // not atscan/atssid
+    return c[3] >= '0' && c[3] <= '9';
+  }
+  return false;
+}
+#else
+#define AT_POLL_MS 1000
+#endif
 
 static uint8_t pet2asc(uint8_t c) {
     if (c >= 0x41 && c <= 0x5a)
@@ -133,6 +225,9 @@ static void port_line(char *command) {
     mcu_hw_wifi_connect(s, k);
     
   } else if(strncasecmp(command, "atd", 3) == 0) {
+#ifdef ENABLE_PPP_SERVER
+    if(ppp_dial(command+3)) return;
+#endif
     char *s = command+3;
     while(*s == ' ') s++;
     // find ':' in command
@@ -162,6 +257,10 @@ static void port_line(char *command) {
   } else if(strncasecmp(command, "ath", 3) == 0) {
     at_wifi_puts("OK\r\n");
     mcu_hw_tcp_disconnect();
+#ifdef ENABLE_PPP_SERVER
+  } else if(at_init_cmd(command)) {
+    at_wifi_puts("OK\r\n");
+#endif
   } else
     at_wifi_puts("Unknown command, try 'athelp'\r\n");
 }
@@ -169,9 +268,23 @@ static void port_line(char *command) {
 // Port implements an "AT" like interface to e.g. be used
 // to control a WiFi modem
 void at_wifi_port_byte(unsigned char byte) {
+#ifdef ENABLE_PPP_SERVER
+  if(ppp_mode) {
+    ppp_rx_buf[ppp_rx_len++] = byte;
+    if(ppp_rx_len == sizeof(ppp_rx_buf)) ppp_rx_flush();
+    return;
+  }
+#endif
   // the FPGA may deliver port bytes before at_wifi_init() created the queue
   if(!rx_queue) return;
   xQueueSendToBack(rx_queue, &byte, ( TickType_t ) 10);
+}
+
+// called once all currently available port bytes have been delivered
+void at_wifi_port_end(void) {
+#ifdef ENABLE_PPP_SERVER
+  ppp_rx_flush();
+#endif
 }
 
 #define INPUT_BUFFER_SIZE 64
@@ -265,8 +378,11 @@ static void at_wifi_task(__attribute__((unused)) void *parms) {
   // wait for user events
   while(1) {
     unsigned char byte;
-    if(xQueueReceive(rx_queue, &byte, pdMS_TO_TICKS(1000))) 
+    if(xQueueReceive(rx_queue, &byte, pdMS_TO_TICKS(AT_POLL_MS))) 
       at_wifi_tx(byte);
+#ifdef ENABLE_PPP_SERVER
+    ppp_poll();
+#endif
   }
 }
 

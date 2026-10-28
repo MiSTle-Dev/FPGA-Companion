@@ -432,6 +432,10 @@ static const struct {
   { "NTP", "IP", CONFIG_TYPE_IP, NULL },
   { "NTP", "TIMEZONE", CONFIG_TYPE_INT, NULL },
 
+  // PPP server on the serial port (peer: address of the Amiga, see ppp_port.c)
+  { "PPP", "IP", CONFIG_TYPE_IP, NULL },
+  { "PPP", "PEER", CONFIG_TYPE_IP, NULL },
+
   // MENU/OSD
   { "MENU", "GAMEPAD_TRIGGER", CONFIG_TYPE_INT, NULL },  
   { "MENU", "HOTKEY", CONFIG_TYPE_HIDKEY, NULL },

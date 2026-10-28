@@ -752,6 +752,12 @@ usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count){
 static uint8_t network_status = NETWORK_STATUS_UNINITIALIZED;
 static bool asix_unmount_in_progress = false;
 
+#ifdef ENABLE_PPP_SERVER
+bool mcu_hw_tcpip_ready(void) {
+  return (network_status & NETWORK_STATUS_TCPIP_INIT) != 0;
+}
+#endif
+
 /* ======================================================================= */
 /* ======                   ASIX ethernet                        ========= */
 /* ======================================================================= */

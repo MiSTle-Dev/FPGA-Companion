@@ -7,6 +7,7 @@
 
 void at_wifi_init(void);
 void at_wifi_port_byte(unsigned char);
+void at_wifi_port_end(void);
 void at_wifi_puts(char *);
 void at_wifi_puts_n(char *, int);
 
