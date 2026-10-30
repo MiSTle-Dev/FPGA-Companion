@@ -93,9 +93,9 @@ Add the compiler to your search path:
 ```bash
 export PATH="$HOME/xuantie-gcc-riscv-v2.6.1-linux-x86_64/bin:$PATH"
 ```
-and the Bouffalo SDK with common CherryUSB Stack:
+and the Bouffalo SDK:
 ```bash
-git clone --recurse-submodules https://github.com/MiSTle-Dev/bouffalo_sdk.git "$HOME/bouffalo_sdk"
+git clone --recurse-submodules https://github.com/bouffalolab/bouffalo_sdk.git "$HOME/bouffalo_sdk"
 ```
 ```bash
 export BL_SDK_BASE="$HOME/bouffalo_sdk"
@@ -120,7 +120,7 @@ make clean
 CROSS_COMPILE="$HOME/xuantie-gcc-riscv-v2.6.1-linux-x86_64/bin/riscv64-unknown-elf-" BL_SDK_BASE="$HOME/bouffalo_sdk" make TANG_BOARD=m0sdock
 ```
 
-for a specific board select in between: m0sdock nano20k console60k mega60k mega138kpro primer25k console138k nano20k_v3923
+for a specific board select in between: m0sdock nano20k nano20k_v3923 console60k mega60k mega138kpro primer25k console138k
 
 ```shell
 cd "$HOME/Documents/FPGA-Companion/src/bl616"
@@ -204,11 +204,11 @@ Use **Command Prompt (`cmd.exe`)**, not PowerShell, for the Windows commands bel
 Open it using Win + R, then enter `cmd`.
 
 
-clone the Bouffalo SDK with latest version common CherryUSB Stack:  
+clone the Bouffalo SDK:  
 
 ```bat
 cd /d "%USERPROFILE%\Documents"
-git clone --recurse-submodules https://github.com/MiSTle-Dev/bouffalo_sdk.git
+git clone --recurse-submodules https://github.com/bouffalolab/bouffalo_sdk.git
 ```
 
 **Looks that recent SDK build still does not build/link even when enabling CONFIG_GCC_COMPILE_LTO, use Linux instead**
