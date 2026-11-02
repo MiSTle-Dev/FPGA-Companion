@@ -32,14 +32,25 @@ void hid_release_joystick(uint8_t idx) {
   usb_debugf("Releasing joystick %d (map = %02x)", idx, joystick_map);
 }
 
+// Short keyboards have no second Amiga key: Shift + LGUI (left Amiga)
+// is sent as RGUI (right Amiga), the shift keys are suppressed meanwhile
+static uint8_t amiga_shift_map(uint8_t mod) {
+  if ((mod & 0x08) && (mod & 0x22))
+    mod = (uint8_t)((mod & ~0x2A) | 0x80);
+  return mod;
+}
+
 void kbd_parse_usage_state(struct hid_kbd_state_S *state, uint8_t modifiers,
                            const uint8_t keys[32])
 {
-  if (modifiers != state->modifiers && !osd_is_visible()) {
+  uint8_t mod_old = amiga_shift_map(state->modifiers);
+  uint8_t mod_new = amiga_shift_map(modifiers);
+
+  if (mod_new != mod_old && !osd_is_visible()) {
     for (int bit = 0; bit < 8; bit++) {
-      if ((state->modifiers & (1U << bit)) && !(modifiers & (1U << bit)))
+      if ((mod_old & (1U << bit)) && !(mod_new & (1U << bit)))
         kbd_tx_hid_ps2_break(bit, 1);
-      if (!(state->modifiers & (1U << bit)) && (modifiers & (1U << bit)))
+      if (!(mod_old & (1U << bit)) && (mod_new & (1U << bit)))
         kbd_tx_hid_ps2_make(bit, 1);
     }
   }
