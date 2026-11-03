@@ -1848,7 +1848,7 @@ static void menu_eject_drive(void) {
     if(entry && entry->type == CONFIG_MENU_ENTRY_FILESELECTOR) drive = entry->fsel->index;
   }
 
-  if(drive < 0 || !sdc_get_image_name(drive)) return;
+  if(drive < 0 || drive >= MAX_DRIVES || !sdc_get_image_name(drive)) return;
 
   menu_debugf("DRV %d: eject", drive);
   menu_timer_enable(false);
