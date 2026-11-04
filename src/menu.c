@@ -1835,6 +1835,28 @@ static bool menu_is_systemmenu(void) {
   return false;
 }  
 
+// Delete key on a drive entry in the menu or inside its file selector: eject the
+// drive and return to the menu, which then shows the empty icon.
+static void menu_eject_drive(void) {
+  if(!menu_state || !osd_is_visible()) return;
+
+  int drive = -1;
+  if(menu_state->type == MENU_TYPE_FILESELECTOR) {
+    if(!fsel_state.cfgsel && fsel_state.index < MAX_DRIVES) drive = fsel_state.index;
+  } else if(menu_state->selected > 0) {
+    config_menu_entry_t *entry = menu_get_selected_entry();
+    if(entry && entry->type == CONFIG_MENU_ENTRY_FILESELECTOR) drive = entry->fsel->index;
+  }
+
+  if(drive < 0 || drive >= MAX_DRIVES || !sdc_get_image_name(drive)) return;
+
+  menu_debugf("DRV %d: eject", drive);
+  menu_timer_enable(false);
+  if(menu_state->type == MENU_TYPE_FILESELECTOR) menu_pop();
+  sdc_image_open(drive, NULL);
+  menu_do(0);   // redraw
+}
+
 static void menu_handle_latin1(uint8_t code) {
   // this function receives lagtin1 encoded keyboard events and
   // is meant to be used for complex text input in custom dialogs  
@@ -1849,6 +1871,8 @@ static void menu_handle_latin1(uint8_t code) {
     menu_delcfg_key(code);
   else if(code == 127 && menu_state && menu_state->type == MENU_TYPE_FILESELECTOR && fsel_state.cfgsel)
     menu_delcfg_open();                    // delete key in the list of configs
+  else if(code == 127)
+    menu_eject_drive();                    // delete key on a drive
 }
 
 static void menu_task(__attribute__((unused)) void *parms) {
