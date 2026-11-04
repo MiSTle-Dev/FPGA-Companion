@@ -34,9 +34,10 @@ void hid_release_joystick(uint8_t idx) {
 }
 
 // Short keyboards have no second Amiga key: on an Amiga core (NanoMig) Ctrl +
-// LGUI (left Amiga) is sent as RGUI (right Amiga), Ctrl is suppressed meanwhile
+// LGUI (left Amiga) is sent as RGUI (right Amiga), Ctrl is suppressed meanwhile.
+// Not applied if RGUI is physically pressed, so Ctrl+LAmiga+RAmiga (reset) works
 static uint8_t amiga_ctrl_map(uint8_t mod) {
-  if ((mod & 0x08) && (mod & 0x11) && cfg && cfg->name && !strcasecmp(cfg->name, "NanoMig"))
+  if ((mod & 0x08) && (mod & 0x11) && !(mod & 0x80) && cfg && cfg->name && !strcasecmp(cfg->name, "NanoMig"))
     mod = (uint8_t)((mod & ~0x19) | 0x80);
   return mod;
 }
