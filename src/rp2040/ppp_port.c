@@ -390,13 +390,16 @@ void ppp_port_peer_down(int id) { lan_detach(&peers[id]); }
 
 // called by lwIP, tcpip thread
 static void ppp_status(ppp_pcb *pcb, int err, void *ctx) {
+  static bool was_up;       // listening that fails again and again (nothing connected) is not reported
   (void)ctx;
 
   if(err == PPPERR_NONE) {
     debugf("PPP: up, our address %s", ip4addr_ntoa(netif_ip4_addr(pcb->netif)));
+    was_up = true;
     ppp_port_peer_up(PEER_PPP);
   } else {
-    debugf("PPP: down, error %d", err);
+    if(was_up) debugf("PPP: down, error %d", err);
+    was_up = false;
     ppp_port_peer_down(PEER_PPP);
     ended = true;
   }
