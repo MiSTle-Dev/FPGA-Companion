@@ -34,6 +34,8 @@
 
 #define MENU_EVENT_KEY_LATIN1    256  // 256..511
 
+extern const char *companion_version;  // defined in main.c
+
 typedef struct menu_variable {
   char id;
   int value;

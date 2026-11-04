@@ -150,6 +150,7 @@ typedef struct config_menu_S {
 typedef struct {
   char *name;
   int version;
+  char *core_version;
   config_action_t *actions;
   config_menu_t *menu;
 } config_t;

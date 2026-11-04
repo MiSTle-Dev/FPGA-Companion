@@ -2099,10 +2099,25 @@ static int about_length(void) {
   return 0;
 }
 
+static void about_draw_centered(int row, const char *str) {
+  int x = (u8g2_GetDisplayWidth(&u8g2) - u8g2_GetStrWidth(&u8g2, str)) / 2;
+  u8g2_DrawStr(&u8g2, x < 0 ? 0 : x, MENU_LINE_Y + row*MENU_ENTRY_H, str);
+}
+
 static void about_draw(void) {
-  u8g2_DrawStr(&u8g2, 20, MENU_LINE_Y + 1*MENU_ENTRY_H, "FPGA Companion");
-  u8g2_DrawStr(&u8g2, 5, MENU_LINE_Y + 2*MENU_ENTRY_H, "(c) 2026 the MiSTle Team");
-  u8g2_DrawStr(&u8g2, 0, MENU_LINE_Y + 3*MENU_ENTRY_H, "http://github.com/mistle-dev");
+  char str[48];
+
+  // core name and version as reported by the core's xml
+  if(cfg && cfg->name) {
+    snprintf(str, sizeof(str), "FPGA Core %s%s%s", cfg->name,
+	     cfg->core_version ? " " : "", cfg->core_version ? cfg->core_version : "");
+    about_draw_centered(1, str);
+  }
+
+  snprintf(str, sizeof(str), "FPGA Companion %s", companion_version);
+  about_draw_centered(2, str);
+  u8g2_DrawStr(&u8g2, 5, MENU_LINE_Y + 3*MENU_ENTRY_H, "(c) 2026 the MiSTle Team");
+  u8g2_DrawStr(&u8g2, 0, MENU_LINE_Y + 4*MENU_ENTRY_H, "http://github.com/mistle-dev");
 }
 
 const static config_custom_t about = {

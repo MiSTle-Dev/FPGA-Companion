@@ -50,6 +50,7 @@ void config_init(void) {
   cfg = pvPortMalloc(sizeof(config_t));
   cfg->name = NULL;  
   cfg->version = -1;  
+  cfg->core_version = NULL;
   cfg->menu = NULL;  
   cfg->actions = NULL;
 }
@@ -110,6 +111,8 @@ static void config_xml_config_attribute(char *name, char *value) {
     cfg->name = StrDup(value);
   else if(strcasecmp(name, "version") == 0)
     cfg->version = atoi(value);
+  else if(strcasecmp(name, "core_version") == 0 && !cfg->core_version)
+    cfg->core_version = StrDup(value);
   else
     debugf("WARNING: Unused config attribute '%s'", name);
 }
