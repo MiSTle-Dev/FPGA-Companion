@@ -49,8 +49,7 @@ void config_init(void) {
   config_depth = 0;
   cfg = pvPortMalloc(sizeof(config_t));
   cfg->name = NULL;  
-  cfg->version = -1;  
-  cfg->core_version = NULL;
+  cfg->version = NULL;
   cfg->menu = NULL;  
   cfg->actions = NULL;
 }
@@ -110,9 +109,7 @@ static void config_xml_config_attribute(char *name, char *value) {
   if(strcasecmp(name, "name") == 0 && !cfg->name)
     cfg->name = StrDup(value);
   else if(strcasecmp(name, "version") == 0)
-    cfg->version = atoi(value);
-  else if(strcasecmp(name, "core_version") == 0 && !cfg->core_version)
-    cfg->core_version = StrDup(value);
+    cfg->version = StrDup(value);
   else
     debugf("WARNING: Unused config attribute '%s'", name);
 }
@@ -832,7 +829,7 @@ void config_dump(void) {
   debugf("========================== Config ==========================");
 
   debugf("Name: %s", cfg->name);
-  debugf("Version: %d.%d", cfg->version/100, cfg->version%100);
+  debugf("Version: %s", cfg->version ? cfg->version : "");
 
   // check if an init or ready action exists
   config_action_t *action = config_get_action("init");
