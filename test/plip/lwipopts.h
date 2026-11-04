@@ -19,7 +19,7 @@
 #define PBUF_POOL_BUFSIZE 256
 #define MEMP_NUM_PBUF 32
 #define LWIP_STATS 0
-#define LWIP_HOOK_IP4_ROUTE(dest)   ppp_port_route(dest)
+#define LWIP_HOOK_IP4_ROUTE_SRC(src, dest) ppp_port_route(dest)
 #define LWIP_HOOK_IP4_INPUT(p, inp) ppp_port_ip4_input(p, inp)
 #define LWIP_HOOK_FILENAME "hooks.h"
 #define LWIP_CHECKSUM_ON_COPY 0

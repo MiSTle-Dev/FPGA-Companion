@@ -159,7 +159,8 @@ static bool peer_on_link(const struct peer *p, struct netif *n) {
     ip4_addr_netcmp(&p->ip, netif_ip4_addr(n), netif_ip4_netmask(n));
 }
 
-// ip4_route() hook (lwipopts.h): a peer is always reached via its interface, even if it is in a lan subnet
+// ip4_route_src() hook (lwipopts.h): a peer is always reached via its interface, even if it is in a lan subnet.
+// Only for lookups with a source address (tcp, udp): ip4_route(dest) checks the interfaces' subnets first.
 struct netif *ppp_port_route(const ip4_addr_t *dest) {
   struct peer *p = peer_by_ip(dest);
   return p ? p->netif : NULL;

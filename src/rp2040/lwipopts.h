@@ -98,7 +98,9 @@ struct pbuf;
 struct ip4_addr;
 struct netif *ppp_port_route(const struct ip4_addr *dest);
 int ppp_port_ip4_input(struct pbuf *p, struct netif *inp);
-#define LWIP_HOOK_IP4_ROUTE(dest)   ppp_port_route(dest)
+// _SRC: lwIP asks this hook first for everything with a source address (tcp, udp). The plain
+// LWIP_HOOK_IP4_ROUTE comes after the interface loop, a peer inside the lan's subnet would be routed to the lan.
+#define LWIP_HOOK_IP4_ROUTE_SRC(src, dest) ppp_port_route(dest)
 #define LWIP_HOOK_IP4_INPUT(p, inp) ppp_port_ip4_input(p, inp)
 #endif
 

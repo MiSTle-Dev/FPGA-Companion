@@ -13,6 +13,7 @@
 #include "lwip/etharp.h"
 #include "lwip/ip4.h"
 #include "lwip/icmp.h"
+#include "lwip/tcp.h"
 #include "lwip/inet_chksum.h"
 #include "lwip/timeouts.h"
 #include "netif/ethernet.h"
@@ -109,6 +110,37 @@ static int mk_arp(uint8_t *f, int op, const uint8_t *smac, uint32_t sip, const u
   memcpy(a + 18, dmac, 6); memcpy(a + 24, &d, 4);
   return 14 + 28;
 }
+
+static uint16_t csum16(const uint8_t *d, int len, uint32_t sum) {
+  for(int i = 0; i + 1 < len; i += 2) sum += (d[i] << 8) | d[i + 1];
+  if(len & 1) sum += d[len - 1] << 8;
+  while(sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+  return sum;
+}
+// 0 if the tcp checksum (pseudo header) is valid, ip = ip header
+static uint16_t tcp_chk(const uint8_t *ip) {
+  int tl = ((ip[2] << 8) | ip[3]) - 20;
+  uint32_t sum = csum16(ip + 12, 8, 0) + 6 + tl;
+  return (uint16_t)~csum16(ip + 20, tl, sum);
+}
+static int mk_tcp_syn(uint8_t *f, const uint8_t *dmac, const uint8_t *smac, uint32_t src, uint32_t dst, int sport, int dport, uint32_t seq) {
+  memcpy(f, dmac, 6); memcpy(f + 6, smac, 6); f[12] = 8; f[13] = 0;
+  uint8_t *ip = f + 14; int len = 20 + 24;
+  memset(ip, 0, len);
+  ip[0] = 0x45; ip[2] = len >> 8; ip[3] = len; ip[6] = 0x40; ip[8] = 64; ip[9] = 6;
+  uint32_t s = lwip_htonl(src), d = lwip_htonl(dst); memcpy(ip + 12, &s, 4); memcpy(ip + 16, &d, 4);
+  uint8_t *t = ip + 20;
+  t[0] = sport >> 8; t[1] = sport; t[2] = dport >> 8; t[3] = dport;
+  t[4] = seq >> 24; t[5] = seq >> 16; t[6] = seq >> 8; t[7] = seq;
+  t[12] = 6 << 4; t[13] = 0x02; t[14] = 0x20; t[15] = 0x00;       // SYN, window 8192
+  t[20] = 2; t[21] = 4; t[22] = 0x05; t[23] = 0xb4;                // MSS 1460
+  uint32_t sum = csum16(ip + 12, 8, 0) + 6 + 24;
+  uint16_t c = (uint16_t)~csum16(t, 24, sum);
+  t[16] = c >> 8; t[17] = c & 0xff;
+  c = inet_chksum(ip, 20); ip[10] = c & 0xff; ip[11] = c >> 8;
+  return 14 + len;
+}
+static err_t accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err) { (void)arg; (void)newpcb; (void)err; return ERR_OK; }
 static void amiga_send(const uint8_t *f, int len) {   // Amiga -> core -> Companion
   memcpy(m.rx, f, len); m.rx_len = len; m.rx_valid = true; service();
 }
@@ -192,6 +224,25 @@ int main(void) {
   o = m.tx_out[m.tx_out_n - 1];
   CHECK(m.tx_out_n == before + 1 && o[34] == 0 && ip_of(o + 14, 12) == 0xc0a8fe01 && ip_of(o + 14, 16) == 0xc0a80132,
 	"echo reply from the companion");
+  amiga_fetch();
+
+  // 6b. ping and tcp connect to the companion's address on the lan (what the user does: ping/telnet/ftp 192.168.1.10)
+  before = m.tx_out_n;
+  n = mk_ip_icmp(f, our_mac, amiga_mac, 0xc0a80132, 0xc0a8010a, 64, 16); amiga_send(f, n);
+  o = m.tx_out_n > before ? m.tx_out[m.tx_out_n - 1] : NULL;
+  CHECK(o && o[34] == 0 && ip_of(o + 14, 12) == 0xc0a8010a && ip_of(o + 14, 16) == 0xc0a80132, "echo reply from the companion's lan address");
+  amiga_fetch();
+
+  static struct tcp_pcb *lis;
+  lis = tcp_new(); tcp_bind(lis, IP_ANY_TYPE, 23); lis = tcp_listen(lis);
+  tcp_accept(lis, accept_cb);
+  before = m.tx_out_n;
+  n = mk_tcp_syn(f, our_mac, amiga_mac, 0xc0a80132, 0xc0a8010a, 1025, 23, 1000);
+  amiga_send(f, n);
+  o = m.tx_out_n > before ? m.tx_out[m.tx_out_n - 1] : NULL;
+  CHECK(o && o[23] == 6 && (o[34 + 13] & 0x12) == 0x12 && ip_of(o + 14, 12) == 0xc0a8010a && ip_of(o + 14, 16) == 0xc0a80132,
+	"SYN to the companion's lan address: SYN/ACK comes back through plip");
+  CHECK(o && inet_chksum(o + 14, 20) == 0 && tcp_chk(o + 14) == 0, "SYN/ACK checksums valid");
   amiga_fetch();
 
   // 7. tx queue: core busy -> frames queue (3) and the rest is refused, afterwards all drain
