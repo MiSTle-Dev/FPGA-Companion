@@ -15,8 +15,7 @@
 #include "../telnetd.h"
 #include "../xml.h"
 #include "../at_wifi.h"
-
-const char *companion_version = "v1.4.34";
+#include "../version.h"
 
 /*-----------------------------------------------------------*/
 /*---            main FPGA communication task            ----*/
