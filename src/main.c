@@ -15,6 +15,9 @@
 #include "../telnetd.h"
 #include "../xml.h"
 #include "../at_wifi.h"
+#ifdef ENABLE_PPP_SERVER
+#include "plip_port.h"
+#endif
 
 const char *companion_version = "Companion v1.4.33";
 
@@ -100,6 +103,9 @@ static void com_task(__attribute__((unused)) void *p ) {
     
     // finally prepare for wifi communication
     at_wifi_init();
+#ifdef ENABLE_PPP_SERVER
+    plip_port_init();    // virtual parallel port of the core, if enabled in config.ini
+#endif
 
     debugf("Entering main loop");
   

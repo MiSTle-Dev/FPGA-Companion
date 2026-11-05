@@ -332,6 +332,32 @@ able to deal with images that large should ignore this command and
 thus prevent themselves from accidentially damaging the image during
 a write.
 
+### NET target
+
+The NET target (5, interrupt bit 5) carries Ethernet frames between the
+MCU and a virtual network device in the core. The NanoMig core uses it
+for PLIP: the Amiga's parallel port with Roadshow and ```plipbox.device```.
+The commands are:
+
+| Command | Value | Data bytes after the command |
+|---------|-------|------------------------------|
+| ```SPI_NET_STATUS``` | 0 | returns status, rx length (high, low) |
+| ```SPI_NET_READ``` | 1 | returns status, 0 (ready), then the received frame |
+| ```SPI_NET_RELEASE``` | 2 | one byte, receive buffer is free again |
+| ```SPI_NET_WRITE``` | 3 | frame bytes for the transmit buffer (only if tx_valid is 0) |
+| ```SPI_NET_COMMIT``` | 4 | length (high, low): the frame is passed to the Amiga |
+| ```SPI_NET_CONFIG``` | 5 | bit 0: enable the virtual port, bit 1: loopback of test frames |
+| ```SPI_NET_STATS``` | 6 | returns status, 0, then frames received, sent and round trip clocks (32 bits each) |
+
+The status byte has bit 0 = frame received (rx_valid), bit 1 = transmit
+buffer still occupied (tx_valid), bit 2 = enabled, bit 3 = loopback. A
+frame is an Ethernet frame without checksum, at most 1514 bytes. As with
+all targets the reply to a byte is returned with the next byte, so the
+byte after the command returns the status. The bytes must be sent one
+call at a time with a short gap, the core cannot answer a gapless burst.
+The interrupt is raised when a frame has arrived and when the Amiga has
+taken a frame, and is acknowledged with ```SPI_SYS_IRQ_CTRL```.
+
 ### AUDIO target
 
 The audio target has not been implemented, yet. It's purpose is to

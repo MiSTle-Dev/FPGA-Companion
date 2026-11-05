@@ -80,3 +80,26 @@ would be accessed using the following command:
 atd darkforce-bbs.dyndns.org:1040  
 atd bbs.retro32.com:1337
 ```
+
+## PLIP (Amiga parallel port)
+
+Boards with the PPP server (Pico W, Pico 2 W, MSP20K) can also connect the
+parallel port of the NanoMig core to the network. The core implements the
+peer of ```plipbox.device``` (Roadshow), the Companion turns the frames into
+an lwIP interface (```plip_port.c```) and forwards between the Amiga and the
+network like for PPP. The core needs ```ENABLE_PLIP```.
+
+```
+[PLIP]
+ENABLE=1             ; switch the virtual parallel port on, default 0
+PEER=192.168.1.50    ; address of the Amiga, an unused address of the local network
+IP=192.168.254.1     ; address of the Companion on this link (default)
+LOOPBACK=0           ; 1: the core answers $FFFD test frames itself
+```
+
+Roadshow on the Amiga gets ```PEER``` as its address, the netmask of the local network
+and the router of the local network as gateway. The Companion answers all ARP
+requests of the Amiga with its own address and answers requests for ```PEER``` on the local
+network (proxy ARP), so the router needs no extra route and does the NAT to the internet.
+The Companion prints a statistic line (frames in the core and here) every 30 s while
+traffic flows. Host test: ```test/plip/run.sh```.
