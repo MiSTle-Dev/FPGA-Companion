@@ -73,7 +73,7 @@ static bool ppp_start(bool by_dial) {
 // ATD*99# or ATD ppp. The peer may send its first PPP frame right after CONNECT
 static bool ppp_dial(char *s) {
   while(*s == ' ') s++;
-  if(strchr("tTpP", *s) && (s[1] == '*' || !strcasecmp(s+1, "ppp"))) s++;   // tone/pulse
+  if(*s && strchr("tTpP", *s) && (s[1] == '*' || !strcasecmp(s+1, "ppp"))) s++;   // tone/pulse
   if(strncmp(s, "*99", 3) && strcasecmp(s, "ppp")) return false;
 
   at_wifi_puts(ppp_start(true) ? "CONNECT\r\n" : "NO CARRIER\r\n");
