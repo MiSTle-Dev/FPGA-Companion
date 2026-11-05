@@ -2133,7 +2133,7 @@ static void about_draw(void) {
 
   // core name and version as reported by the core's xml
   if(cfg && cfg->name) {
-    snprintf(str, sizeof(str), "Core: %s%s%s", cfg->name,
+    snprintf(str, sizeof(str), "%s%s%s", cfg->name,
 	     cfg->version ? " " : "", cfg->version ? cfg->version : "");
     about_draw_centered(1, str);
   }
