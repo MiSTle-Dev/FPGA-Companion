@@ -1167,7 +1167,8 @@ static void menu_newcfg_key(uint8_t code) {
     menu_newcfg_create();
     menu_swallow_select();
     return;
-  } else if(code >= 32 && code < 127 && len < NEWCFG_MAX && !strchr("\\/:*?\"<>|", code)) {
+  } else if(code >= 32 && code < 127 && len < NEWCFG_MAX && !strchr("\\/:*?\"<>|;", code)) {
+    // ';' starts a comment in the ini, it would cut the name stored as selection
     newcfg.name[len] = code;
     newcfg.name[len+1] = '\0';
   } else
@@ -1308,7 +1309,14 @@ static bool menu_cfgsel_apply(const config_cfgsel_t *sel, const char *name, bool
   // 1. Hold the core in reset. It won't ask for any more sectors then. Wait
   //    until the sd card is done with whatever it was doing for the core.
   sys_set_val('R', 1);
-  sdc_wait_idle();
+  if(!sdc_wait_idle()) {
+    // still busy: swapping the images now could pull them away from a running transfer
+    menu_debugf("Config: sd card busy, not switching");
+    menu_switching = false;
+    menu_draw_dialog("Config", "SD card busy");
+    menu_core_release();
+    return false;
+  }
 
   // The config to switch to has to be there. Nothing is changed otherwise.
   if(!fresh && !inifile_exists(name)) {
