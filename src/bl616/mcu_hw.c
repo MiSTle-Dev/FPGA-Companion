@@ -71,6 +71,7 @@
 #include "timers.h"
 #include "bflb_irq.h"
 #include "../at_wifi.h"
+#include <time.h>
 
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
