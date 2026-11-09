@@ -97,6 +97,15 @@ add_executable(${PROJECT}
 
 family_add_pico_pio_usb(${PROJECT})
 
+# regenerate version.h from git on every build
+add_custom_target(version_h
+    COMMAND ${CMAKE_COMMAND} -DVERSION_H=${CMAKE_CURRENT_BINARY_DIR}/version.h
+            -DSRC_DIR=${CMAKE_CURRENT_LIST_DIR}/.. -P ${CMAKE_CURRENT_LIST_DIR}/../version.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/version.h
+    COMMENT "Generating version.h")
+add_dependencies(${PROJECT} version_h)
+target_include_directories(${PROJECT} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 target_compile_definitions(${PROJECT} PRIVATE
         PICO_FLASH_ASSUME_CORE1_SAFE=1
         PIO_USB_DP_PIN_DEFAULT=2

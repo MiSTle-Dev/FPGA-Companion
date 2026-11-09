@@ -2131,10 +2131,37 @@ static int about_length(void) {
   return 0;
 }
 
+#if __has_include("version.h")
+#include "version.h"
+#endif
+#ifndef FW_VERSION
+#define FW_VERSION "<no version>"
+#endif
+
 static void about_draw(void) {
   u8g2_DrawStr(&u8g2, 20, MENU_LINE_Y + 1*MENU_ENTRY_H, "FPGA Companion");
-  u8g2_DrawStr(&u8g2, 5, MENU_LINE_Y + 2*MENU_ENTRY_H, "(c) 2026 the MiSTle Team");
-  u8g2_DrawStr(&u8g2, 0, MENU_LINE_Y + 3*MENU_ENTRY_H, "http://github.com/mistle-dev");
+
+  // auto-center version string
+  int version_len = u8g2_GetStrWidth(&u8g2, FW_VERSION);
+  if(version_len <= 128)
+    u8g2_DrawStr(&u8g2, 64-version_len/2, MENU_LINE_Y + 2*MENU_ENTRY_H, FW_VERSION);
+  else {
+    // ellipsize version string
+    char str[version_len+1];
+    int ellipse_len =  u8g2_GetStrWidth(&u8g2, "...");
+    
+    strcpy(str, FW_VERSION);    
+    while(u8g2_GetStrWidth(&u8g2, str) > 128-ellipse_len)
+      str[strlen(str)-1] = '\0';
+
+    strcat(str, "...");    
+
+    version_len = u8g2_GetStrWidth(&u8g2, str);
+    u8g2_DrawStr(&u8g2, 64-version_len/2, MENU_LINE_Y + 2*MENU_ENTRY_H, str);
+  }
+
+  u8g2_DrawStr(&u8g2, 5, MENU_LINE_Y + 3*MENU_ENTRY_H, "(c) 2026 the MiSTle Team");
+  u8g2_DrawStr(&u8g2, 0, MENU_LINE_Y + 4*MENU_ENTRY_H, "http://github.com/mistle-dev");
 }
 
 const static config_custom_t about = {
