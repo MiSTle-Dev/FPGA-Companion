@@ -80,18 +80,16 @@ Primer25K BL616 debug console can be used after a required hardware modification
 
 Download the Bouffalo toolchain:
 
-https://github.com/bouffalolab/toolchain/releases/tag/default
-
-Download `xuantie-gcc-riscv-v2.6.1-linux-x86_64.tar.xz` into your home directory.
+Download [gcc-riscv-14.3.0-linux-x86_64.tar.xz](https://github.com/bouffalolab/toolchain/releases/download/default/gcc-riscv-14.3.0-linux-x86_64.tar.xz) (GCC RISC-V 14.3.0) into your home directory.
 
 Extract it into your home directory. The archive contains the
-`xuantie-gcc-riscv-v2.6.1-linux-x86_64` folder:
+`gcc-riscv-14.3.0-linux-x86_64.tar.xz` folder:
 ```bash
-tar -xf "$HOME/xuantie-gcc-riscv-v2.6.1-linux-x86_64.tar.xz" -C "$HOME"
+tar -xf "$HOME/gcc-riscv-14.3.0-linux-x86_64.tar.xz" -C "$HOME"
 ```
 Add the compiler to your search path:
 ```bash
-export PATH="$HOME/xuantie-gcc-riscv-v2.6.1-linux-x86_64/bin:$PATH"
+export PATH="$HOME/gcc-riscv-14.3.0-linux-x86_64/riscv64-unknown-elf/bin:$PATH"
 ```
 and the Bouffalo SDK:
 ```bash
@@ -194,9 +192,7 @@ After successful download you need to unplug the device again and reinsert it *w
 
 Download the Bouffalo toolchain:
 
-https://github.com/bouffalolab/toolchain/releases/tag/default
-
-Download xuantie-gcc-riscv-v2.6.1-windows-x86_64.7z into your home directory.
+Download [gcc-riscv-14.3.0-windows-x86_64.tar.xz](https://github.com/bouffalolab/toolchain/releases/download/default/gcc-riscv-14.3.0-windows-x86_64.tar.xz) (GCC RISC-V 14.3.0) into your home directory und untar it.
 
 Install [Git for Windows](https://gitforwindows.org)
 
@@ -211,8 +207,6 @@ cd /d "%USERPROFILE%\Documents"
 git clone --recurse-submodules https://github.com/bouffalolab/bouffalo_sdk.git
 ```
 
-**Looks that recent SDK build still does not build/link even when enabling CONFIG_GCC_COMPILE_LTO, use Linux instead**
-
 Set Windows SDK Environment Variable:  
 
 ```text
@@ -224,7 +218,7 @@ BL_SDK_BASE=%USERPROFILE%\bouffalo_sdk
 Set Windows search PATH for Toolchain:  
 
 ```text
-%USERPROFILE%\xuantie-gcc-riscv-v2.6.1-windows-x86_64\bin
+%USERPROFILE%\gcc-riscv-14.3.0-windows-x86_64\riscv64-unknown-elf\bin
 %USERPROFILE%\bouffalo_sdk\tools\make
 %USERPROFILE%\bouffalo_sdk\tools\cmake
 %USERPROFILE%\bouffalo_sdk\tools\ninja
