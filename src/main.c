@@ -16,8 +16,6 @@
 #include "../xml.h"
 #include "../at_wifi.h"
 
-const char *companion_version = "Companion v1.4.33";
-
 /*-----------------------------------------------------------*/
 /*---            main FPGA communication task            ----*/
 /*-----------------------------------------------------------*/
