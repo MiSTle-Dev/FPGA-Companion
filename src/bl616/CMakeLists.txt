@@ -66,6 +66,15 @@ target_sources(app PRIVATE
 file(GLOB COMPONENT_SRCS ../u8g2/csrc/*.c  ../u8g2/sys/bitmap/common/*.c)
 target_sources(app PRIVATE ${COMPONENT_SRCS})
 
+# regenerate version.h from git on every build
+add_custom_target(version_h
+    COMMAND ${CMAKE_COMMAND} -DVERSION_H=${CMAKE_CURRENT_BINARY_DIR}/version.h
+            -DSRC_DIR=${CMAKE_CURRENT_LIST_DIR}/.. -P ${CMAKE_CURRENT_LIST_DIR}/../version.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/version.h
+    COMMENT "Generating version.h")
+add_dependencies(app version_h)
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 sdk_set_main_file(../main.c)
 
 project(fpga_companion)
