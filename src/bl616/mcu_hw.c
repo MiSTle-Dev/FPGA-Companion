@@ -735,7 +735,7 @@ static void usbh_hid_client_thread(void *argument) {
                     hid->class->hport,
                     hid->class->intin,
                     hid->buffer, len,
-                    hid_interval_ms,
+                    0,
                     usbh_hid_callback, hid);
 
   if (hid->class->hport->device_desc.idVendor == 0x2dc8 && hid->class->hport->device_desc.idProduct == 0x3105) {
@@ -769,7 +769,7 @@ static void usbh_hid_client_thread(void *argument) {
                       hid->class->hport,
                       hid->class->intin,
                       hid->buffer, len,
-                      hid_interval_ms,
+                      0,
                       usbh_hid_callback, hid);
 
     int ret = usbh_submit_urb(&hid->class->intin_urb);
@@ -1010,7 +1010,7 @@ static void usbh_xbox_client_thread(void *argument) {
                     xbox->class->hport, 
                     xbox->class->intin, 
                     xbox->buffer, XBOX_REPORT_SIZE,
-                    hid_interval_ms,
+                    0,
                     usbh_xbox_callback, xbox);
 
     int ret = usbh_submit_urb(&xbox->class->intin_urb);
