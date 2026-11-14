@@ -83,13 +83,13 @@ Download the Bouffalo toolchain:
 Download [gcc-riscv-14.3.0-linux-x86_64.tar.xz](https://github.com/bouffalolab/toolchain/releases/download/default/gcc-riscv-14.3.0-linux-x86_64.tar.xz) (GCC RISC-V 14.3.0) into your home directory.
 
 Extract it into your home directory. The archive contains the
-`gcc-riscv-14.3.0-linux-x86_64.tar.xz` folder:
+`riscv64-unknown-elf` folder:
 ```bash
 tar -xf "$HOME/gcc-riscv-14.3.0-linux-x86_64.tar.xz" -C "$HOME"
 ```
 Add the compiler to your search path:
 ```bash
-export PATH="$HOME/gcc-riscv-14.3.0-linux-x86_64/riscv64-unknown-elf/bin:$PATH"
+export PATH="$HOME/riscv64-unknown-elf/bin:$PATH"
 ```
 and the Bouffalo SDK:
 ```bash
@@ -115,7 +115,7 @@ To build only **M0S Dock**, use the existing clone:
 ```bash
 cd "$HOME/Documents/FPGA-Companion/src/bl616"
 make clean
-CROSS_COMPILE="$HOME/xuantie-gcc-riscv-v2.6.1-linux-x86_64/bin/riscv64-unknown-elf-" BL_SDK_BASE="$HOME/bouffalo_sdk" make TANG_BOARD=m0sdock
+BL_SDK_BASE="$HOME/bouffalo_sdk" make TANG_BOARD=m0sdock
 ```
 
 for a specific board select in between: m0sdock nano20k nano20k_v3923 console60k mega60k mega138kpro primer25k console138k
@@ -130,7 +130,7 @@ For future terminals, add the following exports to `~/.bashrc`:
 
 ```bash
 export BL_SDK_BASE="$HOME/bouffalo_sdk"
-export PATH="$HOME/xuantie-gcc-riscv-v2.6.1-linux-x86_64/bin:$PATH"
+export PATH="$HOME/riscv64-unknown-elf/bin:$PATH"
 ```
 
 Reload the settings with `source ~/.bashrc`.
