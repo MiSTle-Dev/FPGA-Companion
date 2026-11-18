@@ -2998,11 +2998,16 @@ void mcu_hw_fpga_resume_spi(void) {
 }
 void mcu_hw_jtag_toggleClk(uint32_t clk_len)
 {
+  // the output register still holds the last bit of the previous bitstream, with TMS
+  // high. TMS goes low first, so the clocks stay in RUN-TEST/IDLE (an SRAM erase needs
+  // them there), and TCK comes from the board's pin.
+  uint32_t idle = *reg_gpio0_31 & ~((1u << JTAG_TMS_BIT) | (1u << JTAG_TCK_BIT));
+  *reg_gpio0_31 = idle;
   mcu_hw_jtag_enter_gpio_out_mode();
 
   for (uint32_t i = 0; i < clk_len; i++) {
-    *reg_gpio0_31 = *reg_gpio0_31 & (0xffffffff ^ (1 << 10)); // TCK=0
-    *reg_gpio0_31 = *reg_gpio0_31 | (1 << 10); // TCK=1
+    *reg_gpio0_31 = idle;                         // TCK=0
+    *reg_gpio0_31 = idle | (1u << JTAG_TCK_BIT);  // TCK=1
   }
 
   mcu_hw_jtag_exit_gpio_out_mode();
