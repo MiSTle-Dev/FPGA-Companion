@@ -32,100 +32,104 @@ void hid_release_joystick(uint8_t idx) {
   usb_debugf("Releasing joystick %d (map = %02x)", idx, joystick_map);
 }
 
-void kbd_parse_usage_state(struct hid_kbd_state_S *state, uint8_t modifiers,
-                           const uint8_t keys[32])
-{
-  if (modifiers != state->modifiers && !osd_is_visible()) {
-    for (int bit = 0; bit < 8; bit++) {
-      if ((state->modifiers & (1U << bit)) && !(modifiers & (1U << bit)))
-        kbd_tx_hid_ps2_break(bit, 1);
-      if (!(state->modifiers & (1U << bit)) && (modifiers & (1U << bit)))
-        kbd_tx_hid_ps2_make(bit, 1);
+void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kbd_state_S *state,
+	       const unsigned char *buffer, int nbytes) {
+
+  // check if the given code is in the report
+  bool is_in_report(unsigned char code, const unsigned char *report) {
+    for(int j=0;j<6;j++)
+      if(report[j] == code)
+	      return true;
+
+    return false;
+  }
+  
+  // we expect boot mode packets which are exactly 8 bytes long
+  if(nbytes != 8) return;
+
+  // determine menu hotkey
+  int hotkey = inifile_config_get_int("menu", "hotkey", 0x45); // default is f12
+  if(!hotkey) hotkey = 0x45;
+
+  // check if modifier have changed
+  if((buffer[0] != state->last_report[0]) && !osd_is_visible()) {
+    for(int i=0;i<8;i++) {
+      // modifier keys map to key codes 0x68+
+      
+      // modifier released?
+      if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
+        kbd_tx_hid_ps2_break(i, 1);
+
+      // modifier pressed?
+      if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
+        kbd_tx_hid_ps2_make(i, 1);
     }
   }
+  
+  // check if regular keys have changed
+  // key released?
+  for(int i=0;i<6;i++) {
+    // process all slots that were used in the last report
+    if(!(state->last_report[2+i])) continue;
 
-  for (uint16_t usage = 4; usage <= UINT8_MAX; usage++) {
-    if (usage >= 0xe0 && usage <= 0xe7)
-      continue;
-
-    bool was_pressed = (state->keys[usage / 8] & (1U << (usage % 8))) != 0;
-    bool is_pressed = (keys[usage / 8] & (1U << (usage % 8))) != 0;
-    if (was_pressed == is_pressed)
-      continue;
-
-    // determine menu hotkey
-    int hotkey = inifile_config_get_int("menu", "hotkey", 0x45); // default is f12
-
-    // make sure hotkey is f12 if anything fails
-    if(!hotkey) hotkey = 0x45;
-    
-    if (!is_pressed) {
-      if (!osd_is_visible()) {
-        if (usage != hotkey)
-          kbd_tx_hid_ps2_break((uint8_t)usage, 0);
-      } else {
+    // check if key reported in last report is still in current report 
+    if (!is_in_report(state->last_report[2+i], buffer+2)) {
+      if(!osd_is_visible() ) {
+        // check if the reported key is the OSD activation hotkey
+        // and suppress reporting it to the core
+        if(state->last_report[2+i] != hotkey)
+          kbd_tx_hid_ps2_break(state->last_report[2+i], 0);
+      } else
         menu_notify(MENU_EVENT_KEY_RELEASE);
-      }
-      continue;
     }
+  }
 
-    unsigned long msg = 0;
-    if (usage == hotkey) {
-      msg = (modifiers & 0x22) ? MENU_EVENT_SYSTEM : MENU_EVENT_TOGGLE;
-    } else if (osd_is_visible() && usage == 0x29) {
-      msg = MENU_EVENT_BACK;
-    } else {
-      if (!osd_is_visible()) {
-        kbd_tx_hid_ps2_make((uint8_t)usage, 0);
-      } else {
-        if (usage == 0x51) msg = MENU_EVENT_DOWN;
-        if (usage == 0x52) msg = MENU_EVENT_UP;
-        if (usage == 0x4e) msg = MENU_EVENT_PGDOWN;
-        if (usage == 0x4b) msg = MENU_EVENT_PGUP;
-        if (usage == 0x2c || usage == 0x28) msg = MENU_EVENT_SELECT;
-        hid_process_latin1(modifiers, (uint8_t)usage);
+  // key pressed?
+  for(int i=0;i<6;i++) {
+    // process all slots that are used in current report
+    if(!(buffer[2+i])) continue;
+
+    // check if key currently reported was not present in last report
+    if (!is_in_report(buffer[2+i], state->last_report+2)) {
+      static unsigned long msg;
+      msg = 0;
+	
+      // F12 toggles the OSD state. Therefore F12 must never be forwarded
+      // to the core and thus must have an empty entry in the keymap. ESC
+      // can only close the OSD. This is now configurable via the menu hotkey
+
+      // Caution: Since the OSD closes on the press event, the following
+      // release event will be sent into the core. The core should thus
+      // cope with release events that did not have a press event before
+      if(buffer[2+i] == hotkey) {
+        // for now, shift-F12 activates the system menu
+        if(buffer[0] & 0x22) msg = MENU_EVENT_SYSTEM;
+        else	  msg = MENU_EVENT_TOGGLE;
+      } else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
+        msg = MENU_EVENT_BACK;
+      else {
+        if(!osd_is_visible())
+           //kbd_tx(buffer[2+i]);
+           kbd_tx_hid_ps2_make(buffer[2+i], 0);
+        else {
+          // check if cursor up/down or space has been pressed
+          if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;
+          if(buffer[2+i] == 0x52) msg = MENU_EVENT_UP;
+          if(buffer[2+i] == 0x4e) msg = MENU_EVENT_PGDOWN;
+          if(buffer[2+i] == 0x4b) msg = MENU_EVENT_PGUP;
+          if((buffer[2+i] == 0x2c) || (buffer[2+i] == 0x28))
+            msg = MENU_EVENT_SELECT;
+
+	  hid_process_latin1(buffer[0], buffer[2+i]);
+        }
       }
+
+      // send message to menu task
+      if(msg) menu_notify(msg);
     }
-
-    if (msg)
-      menu_notify(msg);
   }
 
-  state->modifiers = modifiers;
-  memcpy(state->keys, keys, sizeof(state->keys));
-  memset(state->last_report, 0, sizeof(state->last_report));
-  state->last_report[0] = modifiers;
-  int slot = 2;
-  for (uint16_t usage = 4; usage <= UINT8_MAX && slot < 8; usage++) {
-    if (usage >= 0xe0 && usage <= 0xe7)
-      continue;
-    if (keys[usage / 8] & (1U << (usage % 8)))
-      state->last_report[slot++] = (uint8_t)usage;
-  }
-}
-
-void kbd_parse(__attribute__((unused)) const hid_report_t *report,
-               struct hid_kbd_state_S *state,
-               const unsigned char *buffer, int nbytes)
-{
-  uint8_t keys[32] = { 0 };
-  uint8_t modifiers;
-
-  if (nbytes != 8)
-    return;
-
-  modifiers = buffer[0];
-  for (int i = 2; i < 8; i++) {
-    uint8_t usage = buffer[i];
-    if (usage >= 1 && usage <= 3)
-      return;
-    if (usage >= 0xe0 && usage <= 0xe7)
-      modifiers |= (uint8_t)(1U << (usage - 0xe0));
-    else if (usage > 3)
-      keys[usage / 8] |= (uint8_t)(1U << (usage % 8));
-  }
-
-  kbd_parse_usage_state(state, modifiers, keys);
+  memcpy(state->last_report, buffer, 8);
 }
 
 // collect bits from byte stream and assemble them into a signed word
