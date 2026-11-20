@@ -595,9 +595,12 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
     if(hid_device[idx].dev_addr == dev_addr && hid_device[idx].instance == instance) {
       usb_debugf("releasing %d", idx);
       hid_device[idx].dev_addr = 0xff;
+      for(int i=0;i<MAX_JS_PER_IFACE;i++)
+	if(hid_device[idx].rep[i].type == REPORT_TYPE_KEYBOARD)
+	  kbd_release_all(&hid_device[idx].state[i].kbd);
       if(hid_device[idx].rep[0].type == REPORT_TYPE_JOYSTICK) {
 	for(int i=0;i<MAX_JS_PER_IFACE;i++)
-	  if(hid_device[idx].state[0].joystick.js_index != NO_JOYSTICK)	
+	  if(hid_device[idx].state[i].joystick.js_index != NO_JOYSTICK)	
 	    hid_release_joystick(hid_device[idx].state[i].joystick.js_index);
       }
     }
