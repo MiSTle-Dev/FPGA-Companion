@@ -11,7 +11,6 @@
 
 #include <string.h>  // for memcpy
 #include "usb_controller_maps.h"
-#include "ps2helper.h"
 
 #include "hid2latin1.h"
 
@@ -30,6 +29,14 @@ uint8_t hid_allocate_joystick(void) {
 void hid_release_joystick(uint8_t idx) {
   joystick_map &= ~(1<<idx);
   usb_debugf("Releasing joystick %d (map = %02x)", idx, joystick_map);
+}
+
+static void kbd_tx(uint8_t byte) {
+  mcu_hw_spi_begin();
+  mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+  mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
+  mcu_hw_spi_tx_u08(byte);
+  mcu_hw_spi_end();
 }
 
 void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kbd_state_S *state,
@@ -58,11 +65,11 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       
       // modifier released?
       if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
-        kbd_tx_hid_ps2_break(i, 1);
+        kbd_tx(0x80 | (i+0x68));
 
       // modifier pressed?
       if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
-        kbd_tx_hid_ps2_make(i, 1);
+        kbd_tx(i+0x68);
     }
   }
   
@@ -78,7 +85,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
         // check if the reported key is the OSD activation hotkey
         // and suppress reporting it to the core
         if(state->last_report[2+i] != hotkey)
-          kbd_tx_hid_ps2_break(state->last_report[2+i], 0);
+          kbd_tx(0x80 | state->last_report[2+i]);
       } else
         menu_notify(MENU_EVENT_KEY_RELEASE);
     }
@@ -109,8 +116,7 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
         msg = MENU_EVENT_BACK;
       else {
         if(!osd_is_visible())
-           //kbd_tx(buffer[2+i]);
-           kbd_tx_hid_ps2_make(buffer[2+i], 0);
+           kbd_tx(buffer[2+i]);
         else {
           // check if cursor up/down or space has been pressed
           if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;
@@ -130,6 +136,23 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
   }
 
   memcpy(state->last_report, buffer, 8);
+}
+
+// release all keys and modifiers still held, e.g. when the keyboard is unplugged
+void kbd_release_all(struct hid_kbd_state_S *state) {
+  int hotkey = inifile_config_get_int("menu", "hotkey", 0x45);
+  if(!hotkey) hotkey = 0x45;
+
+  for(int i=0;i<8;i++)
+    if(state->last_report[0] & (1<<i))
+      kbd_tx(0x80 | (i+0x68));
+
+  // the menu hotkey was never forwarded to the core, so it is not released
+  for(int i=2;i<8;i++)
+    if(state->last_report[i] && state->last_report[i] != hotkey)
+      kbd_tx(0x80 | state->last_report[i]);
+
+  memset(state->last_report, 0, sizeof(state->last_report));
 }
 
 // collect bits from byte stream and assemble them into a signed word

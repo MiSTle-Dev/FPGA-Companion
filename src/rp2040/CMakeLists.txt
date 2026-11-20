@@ -89,7 +89,6 @@ add_executable(${PROJECT}
 	../config.c
 	../freertos_callbacks.c
 	../xml.c
-	../ps2helper.c
 	../ftpd.c
 	../telnetd.c
 	../hidkeys.c

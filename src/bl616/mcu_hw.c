@@ -646,6 +646,8 @@ static void usbh_hid_client_thread(void *argument) {
 
   usb_debugf("HID client #%d: stopping", hid->index);
   for (uint8_t i = 0; i < hid->report_count; i++) {
+    if (hid->report[i].type == REPORT_TYPE_KEYBOARD)
+      kbd_release_all(&hid->hid_state[i].kbd);
     if (hid->hid_state[i].joystick.js_index != NO_JOYSTICK) {
       hid_release_joystick(hid->hid_state[i].joystick.js_index);
       hid->hid_state[i].joystick.js_index = NO_JOYSTICK;
@@ -1358,6 +1360,8 @@ static void mn_board_init(void) {
     /* system clock */
     system_clock_init();
 
+    bflb_rtc_init(NULL, BFLB_RTC_32K_CLK_RC);
+
     peripheral_clock_init();
 
     /* irq init */
@@ -1433,7 +1437,7 @@ static void mn_board_init(void) {
 
     log_start();
 
-#if (defined(CONFIG_LUA) || defined(CONFIG_BFLOG) || defined(CONFIG_FATFS))
+#if (defined(CONFIG_LUA) || defined(CONFIG_BFLB_LOG) || defined(CONFIG_FATFS))
     rtc = bflb_device_get_by_name("rtc");
 #endif
 
@@ -2814,17 +2818,22 @@ static bool usb_msc_mounted = false;
 
 // bouffalo sdk does not expect sd card _and_ usbh msc to be enabled at the same time
 extern void fatfs_usbh_driver_register(struct usbh_msc *msc_class);
+extern void fatfs_usbh_driver_unregister(struct usbh_msc *msc_class);
+
+#define USBH_MSC_READY_TIMEOUT_MS 5000
+#define USBH_MSC_READY_RETRY_MS   250
 
 static void usbh_msc_thread(void *arg)
 {
-  int ret;
+  int ret = -1;
   struct usbh_msc *msc_class = (struct usbh_msc *)arg;
 
-  while ((msc_class = (struct usbh_msc *)usbh_find_class_instance("/dev/sda")) == NULL) {
-      goto delete;
+  for (uint32_t start = bflb_mtimer_get_time_ms();
+       msc_class->hport->connected && bflb_mtimer_get_time_ms() - start < USBH_MSC_READY_TIMEOUT_MS;
+       vTaskDelay(pdMS_TO_TICKS(USBH_MSC_READY_RETRY_MS))) {
+    ret = usbh_msc_scsi_init(msc_class);
+    if (ret == 0) break;
   }
-
-  ret = usbh_msc_scsi_init(msc_class);
   if (ret < 0) {
       sdc_debugf("scsi_init error,ret:%d", ret);
       goto delete;
@@ -2882,6 +2891,7 @@ void vApplicationMallocFailedHook(void)
 
 void usbh_msc_stop(struct usbh_msc *msc_class)
 {
+  fatfs_usbh_driver_unregister(msc_class);
   menu_notify(MENU_EVENT_USB_UMOUNTED);
   usb_msc_mounted = false;
 }
@@ -2950,7 +2960,7 @@ void mcu_hw_upload_core(char *name) {
   } else {
       f_mount(NULL, "/usb", 1);
       start = bflb_mtimer_get_time_ms();
-      while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < 1000)
+      while ((res = f_mount(&fs, "/usb", 1)) != FR_OK && bflb_mtimer_get_time_ms() - start < USBH_MSC_READY_TIMEOUT_MS)
         bflb_mtimer_delay_ms(100);
       if (res != FR_OK) {
           debugf("failed to mount USB drive");

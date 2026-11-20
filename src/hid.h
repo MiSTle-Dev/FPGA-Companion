@@ -37,6 +37,7 @@ typedef union {
 void hid_parse(const hid_report_t *report, hid_state_t *state, uint8_t const* data, uint16_t len);
 
 void kbd_parse(const hid_report_t *report, struct hid_kbd_state_S *state, const unsigned char *buffer, int nbytes);
+void kbd_release_all(struct hid_kbd_state_S *state);
 void mouse_parse(const hid_report_t *report, struct hid_mouse_state_S *state, const unsigned char *buffer, int nbytes);
 void joystick_parse(const hid_report_t *report, struct hid_joystick_state_S *state, const unsigned char *buffer, int nbytes);
 
