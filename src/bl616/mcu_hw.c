@@ -386,6 +386,12 @@ static struct usb_config {
 #endif
     hid_state_t hid_state[MAX_JS_PER_IFACE];
     volatile uint8_t stop;
+    // keyboard lock lights (bit 0 Num, 1 Caps, 2 Scroll); see led_task()
+    volatile uint32_t attach;     // counts attachments of this entry
+    volatile bool leds_ok;        // its only output report is the boot LED byte
+    volatile uint8_t locks_want;  // lights wanted
+    volatile uint8_t locks_sent;  // lights last set on the keyboard (0xff: not yet)
+    TickType_t leds_retry;        // after a failed request: not before this
   } hid_info[CONFIG_USBHOST_MAX_HID_CLASS];
 } usb_config;
 
@@ -395,6 +401,146 @@ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XB
 // so one scratch buffer can be reused by every HID interface.
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[MAX_HID_REPORT_DESC_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
+
+// Keyboard lock lights. A light toggles when its key is pressed and passed on
+// to the core (kbd_parse() counts those presses): no core tells the BL616 its
+// lock states, so the lights count presses from "off" after the keyboard is
+// plugged in, when all three are switched off.
+//
+// Only keyboards whose report descriptor has no report IDs and whose output
+// report is exactly the boot keyboard's byte of LED bits get lights. The
+// SET_REPORT requests are made by one task with a private setup packet and
+// payload per interface, so a slow keyboard does not hold up any input and no
+// other request's setup packet is touched; it takes one EHCI queue head at a
+// time (CONFIG_USB_EHCI_QH_NUM has one extra for it). A failed request is
+// tried again after a second.
+USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX struct usb_setup_packet led_setup[CONFIG_USBHOST_MAX_HID_CLASS];
+USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t led_payload[CONFIG_USBHOST_MAX_HID_CLASS][4];
+static TaskHandle_t led_task_handle;
+
+// true only for: no report IDs, no PUSH/POP, and output items that together
+// make one byte, the first being data, variable, usage page LEDs, report size
+// 1, usages from 1 (Num Lock) up, at least three bits; any further output
+// items constant padding. Anything malformed or unexpected gives false.
+static bool leds_boot_layout(const uint8_t *d, uint16_t len) {
+  uint32_t page = 0, size = 0, count = 0, usage_min = 0, usage_max = 0;
+  bool have_min = false, have_max = false, have_usage = false;
+  uint32_t out_bits = 0;
+  unsigned outputs = 0;
+  bool first_ok = false;
+  int depth = 0;
+
+  for (uint32_t i = 0; i < len; ) {
+    uint8_t b = d[i];
+    if (b == 0xfe) return false;             // long items: not in a keyboard
+    uint32_t n = (b & 3) == 3 ? 4 : (b & 3);
+    if (i + 1 + n > len) return false;       // truncated item
+    uint32_t v = 0;
+    for (uint32_t k = 0; k < n; k++) v |= (uint32_t)d[i + 1 + k] << (8 * k);
+    switch (b & 0xfc) {
+      case 0x84: return false;               // report ID
+      case 0xa4: case 0xb4: return false;    // PUSH, POP
+      case 0x04: page = v; break;            // usage page
+      case 0x74: size = v; break;            // report size
+      case 0x94: count = v; break;           // report count
+      case 0x08: case 0x18: case 0x28:       // usage, minimum, maximum
+        if (n > 2) return false;             // extended usages: not in a keyboard
+        if ((b & 0xfc) == 0x08) have_usage = true;
+        if ((b & 0xfc) == 0x18) { usage_min = v; have_min = true; }
+        if ((b & 0xfc) == 0x28) { usage_max = v; have_max = true; }
+        break;
+      case 0xa0: depth++; break;             // collection
+      case 0xc0: if (--depth < 0) return false; break;   // end collection
+      case 0x90:                             // output
+        if (size > 8 || count > 8) return false;
+        if (outputs == 0) {
+          // data, variable, absolute; fields named by the range alone
+          first_ok = page == 0x08 && size == 1 && count >= 3 && count <= 8 &&
+                     (v & 7) == 2 && !have_usage && have_min && usage_min == 1 &&
+                     have_max && usage_max >= count;
+        } else if (!(v & 1)) {
+          return false;                      // a second data output
+        }
+        outputs++;
+        out_bits += size * count;
+        if (out_bits > 8) return false;
+        break;
+    }
+    if ((b & 0x0c) == 0x00) {                // main item: locals end
+      have_min = have_max = have_usage = false;
+      usage_min = usage_max = 0;
+    }
+    i += 1 + n;
+  }
+  return first_ok && out_bits == 8 && depth == 0;   // and not cut short
+}
+
+static void led_task(__attribute__((unused)) void *arg) {
+  for (;;) {
+    TickType_t wait = portMAX_DELAY;
+    bool again = false;
+    TickType_t now = xTaskGetTickCount();
+
+    for (uint8_t idx = 0; idx < CONFIG_USBHOST_MAX_HID_CLASS; idx++) {
+      struct hid_info_S *hid = &usb_config.hid_info[idx];
+      uint32_t attach = hid->attach;
+      struct usbh_hid *class = hid->class;
+      if (!hid->leds_ok || hid->stop || hid->state != STATE_DETECTED ||
+          !class || !class->hport)
+        continue;
+      uint8_t want = hid->locks_want;
+      if (want == hid->locks_sent) {
+        hid->leds_retry = 0;
+        continue;
+      }
+      if (hid->leds_retry && (int32_t)(hid->leds_retry - now) > 0) {
+        TickType_t left = hid->leds_retry - now;
+        if (left < wait) wait = left;
+        continue;
+      }
+
+      struct usb_setup_packet *setup = &led_setup[idx];
+      setup->bmRequestType = USB_REQUEST_DIR_OUT | USB_REQUEST_CLASS | USB_REQUEST_RECIPIENT_INTERFACE;
+      setup->bRequest = HID_REQUEST_SET_REPORT;
+      setup->wValue = 0x0200;                  // output report, no report ID
+      setup->wIndex = class->intf;
+      setup->wLength = 1;
+      led_payload[idx][0] = want;
+      int ret = usbh_control_transfer(class->hport, setup, led_payload[idx]);
+      usb_debugf("HID client #%d: lock lights %02x (%d)", idx, want, ret);
+
+      if (hid->attach != attach)               // unplugged meanwhile
+        continue;
+      if (ret >= 0) {
+        hid->locks_sent = want;
+        hid->leds_retry = 0;
+      } else {
+        // the keyboard may or may not have taken it: send again later
+        hid->locks_sent = 0xff;
+        hid->leds_retry = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
+        if (!hid->leds_retry) hid->leds_retry = 1;
+        // CherryUSB's EHCI submit marks the urb busy before it allocates a
+        // queue head and leaves it so when there is none, which refuses every
+        // later control transfer to this keyboard. With the port's mutex held
+        // no control transfer is in flight, so the mark can be cleared.
+        if ((ret == -USB_ERR_BUSY || ret == -USB_ERR_NOMEM) &&
+            hid->attach == attach && class->hport) {
+          usb_osal_mutex_take(class->hport->mutex);
+          class->hport->ep0_urb.errorcode = 0;
+          usb_osal_mutex_give(class->hport->mutex);
+        }
+      }
+      again = true;                            // look at every entry again
+    }
+    if (!again)
+      ulTaskNotifyTake(pdTRUE, wait);
+  }
+}
+
+static void leds_wake(void) {
+  if (led_task_handle)
+    xTaskNotifyGive(led_task_handle);
+}
 
 uint8_t byteScaleAnalog(int16_t xbox_val)
 {
@@ -611,6 +757,12 @@ static void usbh_hid_client_thread(void *argument) {
       if (ret != -USB_ERR_TIMEOUT)
         usb_debugf("HID client #%d: submit failed, %d", hid->index, ret);
 
+      // CherryUSB's EHCI submit marks the urb busy before it allocates a
+      // queue head and leaves it so when there is none, which would refuse
+      // every later submit; the urb is not in flight, so clear the mark.
+      if (ret == -USB_ERR_NOMEM)
+        hid->class->intin_urb.errorcode = 0;
+
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
@@ -627,9 +779,15 @@ static void usbh_hid_client_thread(void *argument) {
       break;
 
     if (hid->nbytes > 0) {
-      if (!hid->report[0].report_id_present)
+      if (!hid->report[0].report_id_present) {
         hid_parse(&hid->report[0], &hid->hid_state[0],
                   hid->buffer, hid->nbytes);
+        if (hid->leds_ok && hid->hid_state[0].kbd.lock_presses) {
+          hid->locks_want ^= hid->hid_state[0].kbd.lock_presses;
+          hid->hid_state[0].kbd.lock_presses = 0;
+          leds_wake();
+        }
+      }
       else if (hid->nbytes > 0) {
         for (uint8_t i = 0; i < hid->report_count; i++) {
           uint16_t report_len = hid->report[i].report_size +
@@ -967,7 +1125,20 @@ void usbh_hid_run(struct usbh_hid *hid_class)
     }
 
     usb->hid_info[i].stop = 0;
+    usb->hid_info[i].attach++;
+    usb->hid_info[i].locks_want = 0;
+    usb->hid_info[i].locks_sent = 0xff;      // all off first
+    usb->hid_info[i].leds_retry = 0;
+    usb->hid_info[i].leds_ok = hid->report[0].type == REPORT_TYPE_KEYBOARD &&
+      !hid->report[0].report_id_present &&
+      leds_boot_layout(report_desc, hid_class->report_size);
     usb->hid_info[i].state = STATE_DETECTED;
+    if (usb->hid_info[i].leds_ok) {
+      usb->hid_info[i].hid_state[0].kbd.lock_presses = 0;
+      if (!led_task_handle)
+        xTaskCreate(led_task, (char *)"led_task", 512, NULL, configMAX_PRIORITIES - 4, &led_task_handle);
+      leds_wake();
+    }
   }
 
   xTaskCreate(usbh_hid_client_thread, (char *)"hid_task", 1024,
@@ -978,6 +1149,8 @@ void usbh_hid_stop(struct usbh_hid *hid_class)
 {
   uint8_t i = hid_class->minor;
   usb_config.hid_info[i].stop = 1;
+  usb_config.hid_info[i].leds_ok = false;
+  usb_config.hid_info[i].attach++;
 
   for (uint8_t report = 0;
        report < usb_config.hid_info[i].report_count; report++) {

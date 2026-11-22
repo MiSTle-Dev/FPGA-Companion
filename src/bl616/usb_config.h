@@ -240,7 +240,7 @@
 
 #define CONFIG_USB_EHCI_HCCR_OFFSET     (0x0)
 #define CONFIG_USB_EHCI_FRAME_LIST_SIZE 1024
-#define CONFIG_USB_EHCI_QH_NUM          10
+#define CONFIG_USB_EHCI_QH_NUM          11  // 10 + 1 for the keyboard LED task's control transfer
 #define CONFIG_USB_EHCI_QTD_NUM         (CONFIG_USB_EHCI_QH_NUM * 3)
 #define CONFIG_USB_EHCI_ITD_NUM         20
 #define CONFIG_USB_EHCI_HCOR_RESERVED_DISABLE

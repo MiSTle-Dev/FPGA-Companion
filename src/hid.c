@@ -379,8 +379,13 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       } else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
         msg = MENU_EVENT_BACK;
       else {
-        if(!osd_is_visible())
+        if(!osd_is_visible()) {
            kbd_tx_remap(buffer[2+i]);
+           // lock key passed on to the core: its light may follow
+           if(buffer[2+i] == 0x53) state->lock_presses ^= 1;   // Num Lock
+           if(buffer[2+i] == 0x39) state->lock_presses ^= 2;   // Caps Lock
+           if(buffer[2+i] == 0x47) state->lock_presses ^= 4;   // Scroll Lock
+        }
         else {
           // check if cursor up/down or space has been pressed
           if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;
