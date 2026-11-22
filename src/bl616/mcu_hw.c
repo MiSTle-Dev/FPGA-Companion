@@ -648,7 +648,9 @@ static void usbh_hid_client_thread(void *argument) {
   for (uint8_t i = 0; i < hid->report_count; i++) {
     if (hid->report[i].type == REPORT_TYPE_KEYBOARD)
       kbd_release_all(&hid->hid_state[i].kbd);
-    if (hid->hid_state[i].joystick.js_index != NO_JOYSTICK) {
+    // js_index shares its byte with the state of other report types
+    if (hid->report[i].type == REPORT_TYPE_JOYSTICK &&
+        hid->hid_state[i].joystick.js_index != NO_JOYSTICK) {
       hid_release_joystick(hid->hid_state[i].joystick.js_index);
       hid->hid_state[i].joystick.js_index = NO_JOYSTICK;
     }
@@ -966,7 +968,9 @@ void usbh_hid_stop(struct usbh_hid *hid_class)
 
   for (uint8_t report = 0;
        report < usb_config.hid_info[i].report_count; report++) {
-    if (usb_config.hid_info[i].hid_state[report].joystick.js_index !=
+    // js_index shares its byte with the state of other report types
+    if (usb_config.hid_info[i].report[report].type == REPORT_TYPE_JOYSTICK &&
+        usb_config.hid_info[i].hid_state[report].joystick.js_index !=
         NO_JOYSTICK) {
       hid_release_joystick(
           usb_config.hid_info[i].hid_state[report].joystick.js_index);
