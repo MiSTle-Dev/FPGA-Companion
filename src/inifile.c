@@ -10,6 +10,7 @@
 #include "sdc.h"      // for CARD_MOUNTPOINT
 #include "menu.h"     // to access menu variables
 #include "config.h"
+#include "hid.h"
 #include "hidkeys.h"
 #include "debug.h"
 
@@ -192,17 +193,47 @@ int inifile_selection_set(const char *def, const char *name) {
   return ret;
 }
 
+static char *ini_get_lvalue(char **p) {
+  char *retval = NULL;
+
+  // skip leading white space
+  while(**p && iswhite(**p))
+    (*p)++;
+
+  if(!**p) return NULL;   // reached end of string
+  
+  retval = *p;
+  
+  // advance until '='
+  while(**p && **p != '=')
+    (*p)++;
+  
+  if(!**p) return NULL;    // no '=' found
+
+  **p = '\0'; // terminate first string where the '=' previously was
+  (*p)++;     // advance pointer behind '=' location
+  
+  return retval;
+}
+
+static char *ini_get_rvalue(char *p) {
+  // skip leading white space
+  while(*p && iswhite(*p))
+    p++;
+
+  // check if there's anything left
+  if(!*p) return NULL;
+
+  return p;
+}
+
 int inifile_read(char *name) {
   if(!name) {
     ini_debugf("Unable to load core specific setting as no core has been identified");
     return -1;
   }
 
-  char *filename = pvPortMalloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
-  strcpy(filename, CARD_MOUNTPOINT);
-  strcat(filename, "/");
-  strcat(filename, name);
-  
+  char *filename = ini_filename(name);
   ini_debugf("Reading settings from '%s'", filename);
 
   sdc_lock();  // get exclusive access to the file system
@@ -222,7 +253,11 @@ int inifile_read(char *name) {
       while(strlen(buffer) > 0 && iswhite(buffer[strlen(buffer)-1]))
 	buffer[strlen(buffer)-1] = 0;
 
-      // ini_debugf("Line = '%s'\n", buffer);
+      // convert all tabs to white spaces to ease further parsing. We can do
+      // this as tabs have no special meaning in ini files
+      for(size_t i=0;i<strlen(buffer);i++)
+	if(buffer[i] == '\t') buffer[i] = ' ';
+      
       // check for drives or images
       if((strncasecmp(buffer, "drive", 5) == 0) ||
 	 (strncasecmp(buffer, "image", 5) == 0) ) {
@@ -280,6 +315,50 @@ int inifile_read(char *name) {
 	  }
 	}
       }
+
+      // check for button entry
+      if(strncasecmp(buffer, "button ", 7) == 0) {
+	// parse entry like e.g. 'button select:left shoulder=F1'
+
+	// skip "button "
+	char *p = buffer+7;
+
+	// get part left of '=', advancing the p pointer behind the '=' char
+	char *sl = ini_get_lvalue(&p);
+	if(sl) {
+	  // get part right of '='
+	  char *sr = ini_get_rvalue(p);
+	  if(sr) {
+	    // we now have the parts left and right of the '=' and can
+	    // parse them
+	    uint16_t btns = hidkeys_get_btnmap(sl);
+	    uint8_t mod, key = hidkeys_get_code_with_modifier(sr, &mod);
+	    
+	    if(btns && key) hid_set_button_mapping(btns, key, mod);
+	  }
+	}
+      }
+
+      // check for button entry
+      if(strncasecmp(buffer, "key ", 4) == 0) {
+	// parse entry like e.g. 'key F11=X'	
+
+	// skip "key "
+	char *p = buffer+4;
+
+	// get part left of '=', advancing the p pointer behind the '=' char
+	char *sl = ini_get_lvalue(&p);
+	if(sl) {
+	  // get part right of '='
+	  char *sr = ini_get_rvalue(p);
+	  if(sr) {
+	    uint8_t mod_from, key_from = hidkeys_get_code_with_modifier(sl, &mod_from);
+	    uint8_t mod_to, key_to = hidkeys_get_code_with_modifier(sr, &mod_to);
+	    if(key_from && key_to)
+	      hid_set_key_mapping(key_from, mod_from, key_to, mod_to);
+	  }
+	}
+      }
     }
     f_close(&fil);
   } else {
@@ -300,11 +379,7 @@ int inifile_write(char *name) {
     return -1;
   }
     
-  char *filename = pvPortMalloc(strlen(CARD_MOUNTPOINT) + strlen(name) + 2);  // MP+'/'+name+'\0'
-  strcpy(filename, CARD_MOUNTPOINT);
-  strcat(filename, "/");
-  strcat(filename, name);
-
+  char *filename = ini_filename(name);
   ini_debugf("Write settings to %s", filename);
   
   sdc_lock();  // get exclusive access to the file system
@@ -359,6 +434,77 @@ int inifile_write(char *name) {
       f_puts("\n", &file);
     }
 
+    // export all button mappings
+    uint16_t btns;
+    uint8_t key, mod;
+    int i=0;
+
+    while(hid_get_button_mapping_index(i++, &btns, &key, &mod)) {
+      if(i==1)
+	f_puts("\n; button mappings\n", &file);
+      
+      int len = hidkeys_get_btnmap_str(NULL, btns);
+      if(len) {
+	char str[len+1];
+	hidkeys_get_btnmap_str(str, btns);
+	const char *keyname = hidkeys_get_name(key);
+	f_puts("button ", &file);
+	f_puts(str, &file);
+	f_puts("=", &file);
+	
+	int len_mod = hidkeys_get_modifier_name(NULL, mod);
+	{
+	  char str_mod[len_mod+1];          
+	  hidkeys_get_modifier_name(str_mod, mod);
+	  f_puts(str_mod, &file);
+	}
+	  
+	if(keyname)
+	  f_puts(keyname, &file);
+	else {
+	  char num[8];
+	  sprintf(num, "%d", key);
+	  f_puts(num, &file);
+	}
+	f_puts("\n", &file);
+      }       
+    }
+
+    // export all key mappings
+    uint8_t to, to_mod, from_mod;
+    i=0;
+    while(hid_get_key_mapping_index(i++, &key, &from_mod, &to, &to_mod)) {
+      if(i==1)
+	f_puts("\n; key mappings\n", &file);
+
+      const char *fromname = hidkeys_get_name(key);
+      const char *toname = hidkeys_get_name(to);
+
+      if(fromname && toname) {
+	f_puts("key ", &file);
+	
+	// the modfier string has a variable length, so we
+	// need variable space on stack
+	int len = hidkeys_get_modifier_name(NULL, from_mod);
+	if(len) {
+	  char str[len+1];
+	  hidkeys_get_modifier_name(str, from_mod);
+	  f_puts(str, &file);
+	}
+	f_puts(fromname, &file);
+	f_puts("=", &file);
+
+	len = hidkeys_get_modifier_name(NULL, to_mod);
+	if(len) {
+	  char str[len+1];
+	  hidkeys_get_modifier_name(str, to_mod);
+	  f_puts(str, &file);
+	}
+	f_puts(toname, &file);	
+	f_puts("\n", &file);
+      }      
+    }
+      
     f_puts("\n", &file);
 
     ok = (f_error(&file) == 0);             // a line could not be written
@@ -663,11 +809,8 @@ static void inifile_config_parse_line(char *line) {
       case CONFIG_TYPE_HIDKEY: {
 	// try to get key code, if not a valid key code, then parse as
 	// integer
-	int8_t code = hidkeys_get_code(value);
-	if(code < 0) 	
-	  inifile_config_append_value(cfg)->data.val = atoi(value);
-	else
-	  inifile_config_append_value(cfg)->data.val = code;
+	int code = hidkeys_get_code(value);
+	inifile_config_append_value(cfg)->data.val = code;
       } break;
 	
       case CONFIG_TYPE_CHOICE:

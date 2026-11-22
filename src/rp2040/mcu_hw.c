@@ -1129,23 +1129,7 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
 	    xbox_state[idx].state_x = ax;
 	    xbox_state[idx].state_y = ay;
 
-	    // usb_debugf("XBOX Joy%d: B %02x EB %02x X %02x Y %02x", xbox_state[idx].js_index, state, state_btn_extra, ax, ay);
-
-	    if(osd_is_visible()) {	       
-	      // if OSD is visible, then process events locally
-	      menu_joystick_state(state);
-	    } else {
-	      // otherwise send events into core
-	      mcu_hw_spi_begin();
-	      mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-	      mcu_hw_spi_tx_u08(SPI_HID_JOYSTICK);
-	      mcu_hw_spi_tx_u08(xbox_state[idx].js_index);
-	      mcu_hw_spi_tx_u08(state);
-	      mcu_hw_spi_tx_u08(ax); // gamepad analog X
-	      mcu_hw_spi_tx_u08(ay); // gamepad analog Y
-	      mcu_hw_spi_tx_u08(state_btn_extra); // gamepad extra buttons
-	      mcu_hw_spi_end();
-	    }
+	    hid_joystick_push(xbox_state[idx].js_index, state, ax, ay, state_btn_extra);
 	  }
 	}
       }
