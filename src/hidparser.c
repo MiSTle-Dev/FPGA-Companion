@@ -436,6 +436,13 @@ bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t
                     for (; pos < assignable && u <= usage_max; ++pos, ++u)
                         local_usage_at_pos[pos] = u;
                 }
+                // Fields the item gave no usage for get none, rather than
+                // whatever this array held before: a mouse whose X and Y
+                // (one item, count 2) were followed by a vendor item with one
+                // usage and count 5 had its Y axis moved into the vendor
+                // bytes (Corsair M65 RGB Ultra: Y read as always 0).
+                for (; pos < assignable; ++pos)
+                    local_usage_at_pos[pos] = 0;
 
                 // buttons
                 if (btns && (conf->type == REPORT_TYPE_JOYSTICK || conf->type == REPORT_TYPE_MOUSE))
