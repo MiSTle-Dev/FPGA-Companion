@@ -29,7 +29,7 @@ hotkey=F8
 
 Insert the SD card into you MiSTle setup and boot. The FPGA Companion will
 automatically pick this file up and will use ```F8``` instead of ```F12``` as
-the hotkey. Another very locialy choice would be the ```Menu``` key which
+the hotkey. Another very logical choice would be the ```Menu``` key which
 is present on many keyboards:
 
 ```
@@ -55,9 +55,9 @@ to the ```amiga.ini```:
 button Select=F10
 ```
 
-You can use button combinations as the source and add modfier keys to the target key.
+You can use button combinations as the source and add modifier keys to the target key.
 To e.g. make ```Start``` and ```Left Shoulder``` pressed simultaneously to act like
-Shift-F9 is being pressed use the following line:
+Shift-F9 use the following line:
 
 ```
 button Select:Start=Left Shift:F9
@@ -72,29 +72,29 @@ key remap feature.
 > The re-mapping of key is a very core specific thing and thus takes place
 > in the core specific ini file like e.g. ```amiga.ini``` for the NanoMig.
 
-Assuming your keyboard lacks the right meta key (usually the right windows key)
-and you want it to be mapped to Shift-Left Meta use the follwing mapping:
+Assuming your keyboard lacks the right meta key (usually the right Windows key)
+and you want it to be mapped to Shift-Left Meta use the following mapping:
 
 ```
 key Left Shift:Left Meta=Right Meta
 ```
 
 The left shift key will be "magically" released while the right meta key is being
-sent so that only the right meta key is triggered and not shift and right meta.
+sent so that only the right meta key is reported without shift.
 You can still use the other modifier keys with the remapped key. If you e.g.
 press Left Shift, Right Shift and Left Meta with the aforementioned mapping the
 Amiga will receive the Right Meta key with Right Shift pressed.
 
-As with the gamepad buttons, additonal modfier keys can be added to the target
-key. E.g. the ZX Spectrum has not dedicated back space key and instead has the
-back space function on Shift-0. To map this to the actual back space key on the
+As with the gamepad buttons, additional modifier keys can be added to the target
+key. E.g. the ZX Spectrum has not dedicated backspace key and instead has the
+backspace function on Shift-0. To map this to the actual backspace key on the
 PC keyboard use the following line:
 
 ```
 key Back Space=Left Shift:0
 ```
 
-The key names are not case sensitive and spaces and also be omitted. So the
+The key names are not case-sensitive and spaces and also be omitted. So the
 previous line can also be written as:
 
 ```
@@ -107,10 +107,10 @@ settings are saved from the OSD so that they aren't lost while saving.
 ## Supported keys
 
 The following key names can be used in the mappings. Please be aware
-that these refer to US american keyboards. The actual labels on
+that these refer to US American keyboards. The actual labels on
 international keyboard may differ and e.g. to refer to the key that is
-labeled ```z``` on a german keyboard you'd have to use ```y``` instead
-since the z is on a german keyboard where the y is on a US one. Pages
+labeled ```z``` on a German keyboard you'd have to use ```y``` instead
+since the z is on a German keyboard where the y is on a US one. Pages
 like [these](https://eurkey.steffen.bruentjen.eu/layout.html?lang=en)
 may help.
 
