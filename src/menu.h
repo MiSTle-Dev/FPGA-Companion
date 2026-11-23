@@ -5,32 +5,33 @@
 #include "sdc.h"
 
 #define MENU_EVENT_NONE          0  // just redraws the menu
+#define MENU_EVENT_INIT          1  // init event for custom dialogs
 
-#define MENU_EVENT_UP            1  // key events
-#define MENU_EVENT_DOWN          2
-#define MENU_EVENT_LEFT          3
-#define MENU_EVENT_RIGHT         4
-#define MENU_EVENT_SELECT        5
-#define MENU_EVENT_PGUP          6
-#define MENU_EVENT_PGDOWN        7
-#define MENU_EVENT_BACK          8
-#define MENU_EVENT_KEY_RELEASE   9
+#define MENU_EVENT_UP            2  // key events
+#define MENU_EVENT_DOWN          3
+#define MENU_EVENT_LEFT          4
+#define MENU_EVENT_RIGHT         5
+#define MENU_EVENT_SELECT        6
+#define MENU_EVENT_PGUP          7
+#define MENU_EVENT_PGDOWN        8
+#define MENU_EVENT_BACK          9
+#define MENU_EVENT_KEY_RELEASE  10 
 
-#define MENU_EVENT_TOGGLE       10
+#define MENU_EVENT_TOGGLE       11
 
 // The system menu may want to deal with
 // the USB mass storage once it's mounted
-#define MENU_EVENT_USB_MOUNTED  11
-#define MENU_EVENT_USB_UMOUNTED 12
+#define MENU_EVENT_USB_MOUNTED  12
+#define MENU_EVENT_USB_UMOUNTED 13
 
-#define MENU_EVENT_SYSTEM       13
+#define MENU_EVENT_SYSTEM       14
 
-#define MENU_EVENT_BLUETOOTH_CONNECTED  14
-#define MENU_EVENT_BLUETOOTH_DISCONNECTED  15
-#define MENU_EVENT_BLUETOOTH_SCAN  16
-#define MENU_EVENT_BLUETOOTH_PIN_CODE_REQUEST 17
-#define MENU_EVENT_NETWORK_GOT_IP       18
-#define MENU_EVENT_NETWORK_DISCONNECTED 19
+#define MENU_EVENT_BLUETOOTH_CONNECTED  15
+#define MENU_EVENT_BLUETOOTH_DISCONNECTED  16
+#define MENU_EVENT_BLUETOOTH_SCAN  17
+#define MENU_EVENT_BLUETOOTH_PIN_CODE_REQUEST 18
+#define MENU_EVENT_NETWORK_GOT_IP       19
+#define MENU_EVENT_NETWORK_DISCONNECTED 20
 
 #define MENU_EVENT_KEY_LATIN1    256  // 256..511
 

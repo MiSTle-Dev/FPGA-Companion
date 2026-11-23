@@ -62,6 +62,14 @@ target_sources(app PRIVATE
     sdc_direct.c
 )
 
+if(EXISTS "$ENV{BL_SDK_BASE}/VERSION")
+    file(READ "$ENV{BL_SDK_BASE}/VERSION" VERSION_FILE_CONTENT)
+    string(REGEX MATCH "PROJECT_SDK_VERSION[ ]+\"([^\"]+)\"" _ ${VERSION_FILE_CONTENT})
+    add_definitions(-DSDK_VERSION="${CMAKE_MATCH_1}")
+else()
+    add_definitions(-DSDK_VERSION="<unknown>")
+endif()
+
 file(GLOB COMPONENT_SRCS ../u8g2/csrc/*.c  ../u8g2/sys/bitmap/common/*.c)
 target_sources(app PRIVATE ${COMPONENT_SRCS})
 

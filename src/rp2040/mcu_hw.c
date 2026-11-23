@@ -14,6 +14,7 @@
 #include <strings.h>
 #include "tusb.h"
 #include "pico/multicore.h"
+#include "pico/stdlib.h"
 #include "hardware/clocks.h"
 #include "hardware/flash.h"
 #include "../usb_controller_maps.h"
@@ -67,26 +68,34 @@ UsbGamepadMap data_frog_pc07 =
     
 #if MISTLE_BOARD == 0
 #warning "Building for Raspberry Pi Pico or Pico-W"
+#define BOARD_NAME "Pico, Pico-W"
 #elif MISTLE_BOARD == 1
 #warning "Building for Raspberry Pi Pico2 or Pico2-W"
+#define BOARD_NAME "Pico2, Pico2-W"
 #elif MISTLE_BOARD == 2
 #warning "Building for Waveshare RP2040-Zero"
+#define BOARD_NAME "WS RP2040-Zero"
 #include "../jtag.h"
 #elif MISTLE_BOARD == 3
 #warning "Building for MiSTeryShield20k-Lite"
+#define BOARD_NAME "Shield20k-Lite"
 #elif MISTLE_BOARD == 4
 #warning "Building for MiSTeryDev20k"
+#define BOARD_NAME "MiSTeryDev20k"
 #include "../jtag.h"
 #include "./sdio.h"
 #elif MISTLE_BOARD == 5
 #warning "Building for MiSTeryShieldPicoTN20k"
+#define BOARD_NAME "ShieldPico TN20k"
 #include "../jtag.h"
 #elif MISTLE_BOARD == 6
 #warning "Building for GW3A/GW5A DEV 25K"
+#define BOARD_NAME "MiSTle Dev25k"
 #include "../jtag.h"
 #include "pio_jtag.h"
 #elif MISTLE_BOARD == 7
 #warning "Building for MiSTeryShieldPico2_TN20k"
+#define BOARD_NAME "ShieldPico2 TN20k"
 #include "../jtag.h"
 #include "pio_jtag.h"
 #else
@@ -162,6 +171,22 @@ UsbGamepadMap data_frog_pc07 =
 #ifdef WS2812_PIN
 #include "ws2812.pio.h"
 #endif
+
+// return info/version strings
+char *mcu_get_info(int index) {
+  static const char *board_name = BOARD_NAME;
+  static const char *sdk_version = "Pico SDK " PICO_SDK_VERSION_STRING;
+  static char gcc_version[32];
+  
+  if(index == 0)      return board_name;
+  else if(index == 1) return sdk_version;
+  else if(index == 2) {
+    sprintf(gcc_version, "GCC %d.%d.%d", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+    return gcc_version;
+  }
+
+  return NULL;
+}
 
 /* ======================================================================== */
 /* ===============                USB                        ============== */

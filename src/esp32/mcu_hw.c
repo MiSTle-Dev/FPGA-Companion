@@ -26,6 +26,22 @@
 //#define USB_ERROR_CHECK(a)  ESP_ERROR_CHECK(a)
 #define USB_ERROR_CHECK(a) (a)
 
+// return info/version strings
+char *mcu_get_info(int index) {
+  static const char *board_name = "ESP32 S2/S3";
+  static const char *sdk_version = "Unspecified SDK";
+  static char gcc_version[32];
+  
+  if(index == 0)      return board_name;
+  else if(index == 1) return sdk_version;
+  else if(index == 2) {
+    sprintf(gcc_version, "GCC %d.%d.%d", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+    return gcc_version;
+  }
+
+  return NULL;
+}
+
 /* ========================================================================= */
 /* =========                          USB                        =========== */
 /* ========================================================================= */

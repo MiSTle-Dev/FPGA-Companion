@@ -70,9 +70,13 @@ typedef struct config_custom_S {
   // this custom dialog. This is the number of "lines" that can be
   // selected with the up and down keys
   int (*length)(void); 
+
+  // pointer to optional hint/icon. If the first byte is 0xff, then
+  // its a bitmap, otherwise a string
+  char *hint;
   
   // Pointer to function that draws the custom contents
-  void (*draw)(void); 
+  void (*draw)(int); 
   
 } config_custom_t;
 
@@ -483,7 +487,6 @@ static config_menu_entry_t *menu_get_selected_entry(void) {
 }
   
 static void menu_entry_go(int step) {
-
   // the up/down events change the a range value in edit mode
   config_menu_entry_t *entry = menu_get_selected_entry();
   if(entry && entry->type == CONFIG_MENU_ENTRY_RANGE && entry->range->edit) {
@@ -496,7 +499,7 @@ static void menu_entry_go(int step) {
     menu_variable_set(entry->range->id, value);
     return;
   }							  
-  
+
   int entries = menu_count_entries();
   do {
     menu_state->selected += step;
@@ -557,10 +560,15 @@ static void menu_draw_title(const char *s, bool arrow, bool selected, const char
 
   // the hint in the regular font, if there's room for it behind the title
   if(hint) {
-    int xtitle = x + u8g2_GetStrWidth(&u8g2, s);
-    u8g2_SetFont(&u8g2, font_helvR08_te);
-    int xhint = u8g2_GetDisplayWidth(&u8g2) - u8g2_GetStrWidth(&u8g2, hint) - 2;
-    if(xtitle + 4 <= xhint) u8g2_DrawStr(&u8g2, xhint, MENU_ENTRY_BASE, hint);
+    // a hint with first character being 0xff is an icon bitmap
+    if(hint[0] == 0xff) {
+      u8g2_DrawXBM(&u8g2, 128-8, 1, 8, 8, (unsigned char*)(hint+1));
+    } else {    
+      int xtitle = x + u8g2_GetStrWidth(&u8g2, s);
+      u8g2_SetFont(&u8g2, font_helvR08_te);
+      int xhint = u8g2_GetDisplayWidth(&u8g2) - u8g2_GetStrWidth(&u8g2, hint) - 2;
+      if(xtitle + 4 <= xhint) u8g2_DrawStr(&u8g2, xhint, MENU_ENTRY_BASE, hint);
+    }
   }
   
   u8g2_DrawHLine(&u8g2, 0, MENU_LINE_Y, u8g2_GetDisplayWidth(&u8g2));
@@ -851,18 +859,22 @@ static void menu_fsel_draw(const char *label, sdc_dir_entry_t *dir, int selected
   u8g2_SendBuffer(&u8g2);
 }
 
-static void menu_custom_draw(config_custom_t *custom, int selected, int scroll) {
+static void menu_custom_draw(const config_custom_t *custom, int selected, int scroll) {
+  (void)scroll;
+  
   u8g2_ClearBuffer(&u8g2);
 
   // =============== draw a custom dialog =================    
   menu_debugf("drawing custom '%s' (%d)", custom->label, selected);
 
   // title is a regular entry
-  menu_draw_title(custom->label, true, selected == 0, NULL);
-
-  if(custom->draw)
-    custom->draw();
+  menu_draw_title(custom->label, true, selected == 0, custom->hint);
+  u8g2_SetClipWindow(&u8g2, 0, MENU_LINE_Y+2, 128, 64);  
   
+  if(custom->draw)
+    custom->draw(MENU_EVENT_NONE);
+  
+  u8g2_SetMaxClipWindow(&u8g2);
   u8g2_SendBuffer(&u8g2);
 }
 
@@ -1037,9 +1049,10 @@ static struct {
   char name[NEWCFG_MAX+1];
 } newcfg;
 
-static int newcfg_length(void) { return 0; }
-
-static void newcfg_draw(void) {
+static void newcfg_draw(int event) {
+  // ignore any events except the initial NONE event
+  if(event != MENU_EVENT_NONE) return;
+  
   int width = u8g2_GetDisplayWidth(&u8g2);
   int y = MENU_LINE_Y + 2*MENU_ENTRY_H;
 
@@ -1066,7 +1079,8 @@ static void newcfg_draw(void) {
 
 static const config_custom_t newcfg_custom = {
   .label = NEW_CFG_FILE,
-  .length = newcfg_length,
+  .length = NULL,
+  .hint = NULL,
   .draw = newcfg_draw
 };
 
@@ -1189,9 +1203,10 @@ static sdc_dir_entry_t *delcfg_entry(void) {
   return dir_entry(menu_state->prev->dir, menu_state->prev->selected-1);
 }
 
-static int delcfg_length(void) { return 0; }
-
-static void delcfg_draw(void) {
+static void delcfg_draw(int event) {
+  // ignore any events except the initial NONE event
+  if(event != MENU_EVENT_NONE) return;
+  
   int width = u8g2_GetDisplayWidth(&u8g2);
 
   // "Delete <name>?", the name is shortened if needed
@@ -1216,7 +1231,8 @@ static void delcfg_draw(void) {
 
 static const config_custom_t delcfg_custom = {
   .label = "Delete Config",
-  .length = delcfg_length,
+  .length = NULL,
+  .hint = NULL,
   .draw = delcfg_draw
 };
 
@@ -1250,6 +1266,7 @@ static void menu_delcfg_open(void) {
   menu_state->custom = &delcfg_custom;
   menu_state->selected = 0;
   menu_state->scroll = 0;
+
   menu_do(0);   // draw the question, a key press does not do that
 }
 
@@ -1708,6 +1725,10 @@ static int menu_key_last_event = -1;
 static void menu_key_repeat(__attribute__((unused)) TimerHandle_t arg) { 
   if(menu_key_last_event >= 0) {
   
+    // send events into custom dialogs
+    if(menu_state && menu_state->type == MENU_TYPE_CUSTOM)
+      menu_state->custom->draw(menu_key_last_event);
+    
     if(menu_key_last_event == MENU_EVENT_UP)     menu_entry_go(-1);
     if(menu_key_last_event == MENU_EVENT_DOWN)   menu_entry_go( 1);
 
@@ -1789,6 +1810,10 @@ void menu_do(int event) {
 	xTimerStart( menu_key_repeat_timer, 0 );
       }
     }
+    
+    // send events into custom dialogs
+    if(menu_state && menu_state->type == MENU_TYPE_CUSTOM)
+      menu_state->custom->draw(event);
     
     if(event == MENU_EVENT_UP)     menu_entry_go(-1);
     if(event == MENU_EVENT_DOWN)   menu_entry_go( 1);
@@ -2126,11 +2151,6 @@ void menu_button_state(unsigned char state) {
     Its about box is an example for this.
 */
 
-static int about_length(void) {
-  // return the number of selectable items inside the about dialog.
-  return 0;
-}
-
 #if __has_include("version.h")
 #include "version.h"
 #endif
@@ -2138,35 +2158,85 @@ static int about_length(void) {
 #define FW_VERSION "<no version>"
 #endif
 
-static void about_draw(void) {
-  u8g2_DrawStr(&u8g2, 20, MENU_LINE_Y + 1*MENU_ENTRY_H, "FPGA Companion");
-
+static void about_draw_centered(int y, char *str) {
+  int w = u8g2_GetStrWidth(&u8g2, str);
+  u8g2_DrawStr(&u8g2, 64-w/2, MENU_LINE_Y + y*MENU_ENTRY_H, str);
+}
+  
+// draw version strings, ellipsize if needed
+static void about_draw_version(int y, char *str) {
   // auto-center version string
-  int version_len = u8g2_GetStrWidth(&u8g2, FW_VERSION);
-  if(version_len <= 128)
-    u8g2_DrawStr(&u8g2, 64-version_len/2, MENU_LINE_Y + 2*MENU_ENTRY_H, FW_VERSION);
+  int len = u8g2_GetStrWidth(&u8g2, str);
+  if(len <= 128)
+    about_draw_centered(y, str);
   else {
     // ellipsize version string
-    char str[version_len+1];
-    int ellipse_len =  u8g2_GetStrWidth(&u8g2, "...");
+    char estr[len+1];
+    int ellipse_len =  u8g2_GetStrWidth(&u8g2, "...");    
+    strcpy(estr, str);
     
-    strcpy(str, FW_VERSION);    
-    while(u8g2_GetStrWidth(&u8g2, str) > 128-ellipse_len)
-      str[strlen(str)-1] = '\0';
+    // try to find the second dash (-)
+    char *dash = strchr(estr, '-');
+    if(dash) dash = strchr(dash+1, '-');
+    
+    if(dash) {
+      // cut string at dash
+      *dash = '\0';
+      // remember start of second half
+      char *second = dash+1;
 
-    strcat(str, "...");    
+      // shorten first half as long as possible
+      while(strlen(estr) && u8g2_GetStrWidth(&u8g2, estr) + u8g2_GetStrWidth(&u8g2, second) > 128-ellipse_len)
+	estr[strlen(estr)-1] = '\0';
 
-    version_len = u8g2_GetStrWidth(&u8g2, str);
-    u8g2_DrawStr(&u8g2, 64-version_len/2, MENU_LINE_Y + 2*MENU_ENTRY_H, str);
+      // shortening at the second dash was not successful, just elipsize at the end
+      if(!strlen(estr)) {
+	strcpy(estr, str);	
+	while(u8g2_GetStrWidth(&u8g2, estr) > 128-ellipse_len)
+	  estr[strlen(estr)-1] = '\0';
+
+	strcat(estr, "...");
+      } else {      
+	strcat(estr, "...");
+	strcat(estr, second);
+      }
+    } else {
+      // no two dash's, ellipsise at the end
+      while(u8g2_GetStrWidth(&u8g2, estr) > 128-ellipse_len)
+	estr[strlen(estr)-1] = '\0';
+      strcat(estr, "...");    
+    }
+
+    about_draw_centered(y, estr);
   }
-
-  u8g2_DrawStr(&u8g2, 5, MENU_LINE_Y + 3*MENU_ENTRY_H, "(c) 2026 the MiSTle Team");
-  u8g2_DrawStr(&u8g2, 0, MENU_LINE_Y + 4*MENU_ENTRY_H, "http://github.com/mistle-dev");
 }
 
-const static config_custom_t about = {
+static void about_draw(int event) {
+  static int scroll = 0;
+
+  if(event == MENU_EVENT_NONE) {
+    // a none event triggers a redraw
+    about_draw_centered(1-scroll, mcu_get_info(0));    // board name
+    about_draw_version( 2-scroll, FW_VERSION);
+    about_draw_centered(3-scroll, mcu_get_info(1));    // sdk version
+    about_draw_centered(4-scroll, mcu_get_info(2));    // gcc version
+    about_draw_centered(5-scroll, "(c) 2026 the MiSTle Team");
+    about_draw_centered(6-scroll, "http://github.com/mistle-dev");
+  } else if(event == MENU_EVENT_INIT) {
+    scroll = 0;
+  } else if(event == MENU_EVENT_UP) {
+    scroll--;
+    if(scroll < 0) scroll = 0;
+  } else if(event == MENU_EVENT_DOWN) {
+    scroll++;
+    if(scroll > 2) scroll = 2;  // total 6 lines - 4 = 2
+  }
+}
+
+static const config_custom_t about = {
   .label = "About",
-  .length = about_length,
+  .length = NULL,
+  .hint = "\xff\x00\x10\x38\x7c\x00\x7c\x38\x10",
   .draw = about_draw
 };
 
@@ -2179,6 +2249,8 @@ static void about_func(void) {
   menu_state->custom = &about;
   menu_state->selected = 0;
   menu_state->scroll = 0;
+
+  menu_state->custom->draw(MENU_EVENT_INIT);
 }
 
 static const config_action_command_t about_exec = {

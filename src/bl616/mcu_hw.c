@@ -80,6 +80,7 @@ extern void bl_show_chipinfo(void);
 
 #ifdef TANG_CONSOLE60K
 #warning "Building for TANG_CONSOLE60K internal BL616"
+#define BOARD_NAME "Console60k"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_JTAGSEL  GPIO_PIN_28
@@ -87,24 +88,28 @@ extern void bl_show_chipinfo(void);
 #define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_NANO20K
 #warning "Building for TANG_NANO20K internal BL616"
+#define BOARD_NAME "Nano20k"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_UART_TX  GPIO_PIN_11
 #define PIN_UART_RX  GPIO_PIN_20
 #elif TANG_NANO20K_V3923
 #warning "Building for TANG_NANO20K internal BL616 v3923"
+#define BOARD_NAME "Nano20k v3923"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_UART_TX  GPIO_PIN_11
 #define PIN_UART_RX  GPIO_PIN_20
 #elif M0S_DOCK
 #warning "Building for M0S DOCK BL616"
+#define BOARD_NAME "M0S Dock"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_UART_TX  GPIO_PIN_21
 #define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_MEGA138KPRO
 #warning "Building for TANG_MEGA138KPRO internal BL616"
+#define BOARD_NAME "Mega138kPro"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_JTAGSEL  GPIO_PIN_10
@@ -112,6 +117,7 @@ extern void bl_show_chipinfo(void);
 #define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_MEGA60K
 #warning "Building for TANG_MEGA60K internal BL616"
+#define BOARD_NAME "Mega60k"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_JTAGSEL  GPIO_PIN_28
@@ -119,6 +125,7 @@ extern void bl_show_chipinfo(void);
 #define PIN_UART_RX  GPIO_PIN_22
 #elif TANG_PRIMER25K
 #warning "Building for TANG_PRIMER25K internal BL616"
+#define BOARD_NAME "Primer25k"
 #include "../jtag.h"
 #include "./sdc_direct.h"
 #define PIN_JTAGSEL  GPIO_PIN_11
@@ -186,6 +193,22 @@ void mcu_hw_jtag_exit_gpio_out_mode(void) {
 }
 
 static void mcu_hw_jtag_init(void);
+
+// return info/version strings
+char *mcu_get_info(int index) {
+  static const char *board_name = BOARD_NAME;
+  static const char *sdk_version = "SDK " SDK_VERSION;
+  static char gcc_version[32];
+  
+  if(index == 0)      return board_name;
+  else if(index == 1) return sdk_version;
+  else if(index == 2) {
+    sprintf(gcc_version, "GCC %d.%d.%d", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+    return gcc_version;
+  }
+
+  return NULL;
+}
 
 /* ============================================================================================= */
 /* ===============                          USB                                   ============== */

@@ -12,6 +12,7 @@
 "      \033[1;36mhttp://github.com/MiSTle-Dev\033[0m\r\n"
 
 void mcu_hw_init(void);
+char *mcu_get_info(int index);
 void mcu_hw_main_loop(void);
 
 void mcu_hw_irq_ack(void);
