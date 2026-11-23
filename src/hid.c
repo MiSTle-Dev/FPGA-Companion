@@ -474,6 +474,17 @@ void mouse_parse(const hid_report_t *report, __attribute__((unused)) struct hid_
 
       a[i] = collect_bits(buffer, report->joystick_mouse.axis[i].offset,
 			  report->joystick_mouse.axis[i].size, is_signed);
+
+      // Each axis goes to the FPGA as one signed byte. A mouse with wider
+      // axes (12 or 16 bits are common) would otherwise have a fast movement
+      // cut to its low eight bits and seem to jump backwards.
+      // collect_bits() returns the sign-extended value in 16 bits.
+      if(is_signed) {
+	int16_t wide = (int16_t)a[i];
+	if(wide > INT8_MAX) wide = INT8_MAX;
+	if(wide < INT8_MIN) wide = INT8_MIN;
+	a[i] = wide;
+      }
     }
   }
 
