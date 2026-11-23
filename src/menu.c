@@ -2216,12 +2216,13 @@ static void about_draw(int event) {
 
   if(event == MENU_EVENT_NONE) {
     // a none event triggers a redraw
-    about_draw_centered(1-scroll, mcu_get_info(0));    // board name
+    about_draw_centered(1-scroll, "FPGA Companion");
     about_draw_version( 2-scroll, FW_VERSION);
-    about_draw_centered(3-scroll, mcu_get_info(1));    // sdk version
-    about_draw_centered(4-scroll, mcu_get_info(2));    // gcc version
-    about_draw_centered(5-scroll, "(c) 2026 the MiSTle Team");
-    about_draw_centered(6-scroll, "http://github.com/mistle-dev");
+    about_draw_centered(3-scroll, mcu_get_info(0));    // board name
+    about_draw_centered(4-scroll, mcu_get_info(1));    // sdk version
+    about_draw_centered(5-scroll, mcu_get_info(2));    // gcc version
+    about_draw_centered(6-scroll, "(c) 2026 the MiSTle Team");
+    about_draw_centered(7-scroll, "http://github.com/mistle-dev");
   } else if(event == MENU_EVENT_INIT) {
     scroll = 0;
   } else if(event == MENU_EVENT_UP) {
@@ -2229,7 +2230,7 @@ static void about_draw(int event) {
     if(scroll < 0) scroll = 0;
   } else if(event == MENU_EVENT_DOWN) {
     scroll++;
-    if(scroll > 2) scroll = 2;  // total 6 lines - 4 = 2
+    if(scroll > 3) scroll = 3;  // total 6 lines - 4 = 3
   }
 }
 

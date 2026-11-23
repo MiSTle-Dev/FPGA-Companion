@@ -29,6 +29,18 @@ if(GIT_FOUND)
     RESULT_VARIABLE GIT_RESULT)
   if(GIT_RESULT EQUAL 0 AND GIT_VERSION)
     set(FW_VERSION "${GIT_VERSION}")
+  else()
+    execute_process(
+      COMMAND svn info --show-item revision
+      WORKING_DIRECTORY "${SRC_DIR}"
+      OUTPUT_VARIABLE SVN_VERSION
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE SVN_RESULT)
+
+      if(SVN_RESULT EQUAL 0 AND SVN_VERSION)
+        set(FW_VERSION "SVN r${SVN_VERSION}")
+      endif()
   endif()
 endif()
 
