@@ -36,6 +36,7 @@
 #define SPI_HID_MOUSE     2
 #define SPI_HID_JOYSTICK  3
 #define SPI_HID_GET_DB9   4
+#define SPI_HID_GET_LEDS  5   // keyboard lights wanted by the core
 
 #define SPI_TARGET_OSD    2   // on-screen-display
 #define SPI_OSD_ENABLE    1

@@ -8,9 +8,6 @@
 
 struct hid_kbd_state_S {
   unsigned char last_report[8];	
-  // lock keys pressed and passed on to the core since the platform code last
-  // looked (bit 0 Num Lock, 1 Caps Lock, 2 Scroll Lock), for keyboard lights
-  unsigned char lock_presses;
 };
 
 struct hid_mouse_state_S {

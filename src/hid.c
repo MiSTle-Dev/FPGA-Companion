@@ -379,13 +379,8 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
       } else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
         msg = MENU_EVENT_BACK;
       else {
-        if(!osd_is_visible()) {
+        if(!osd_is_visible())
            kbd_tx_remap(buffer[2+i]);
-           // lock key passed on to the core: its light may follow
-           if(buffer[2+i] == 0x53) state->lock_presses ^= 1;   // Num Lock
-           if(buffer[2+i] == 0x39) state->lock_presses ^= 2;   // Caps Lock
-           if(buffer[2+i] == 0x47) state->lock_presses ^= 4;   // Scroll Lock
-        }
         else {
           // check if cursor up/down or space has been pressed
           if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;
@@ -1120,6 +1115,25 @@ void hid_handle_event(void) {
   // the OSD is open. Mask out the second fire button
   // as the wirless cx40+ sends it wrongly while
   // no other db9 joystick seems to send it at all.
-  if(osd_is_visible())
+  // The HID interrupt may be for the keyboard lights alone: pass the DB9
+  // state on only when it has changed, so an unchanged idle DB9 does not
+  // look like a release to a USB gamepad steering the menu.
+  static uint8_t db9_prev = 0xff;
+  if(osd_is_visible() && (db9 & 0x1f) != db9_prev)
     menu_joystick_state(db9 & 0x1f);
+  db9_prev = db9 & 0x1f;
+
+  // The keyboard lights the core wants: bit 7 set marks a core that gives
+  // them, bits 0-2 are Num, Caps and Scroll Lock. A core raises the HID
+  // interrupt when they change. Anything with bit 7 clear (e.g. a core that
+  // does not know this command) leaves the lights as they are.
+  mcu_hw_spi_begin();
+  mcu_hw_spi_tx_u08(SPI_TARGET_HID);
+  mcu_hw_spi_tx_u08(SPI_HID_GET_LEDS);
+  mcu_hw_spi_tx_u08(0x00);
+  uint8_t leds = mcu_hw_spi_tx_u08(0x00);
+  mcu_hw_spi_end();
+
+  if(leds & 0x80)
+    mcu_hw_kbd_leds(leds & 0x07);
 }

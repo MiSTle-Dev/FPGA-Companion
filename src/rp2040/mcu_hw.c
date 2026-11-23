@@ -202,6 +202,9 @@ void mcu_hw_spi_init(void) {
   gpio_add_raw_irq_handler(SPI_IRQ_PIN, irq_handler);  
 }
 
+// keyboard lights are not driven on this platform yet
+void mcu_hw_kbd_leds(__attribute__((unused)) uint8_t leds) { }
+
 void mcu_hw_irq_ack(void) {
   static bool first = true;
 

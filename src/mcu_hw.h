@@ -24,6 +24,8 @@ unsigned char mcu_hw_spi_tx_u08(unsigned char b);
 void mcu_hw_spi_end(void);
 
 bool mcu_hw_hid_present(void);
+// keyboard lights wanted by the core (bit 0 Num, 1 Caps, 2 Scroll Lock)
+void mcu_hw_kbd_leds(uint8_t leds);
 void mcu_hw_usb_sector_read(void *buffer, int sector, int count);
 void mcu_hw_upload_core(char *name);
 bool mcu_hw_usb_msc_present(void);

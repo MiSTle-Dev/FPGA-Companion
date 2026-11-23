@@ -54,7 +54,7 @@ Currently the following interrupt sources are being used:
 | bit | name | usage |
 |-----|------|-------|
 | 0   | SYS  | FPGA has been (re-)initialized (cold boot) or port data has been received |
-| 1   | HID  | DB9 joystick event detected by FPGA |
+| 1   | HID  | DB9 joystick event detected by FPGA, or the keyboard lights it wants changed |
 | 3   | SDC  | FPGA requests SD card sector translation |
 
 ## Protocol
@@ -182,7 +182,7 @@ The advantage of the compressed version is that it only occupies about
 
 ### HID target
 
-The HID target currently supports three commands:
+The HID target currently supports these commands:
 
 | value | name | description |
 |---------|-------------|-------------|
@@ -191,6 +191,7 @@ The HID target currently supports three commands:
 | 2 | ```SPI_HID_MOUSE``` | Send a mouse data byte into the FPGA |
 | 3 | ```SPI_HID_JOYSTICK``` | Send a joystick data byte into the FPGA |
 | 4 | ```SPI_HID_GET_DB9``` | Read the DB9 joystick status from the FPGA |
+| 5 | ```SPI_HID_GET_LEDS``` | Read the keyboard lights the FPGA wants |
 
 The ```SPI_HID_STATUS``` message is currently unused. It will be used to report the
 HID requirements. This may e.g. include the keycode mapping required
@@ -220,6 +221,25 @@ The subsequent three bytes transfer Gamepad analog proportional position X, Y an
 The ```SPI_HID_GET_DB9``` command allows the MCU to request the
 state of the DB9 joystick port from the FPGA. This can be used
 to e.g. control the OSD via a joystick connected to that port.
+
+The ```SPI_HID_GET_LEDS``` command lets the MCU read the keyboard lights
+the core wants, e.g. its own Caps Lock state or a floppy or power light.
+Like ```SPI_HID_GET_DB9``` it is followed by one dummy byte, and the
+next byte read is the answer: bit 7 set marks a core that gives lights,
+bits 0, 1 and 2 are Num Lock, Caps Lock and Scroll Lock. A core raises
+the HID interrupt when the lights change; on that interrupt the MCU
+reads the DB9 state first and then the lights.
+
+An answer with bit 7 clear is ignored: the lights keep the last state a
+core gave, and are off until a core gives one. The protocol defines no
+reply to an unknown command, but the existing cores (MiSTeryNano,
+NanoMig, A2600Nano) answer one with the byte of the command before it,
+here ```SPI_HID_GET_DB9```'s, whose bit 7 is clear; that is why the MCU
+reads the DB9 state first.
+
+Currently only the BL616 drives keyboard lights (keyboards whose output
+report is the boot keyboard's LED byte); the RP2040 and ESP32 read the
+answer and do nothing with it.
 
 ### OSD target
 

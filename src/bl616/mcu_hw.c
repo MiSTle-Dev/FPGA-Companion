@@ -389,7 +389,6 @@ static struct usb_config {
     // keyboard lock lights (bit 0 Num, 1 Caps, 2 Scroll); see led_task()
     volatile uint32_t attach;     // counts attachments of this entry
     volatile bool leds_ok;        // its only output report is the boot LED byte
-    volatile uint8_t locks_want;  // lights wanted
     volatile uint8_t locks_sent;  // lights last set on the keyboard (0xff: not yet)
     TickType_t leds_retry;        // after a failed request: not before this
   } hid_info[CONFIG_USBHOST_MAX_HID_CLASS];
@@ -402,10 +401,10 @@ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XB
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[MAX_HID_REPORT_DESC_SIZE];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
 
-// Keyboard lock lights. A light toggles when its key is pressed and passed on
-// to the core (kbd_parse() counts those presses): no core tells the BL616 its
-// lock states, so the lights count presses from "off" after the keyboard is
-// plugged in, when all three are switched off.
+// Keyboard lock lights, as the core asks for them (SPI_HID_GET_LEDS, read in
+// hid_handle_event() on the HID interrupt; see mcu_hw_kbd_leds()). A keyboard
+// plugged in gets the core's current lights; with a core that gives none they
+// stay off.
 //
 // Only keyboards whose report descriptor has no report IDs and whose output
 // report is exactly the boot keyboard's byte of LED bits get lights. The
@@ -417,6 +416,7 @@ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX struct usb_setup_packet led_setup[CONFIG_USBHOST_MAX_HID_CLASS];
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t led_payload[CONFIG_USBHOST_MAX_HID_CLASS][4];
 static TaskHandle_t led_task_handle;
+static volatile uint8_t core_leds;          // the lights the core last asked for
 
 // true only for: no report IDs, no PUSH/POP, and output items that together
 // make one byte, the first being data, variable, usage page LEDs, report size
@@ -488,7 +488,7 @@ static void led_task(__attribute__((unused)) void *arg) {
       if (!hid->leds_ok || hid->stop || hid->state != STATE_DETECTED ||
           !class || !class->hport)
         continue;
-      uint8_t want = hid->locks_want;
+      uint8_t want = core_leds;
       if (want == hid->locks_sent) {
         hid->leds_retry = 0;
         continue;
@@ -540,6 +540,13 @@ static void led_task(__attribute__((unused)) void *arg) {
 static void leds_wake(void) {
   if (led_task_handle)
     xTaskNotifyGive(led_task_handle);
+}
+
+// every keyboard with lights follows core_leds; led_task compares it with
+// what each one was last sent
+void mcu_hw_kbd_leds(uint8_t leds) {
+  core_leds = leds & 0x07;
+  leds_wake();
 }
 
 uint8_t byteScaleAnalog(int16_t xbox_val)
@@ -782,11 +789,6 @@ static void usbh_hid_client_thread(void *argument) {
       if (!hid->report[0].report_id_present) {
         hid_parse(&hid->report[0], &hid->hid_state[0],
                   hid->buffer, hid->nbytes);
-        if (hid->leds_ok && hid->hid_state[0].kbd.lock_presses) {
-          hid->locks_want ^= hid->hid_state[0].kbd.lock_presses;
-          hid->hid_state[0].kbd.lock_presses = 0;
-          leds_wake();
-        }
       }
       else if (hid->nbytes > 0) {
         for (uint8_t i = 0; i < hid->report_count; i++) {
@@ -1126,15 +1128,13 @@ void usbh_hid_run(struct usbh_hid *hid_class)
 
     usb->hid_info[i].stop = 0;
     usb->hid_info[i].attach++;
-    usb->hid_info[i].locks_want = 0;
-    usb->hid_info[i].locks_sent = 0xff;      // all off first
+    usb->hid_info[i].locks_sent = 0xff;      // not yet set
     usb->hid_info[i].leds_retry = 0;
     usb->hid_info[i].leds_ok = hid->report[0].type == REPORT_TYPE_KEYBOARD &&
       !hid->report[0].report_id_present &&
       leds_boot_layout(report_desc, hid_class->report_size);
     usb->hid_info[i].state = STATE_DETECTED;
     if (usb->hid_info[i].leds_ok) {
-      usb->hid_info[i].hid_state[0].kbd.lock_presses = 0;
       if (!led_task_handle)
         xTaskCreate(led_task, (char *)"led_task", 512, NULL, configMAX_PRIORITIES - 4, &led_task_handle);
       leds_wake();
