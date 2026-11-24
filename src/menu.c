@@ -2216,13 +2216,26 @@ static void about_draw(int event) {
 
   if(event == MENU_EVENT_NONE) {
     // a none event triggers a redraw
-    about_draw_centered(1-scroll, "FPGA Companion");
+    u8g2_SetFont(&u8g2, u8g2_font_helvB08_tr);
+    about_draw_centered(1-scroll, "==  FPGA Companion  ==");
+    u8g2_SetFont(&u8g2, font_helvR08_te);
     about_draw_version( 2-scroll, FW_VERSION);
     about_draw_centered(3-scroll, mcu_get_info(0));    // board name
     about_draw_centered(4-scroll, mcu_get_info(1));    // sdk version
     about_draw_centered(5-scroll, mcu_get_info(2));    // gcc version
-    about_draw_centered(6-scroll, "(c) 2026 the MiSTle Team");
-    about_draw_centered(7-scroll, "http://github.com/mistle-dev");
+
+    u8g2_SetFont(&u8g2, u8g2_font_helvB08_tr);
+    about_draw_centered(7-scroll, "========  Core  =======");
+    u8g2_SetFont(&u8g2, font_helvR08_te);
+
+    if(cfg->name) about_draw_centered(8-scroll, cfg->name);
+    else          about_draw_centered(8-scroll, "Unknown Name");
+    
+    if(cfg->version) about_draw_version(9-scroll, cfg->version);
+    else             about_draw_centered(9-scroll, "Unknown Version");
+    
+    about_draw_centered(11-scroll, "(c) 2026 the MiSTle Team");
+    about_draw_centered(12-scroll, "http://github.com/mistle-dev");
   } else if(event == MENU_EVENT_INIT) {
     scroll = 0;
   } else if(event == MENU_EVENT_UP) {
@@ -2230,7 +2243,7 @@ static void about_draw(int event) {
     if(scroll < 0) scroll = 0;
   } else if(event == MENU_EVENT_DOWN) {
     scroll++;
-    if(scroll > 3) scroll = 3;  // total 6 lines - 4 = 3
+    if(scroll > 8) scroll = 8;  // total 12 lines - 4 = 8
   }
 }
 
