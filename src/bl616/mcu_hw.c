@@ -14,6 +14,9 @@
 #include "usbh_msc.h"
 #include "usb_def.h"
 #include "bflb_name.h"
+#include "sysinit.h"
+#include "bflb_efuse.h"
+#include "bflb_sf_ctrl.h"
 #include "../usb_controller_maps.h"
 #include "ff.h"
 #include "fatfs_diskio_register.h"
@@ -62,8 +65,10 @@
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
 #include <lwip/dns.h>
+#ifdef CONFIG_WIFI6
 #include "wifi_mgmr_ext.h"
 #include "rfparam_adapter.h"
+#endif
 
 #include "bflb_rtc.h" 
 #include "board.h"
@@ -75,8 +80,6 @@
 
 //#define DEBUG_JTAG
 //#define DEBUG_TAP
-
-extern void bl_show_chipinfo(void);
 
 #ifdef TANG_CONSOLE60K
 #warning "Building for TANG_CONSOLE60K internal BL616"
@@ -1238,8 +1241,6 @@ static const uint32_t any_alloc_order[] = {
 };
 
 extern void bl_show_flashinfo(void);
-extern void bl_show_log(void);
-extern void bl_show_component_version(void);
 
 #define CONSOLE_BAUDRATE 2000000
 
@@ -1337,47 +1338,41 @@ static void console_init() {
 #endif
 }
 
-#ifdef CONFIG_HIGH_ISR_STACK
-void bflb_wfa_init(void)
-{
-    extern void interrupt1_handler(void);
-    bflb_irq_attach(MAC_INT_PROT_TRIGGER_IRQn, (irq_callback)interrupt1_handler, NULL);
-    bflb_irq_enable(MAC_INT_PROT_TRIGGER_IRQn);
-    extern void csi_vic_set_prio(int32_t IRQn, uint32_t priority);
-    csi_vic_set_prio(MAC_INT_PROT_TRIGGER_IRQn, 2);
-}
-#endif
-
+#ifdef CONFIG_WIFI6
 static void wifi_init(void);
+#endif
 static void sntp_enable_dhcp_servers(void);
 static void sntp_start_from_task(void);
 
-// local board_init used as a replacemement for global board_init
-static void mn_board_init(void) {
-    int ret = -1;
-    uintptr_t flag;
-    size_t heap_len;
-    uint32_t xtal_value = 0;
+static uintptr_t board_irq_flags;
+static int board_flash_ret = -1;
 
-    /* lock */
-    flag = bflb_irq_save();
+static void board_sysinit_flash(const void *arg) {
+    (void)arg;
+    board_irq_flags = bflb_irq_save();
 
-#ifndef CONFIG_BOARD_FLASH_INIT_SKIP
     /* flash init */
-    ret = bflb_flash_init();
-#ifndef CONFIG_BOARD_FLASH_LOW_SPEED
+    board_flash_ret = bflb_flash_init();
     /* flash clock frequency increased to 80MHz */
     board_set_flash_80m();
-#endif
-#endif
+}
 
+SYSINIT(board_flash, SI_SUB_HW, SI_ORDER_FIRST, board_sysinit_flash, NULL);
+
+static void board_sysinit_clock(const void *arg) {
+    (void)arg;
     /* system clock */
     system_clock_init();
 
     bflb_rtc_init(NULL, BFLB_RTC_32K_CLK_RC);
 
     peripheral_clock_init();
+}
 
+SYSINIT(board_clock, SI_SUB_CLOCK, SI_ORDER_FIRST, board_sysinit_clock, NULL);
+
+static void board_sysinit_irq(const void *arg) {
+    (void)arg;
     /* irq init */
     bflb_irq_initialize();
 
@@ -1385,9 +1380,6 @@ static void mn_board_init(void) {
     extern void interrupt0_handler(void);
     bflb_irq_attach(WIFI_IRQn, (irq_callback)interrupt0_handler, NULL);
     bflb_irq_enable(WIFI_IRQn);
-#endif
-#ifdef CONFIG_HIGH_ISR_STACK
-    bflb_wfa_init();
 #endif
 
     gpio = bflb_device_get_by_name("gpio");
@@ -1415,8 +1407,21 @@ static void mn_board_init(void) {
     bflb_gpio_deinit(gpio, GPIO_PIN_29);
     bflb_gpio_deinit(gpio, GPIO_PIN_30);
 
+}
+
+SYSINIT(board_irq, SI_SUB_INTR, SI_ORDER_FIRST, board_sysinit_irq, NULL);
+
+static void board_sysinit_console(const void *arg) {
+    (void)arg;
     /* console init (uart or wo) */
     console_init();
+}
+
+SYSINIT(board_console, SI_SUB_DRIVERS, SI_ORDER_FIRST, board_sysinit_console, NULL);
+
+static void board_sysinit_heap(const void *arg) {
+    size_t heap_len;
+    (void)arg;
 
     /* ram heap init */
     mem_manager_init();
@@ -1429,6 +1434,76 @@ static void mn_board_init(void) {
     debugf("ocram heap size: %d Kbyte",((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024);
 
     mm_heap_set_any_alloc_order(any_alloc_order, sizeof(any_alloc_order) / sizeof(any_alloc_order[0]));
+}
+
+SYSINIT(board_heap, SI_SUB_DRIVERS, SI_ORDER_SECOND, board_sysinit_heap, NULL);
+
+static void bl_show_log(void) {
+    puts("\r\n");
+    puts("  ____               __  __      _       _       _     \r\n");
+    puts(" |  _ \\             / _|/ _|    | |     | |     | |    \r\n");
+    puts(" | |_) | ___  _   _| |_| |_ __ _| | ___ | | __ _| |__  \r\n");
+    puts(" |  _ < / _ \\| | | |  _|  _/ _` | |/ _ \\| |/ _` | '_ \\ \r\n");
+    puts(" | |_) | (_) | |_| | | | || (_| | | (_) | | (_| | |_) |\r\n");
+    puts(" |____/ \\___/ \\__,_|_| |_| \\__,_|_|\\___/|_|\\__,_|_.__/ \r\n");
+    puts("\r\n");
+    puts("Build:" __TIME__ ", " __DATE__ "\r\n");
+    puts("Copyright (c) 2022 Bouffalolab team\r\n");
+}
+
+static const char *bl_sys_version(const char ***ctx) {
+    extern uint8_t _version_info_section_start;
+    extern uint8_t _version_info_section_end;
+    const char **const version_section_start = (const char **)&_version_info_section_start;
+    const char **const version_section_end = (const char **)&_version_info_section_end;
+    const char *version_str;
+
+    if (NULL == (*ctx)) {
+        (*ctx) = version_section_start;
+    }
+    if (version_section_end == (*ctx)) {
+        return NULL;
+    }
+    version_str = (**ctx);
+    *ctx = (*ctx) + 1;
+    return version_str;
+}
+
+static void bl_show_component_version(void) {
+    const char *version_str;
+    const char **ctx = NULL;
+    bflb_verinf_t version = { 0 };
+
+    puts("Version of used components:\r\n");
+    while ((version_str = bl_sys_version(&ctx))) {
+        puts("\tVersion: ");
+        puts(version_str);
+        puts("\r\n");
+    }
+
+    if (bflb_sf_ctrl_get_flash_image_offset(0, 0) <= 0x2000) {
+        puts("\tBoot2 maybe not exist!\r\n");
+    } else {
+        puts("\tVersion: ");
+        bflb_get_boot2_info_from_flash(&version);
+        printf("component_version_boot2: %d.%d.%d\r\n", version.x, version.y, version.z);
+    }
+}
+
+static void bl_show_chipinfo(void) {
+    bflb_efuse_device_info_type device_info;
+    bflb_efuse_get_device_info(&device_info);
+
+    printf("======== chip info ========\r\n");
+    printf("package          %s\r\n", device_info.package_name);
+    printf("flash_info       %s\r\n", device_info.flash_info_name);
+    printf("psram_info       %s\r\n", device_info.psram_info_name);
+    printf("version          A%d\r\n", device_info.version);
+}
+
+static void board_sysinit_services(const void *arg) {
+    uint32_t xtal_value = 0;
+    (void)arg;
 
     /* boot info dump */
     bl_show_log();
@@ -1440,7 +1515,7 @@ static void mn_board_init(void) {
 
     /* flash info dump */
     bl_show_flashinfo();
-    if (ret != 0) {
+    if (board_flash_ret != 0) {
           debugf("flash init fail !!!");
         }
 
@@ -1456,18 +1531,22 @@ static void mn_board_init(void) {
 #endif
 
     bflb_sec_mutex_init();
+}
 
+SYSINIT(board_services, SI_SUB_DRIVERS, SI_ORDER_THIRD, board_sysinit_services, NULL);
+
+static void board_sysinit_finish(const void *arg) {
+    (void)arg;
     /* unlock */
-    bflb_irq_restore(flag);
+    bflb_irq_restore(board_irq_flags);
 
     debugf("board init done");
     debugf("===========================");
 }
 
+SYSINIT(board_finish, SI_SUB_DRIVERS, SI_ORDER_FOURTH, board_sysinit_finish, NULL);
 
 void mcu_hw_init(void) {
-  mn_board_init();
-
   debugf("\r\n\r\n" LOGO "        FPGA Companion for BL616\r\n\r\n");
 
   gpio = bflb_device_get_by_name("gpio");
@@ -1515,8 +1594,9 @@ void mcu_hw_init(void) {
   shell_init_with_task(uart0);
 #endif
 
+#ifndef CONFIG_WIFI6
   tcpip_init(NULL, NULL);
-#if defined(M0S_DOCK)|| defined(TANG_CONSOLE60K)|| defined(TANG_MEGA60K)
+#else
   wifi_init();
 #endif
 
@@ -1546,7 +1626,7 @@ void stop_hid(void) {
  }
 
 extern void hid_keyboard_init(uint8_t busid, uintptr_t reg_base);
-extern int bl_sys_reset_por(void);
+extern void bl_sys_reset_system(void);
 
 void mcu_hw_reset(void) {
   debugf("HW reset");
@@ -1561,14 +1641,15 @@ void mcu_hw_reset(void) {
   wdg = bflb_device_get_by_name("watchdog0");
   bflb_wdg_stop(wdg);
   bflb_wdg_init(wdg, &wdg_cfg);
+#ifndef TANG_PRIMER25K 
   bflb_wdg_start(wdg);
+#endif
 
   stop_hid();
   bflb_mtimer_delay_ms(500);
 
   gpio = bflb_device_get_by_name("gpio");
   bflb_irq_disable(gpio->irq_num);
-
 
   bflb_gpio_deinit(gpio, GPIO_PIN_2); // BL616 CHIP_EN
 
@@ -1580,29 +1661,7 @@ void mcu_hw_reset(void) {
   HBN_Set_User_Boot_Config(0); //HAL_REBOOT_AS_BOOTPIN
   debugf("deinit done and waiting for WDT POR reset");
 #ifdef TANG_PRIMER25K
-  bflb_mtimer_delay_ms(250);
-  bflb_gpio_deinit(gpio, GPIO_PIN_0);
-  bflb_gpio_deinit(gpio, GPIO_PIN_1);
-  bflb_gpio_deinit(gpio, GPIO_PIN_2);
-  bflb_gpio_deinit(gpio, GPIO_PIN_3);
-
-  bflb_gpio_deinit(gpio, GPIO_PIN_10);
-  bflb_gpio_deinit(gpio, GPIO_PIN_11);
-  bflb_gpio_deinit(gpio, GPIO_PIN_12);
-  bflb_gpio_deinit(gpio, GPIO_PIN_13);
-  bflb_gpio_deinit(gpio, GPIO_PIN_14);
-  bflb_gpio_deinit(gpio, GPIO_PIN_15);
-  bflb_gpio_deinit(gpio, GPIO_PIN_16);
-  bflb_gpio_deinit(gpio, GPIO_PIN_17);
-
-  bflb_gpio_deinit(gpio, GPIO_PIN_20);
-  bflb_gpio_deinit(gpio, GPIO_PIN_21);
-  bflb_gpio_deinit(gpio, GPIO_PIN_22);
-
-  bflb_gpio_deinit(gpio, GPIO_PIN_27);
-  bflb_gpio_deinit(gpio, GPIO_PIN_28);
-  bflb_gpio_deinit(gpio, GPIO_PIN_29);
-  bflb_gpio_deinit(gpio, GPIO_PIN_30);
+  bl_sys_reset_system();
 #endif
 
   while (1) {
@@ -1614,8 +1673,9 @@ void mcu_hw_port_byte(unsigned char byte) {
   debugf("port byte %d", byte);
 }
 
-extern int wifi_mgmr_task_start(void);
+#ifdef CONFIG_WIFI6
 extern int wifi_mgmr_sta_scanlist(void);
+#endif
 
 // the network connection state
 #define NETWORK_STATUS_UNINITIALIZED        (0)
@@ -1761,6 +1821,8 @@ uint8_t mcu_hw_network_status(void)
 #define WIFI_STATE_CONNECTED    3
 
 static int wifi_state = WIFI_STATE_UNKNOWN;
+
+#ifdef CONFIG_WIFI6
 static volatile bool wifi_manager_ready = false;
 static volatile bool wifi_auto_connect_pending = false;
 static bool wifi_auto_connect_started = false;
@@ -1906,7 +1968,6 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
   switch (code) {
   case CODE_WIFI_ON_INIT_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_INIT_DONE", __func__);
-    wifi_mgmr_task_start();
   } break;
   case CODE_WIFI_ON_MGMR_DONE: {
     debugf("[APP] [EVT] %s, CODE_WIFI_ON_MGMR_DONE", __func__);
@@ -1981,23 +2042,10 @@ void wifi_event_handler(async_input_event_t ev, void *priv)
 
 void wifi_start_firmware_task(void *param)
 {
-    /* network init */
     network_status |= NETWORK_STATUS_TCPIP_INIT | NETWORK_STATUS_WIFI;
     debugf("Starting wifi ...");
 
     sntp_enable_dhcp_servers();
-
-    if (0 != rfparam_init(0, NULL, 0)) {
-      debugf("PHY RF init failed!");
-      return;
-    }
-    debugf("PHY RF init success!");
-
-    async_register_event_filter(EV_WIFI, wifi_event_handler, NULL);
-    wifi_task_create();
-
-    debugf("Starting fhost ...");
-    fhost_init();
 
     vTaskDelete(NULL);
 }
@@ -2006,10 +2054,7 @@ void wifi_start_firmware_task(void *param)
 static void wifi_init(void) {
   wifi_event_queue = xQueueCreate(10, sizeof(char));
 
-  /* Enable wifi irq */
-  extern void interrupt0_handler(void);
-  bflb_irq_attach(WIFI_IRQn, (irq_callback)interrupt0_handler, NULL);
-  bflb_irq_enable(WIFI_IRQn);
+  async_register_event_filter(EV_WIFI, wifi_event_handler, NULL);
 
   xTaskCreate(wifi_start_firmware_task, "wifi init", 1024, NULL, 10, NULL);
   xTaskCreate(wifi_ip_monitor, "wifi ip", 1024, NULL, 10, NULL);
@@ -2214,6 +2259,22 @@ bool mcu_hw_wifi_connect(char *ssid, char *key) {
     }
   return true;
 }
+
+#else
+void mcu_hw_wifi_scan(void) {
+  at_wifi_puts("WiFi not available\r\n");
+}
+
+bool mcu_hw_wifi_connect(char *ssid, char *key) {
+  (void)ssid;
+  (void)key;
+  at_wifi_puts("WiFi not available\r\n");
+  return false;
+}
+
+void mcu_hw_wifi_auto_connect(void) {
+}
+#endif
 
 static bool network_available(void) {
   // Require TCP/IP init and either a link-up indication or a valid IP address.

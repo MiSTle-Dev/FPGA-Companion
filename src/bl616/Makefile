@@ -12,5 +12,11 @@ TANG_BOARD ?= m0sdock
 CROSS_COMPILE ?= riscv64-unknown-elf-
 cmake_definition+=-DTANG_BOARD=$(TANG_BOARD)
 
+ifneq ($(filter m0sdock console60k mega60k,$(TANG_BOARD)),)
+CONFIG_WIFI6 ?= y
+else
+CONFIG_WIFI6 ?= n
+endif
+
 include $(BL_SDK_BASE)/project.build
 
