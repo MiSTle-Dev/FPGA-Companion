@@ -102,6 +102,9 @@
 
 #ifdef LWIP_HEAP_SIZE
 #define MEM_SIZE LWIP_HEAP_SIZE
+#elif !defined(CONFIG_WIFI6)
+/* Without WIFI6 the WRAM region is 64 KB and lwIP heap + pools must fit in it */
+#define MEM_SIZE (32 * 1024)
 #else
 #if MEM_MIN > 8192
 #define MEM_SIZE MEM_MIN
@@ -110,7 +113,9 @@
 #endif
 #endif
 
+#ifdef CONFIG_WIFI6
 #define LWIP_HOOK_FILENAME        "lwiphooks.h"
+#endif
 
 #define LWIP_RAW                  1
 #define LWIP_MULTICAST_TX_OPTIONS 1
