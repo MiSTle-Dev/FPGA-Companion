@@ -210,17 +210,17 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
       // Check if there's significant unused data in the report desciptor.
       // This likely means that there's annother report to be parsed.
       int rep_idx = 1;
-      while(desc_len - rbytes > 0) {
+      while((desc_len - rbytes > 0) && (rep_idx < MAX_REPORT_PER_IFACE)) {
 	desc_report += rbytes;
 	desc_len -= rbytes;
 
-	usb_debugf("Trying to parse remaining %d bytes", desc_len);	      
+	usb_debugf("Parse remaining %d bytes to report %d", desc_len, rep_idx);
 	
 	if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].report[rep_idx].desc, &rbytes)) {
-	  if(hid_device[idx].report[rep_idx].desc.type == REPORT_TYPE_JOYSTICK) {
-	    usb_debugf("Found second joystick report decriptor");
-	    hid_device[idx].report[rep_idx].state.joystick.js_index = hid_allocate_joystick();	      
-	  }
+	  if(hid_device[idx].report[rep_idx].desc.type == REPORT_TYPE_JOYSTICK)
+	    hid_device[idx].report[rep_idx].state.joystick.js_index = hid_allocate_joystick();
+
+	  rep_idx++;
 	}
       }      
     } else
