@@ -12,7 +12,7 @@
 "      \033[1;36mhttp://github.com/MiSTle-Dev\033[0m\r\n"
 
 void mcu_hw_init(void);
-char *mcu_get_info(int index);
+const char *mcu_get_info(int index);
 void mcu_hw_main_loop(void);
 
 void mcu_hw_irq_ack(void);
@@ -32,11 +32,15 @@ bool mcu_hw_usb_msc_present(void);
 void mcu_hw_port_byte(unsigned char);
 
 // command line wifi interface for use with AT commands
+void mcu_hw_wifi_init(void);
 void mcu_hw_wifi_scan(void);
 bool mcu_hw_wifi_connect(char *ssid, char *key);
 void mcu_hw_tcp_connect(char *ip, int port);
 void mcu_hw_tcp_disconnect(void);
 bool mcu_hw_tcp_data(unsigned char byte);
+void mcu_hw_wifi_drop(void);
+
+void mcu_hw_asix_start(void);
 
 // more generic wifi interface for use within companion itself
 typedef struct mcu_hw_scan_result_S {
@@ -75,6 +79,8 @@ void mcu_hw_jtag_writeTDI_msb_first_gpio_out_mode(uint8_t *tx, unsigned int byte
 #define FPGA_BOOT_TIMEOUT 5000    // give FPGA 5 seconds to boot
 
 #elif defined (MISTLE_BOARD)
+void mcu_hw_jtag_init(void);
+
 #if MISTLE_BOARD == 2
 // WS2040ZERO
 void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);

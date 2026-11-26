@@ -27,7 +27,7 @@
 #define USB_ERROR_CHECK(a) (a)
 
 // return info/version strings
-char *mcu_get_info(int index) {
+const char *mcu_get_info(int index) {
   static const char *board_name = "ESP32 S2/S3";
   static const char *sdk_version = "Unspecified SDK";
   static char gcc_version[32];

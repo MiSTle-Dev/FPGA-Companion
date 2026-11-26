@@ -71,6 +71,11 @@ add_library(u8g2 ${U8G2_SRC})
 add_executable(${PROJECT}
 	../main.c
 	mcu_hw.c
+	usb_xbox.c
+	usb_hid.c
+	mcu_hw_jtag.c
+	mcu_hw_network.c
+	../usb_controller_maps_tools.c
 	bluetooth.c
 	../sysctrl.c
 	../hidparser.c
@@ -109,7 +114,7 @@ target_compile_definitions(${PROJECT} PRIVATE
         PICO_FLASH_ASSUME_CORE1_SAFE=1
         PIO_USB_DP_PIN_DEFAULT=2
         PICO_DEFAULT_PIO_USB_DP_PIN=2
-	# CFG_TUSB_DEBUG=2
+	#CFG_TUSB_DEBUG=2
 )
 
 if(${BOARD} STREQUAL PICO)
@@ -144,6 +149,7 @@ elseif(${BOARD} STREQUAL MSP20K)
 elseif(${BOARD} STREQUAL DEV25K)
    add_compile_definitions(${PROJECT} PRIVATE MISTLE_BOARD=6)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for GW3A/GW5A Dev25k.")
+   add_compile_definitions(${PROJECT} PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64)
    target_sources(${PROJECT} PRIVATE sdio.c ../jtag.c ../gowin.c usb_jtag.c)
    target_sources(${PROJECT} PRIVATE usb_descriptors.c)
    target_sources(${PROJECT} PRIVATE ../pio_jtag.c)

@@ -17,6 +17,7 @@
 #include <timers.h>
 #include <string.h>
 
+#include "board.h"
 #include "sdio.h"
 #include "../debug.h"
 #include "../mcu_hw.h"
@@ -24,8 +25,8 @@
 
 #include "../gowin.h"   // TODO remove gowin dependency
 
-#if MISTLE_BOARD != 4 && MISTLE_BOARD != 6
-#error "Direct SDIO access only works for the Dev20k adn Dev25k boards"
+#ifndef ENABLE_SDIO
+#error "Direct SDIO access only works for the Dev20k, Dev25k and similar boards"
 #endif
 
 #define SD_VERIFY_CRC   0

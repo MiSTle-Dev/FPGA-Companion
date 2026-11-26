@@ -198,7 +198,7 @@ void mcu_hw_jtag_exit_gpio_out_mode(void) {
 static void mcu_hw_jtag_init(void);
 
 // return info/version strings
-char *mcu_get_info(int index) {
+const char *mcu_get_info(int index) {
   static const char *board_name = BOARD_NAME;
   static const char *sdk_version = "SDK " SDK_VERSION;
   static char gcc_version[32];
