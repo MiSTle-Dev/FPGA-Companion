@@ -11,7 +11,7 @@
 #include "usb_hid.h"
 #include "../usb_controller_maps_tools.h"
 
-#define MAX_JS_PER_IFACE  2
+#define MAX_REPORT_PER_IFACE  2
 
 extern CFG_TUH_MEM_SECTION struct {
   TUH_EPBUF_TYPE_DEF(tusb_desc_device_t, device);
@@ -22,8 +22,13 @@ extern CFG_TUH_MEM_SECTION struct {
 static struct {
   uint8_t dev_addr;
   uint8_t instance;
-  hid_state_t state[MAX_JS_PER_IFACE];
-  hid_report_t rep[MAX_JS_PER_IFACE];
+
+  // allow for multiple reports per interface
+  struct {  
+    hid_state_t state;
+    hid_report_t desc;
+  } report[MAX_REPORT_PER_IFACE];
+
 } hid_device[MAX_HID_DEVICES];
 
 void usb_hid_init(void) {
@@ -36,10 +41,20 @@ int usb_hid_present(int type) {
   int retval = 0;
   
   for(int idx=0;idx<MAX_HID_DEVICES;idx++) {
-    if(hid_device[idx].dev_addr != 0xff) {    
-      if((type && USB_HID_KEYBOARD) && (hid_device[idx].rep[0].type == REPORT_TYPE_KEYBOARD)) retval++;;
-      if((type && USB_HID_JOYSTICK) && (hid_device[idx].rep[0].type == REPORT_TYPE_JOYSTICK)) retval++;;
-      if((type && USB_HID_MOUSE)    && (hid_device[idx].rep[0].type == REPORT_TYPE_MOUSE))    retval++;;
+    if(hid_device[idx].dev_addr != 0xff) {
+      for(int i=0;i<MAX_REPORT_PER_IFACE;i++) {      
+	if((type && USB_HID_KEYBOARD) &&
+	   (hid_device[idx].report[i].desc.type == REPORT_TYPE_KEYBOARD))
+	  retval++;;
+
+	if((type && USB_HID_JOYSTICK) &&
+	   (hid_device[idx].report[i].desc.type == REPORT_TYPE_JOYSTICK))
+	  retval++;;
+
+	if((type && USB_HID_MOUSE)    &&
+	   (hid_device[idx].report[i].desc.type == REPORT_TYPE_MOUSE))
+	  retval++;;
+      }
     }
   }
   return retval;
@@ -176,31 +191,35 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
     // Some device return broken hid descriptor reports. Just like the Linux
     // kernel we replace these.
     fix_report_descriptor(desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice, (uint8_t*)desc_report, desc_len);
-
+    
     uint16_t rbytes = 0;
-    if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].rep[0], &rbytes)) {
+    if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].report[0].desc, &rbytes)) {
       hid_device[idx].dev_addr = dev_addr;
       hid_device[idx].instance = instance;
-      if(hid_device[idx].rep[0].type == REPORT_TYPE_JOYSTICK) {
-	// mark all js_index fields as unused
-	for(int i=0;i<MAX_JS_PER_IFACE;i++)
-	  hid_device[idx].state[i].joystick.js_index = NO_JOYSTICK;
 
-	// use first entry
-	hid_device[idx].state[0].joystick.js_index = hid_allocate_joystick();
+      // One report descriptor was successfully parsed. So accept the device and
+      // try to search for more usable descriptors
+      
+      // mark all remaining entries as unused
+      for(int i=1;i<MAX_REPORT_PER_IFACE;i++)
+	hid_device[idx].report[i].desc.type = REPORT_TYPE_NONE;
 
-	// Check if there's significant unused data in the report desciptor.
-	// This likely means that there's annother report to be parsed.
-	if(desc_len - rbytes > 0) {
-	  usb_debugf("Trying to parse remaining %d bytes", desc_len - rbytes);
-	      
-	  desc_report += rbytes;
-	  desc_len -= rbytes;
-	  if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].rep[1], &rbytes)) {
-	    if(hid_device[idx].rep[1].type == REPORT_TYPE_JOYSTICK) {
-	      usb_debugf("Found second joystick report decriptor");
-	      hid_device[idx].state[1].joystick.js_index = hid_allocate_joystick();	      
-	    }
+      if(hid_device[idx].report[0].desc.type == REPORT_TYPE_JOYSTICK)
+	hid_device[idx].report[0].state.joystick.js_index = hid_allocate_joystick();
+      
+      // Check if there's significant unused data in the report desciptor.
+      // This likely means that there's annother report to be parsed.
+      int rep_idx = 1;
+      while(desc_len - rbytes > 0) {
+	desc_report += rbytes;
+	desc_len -= rbytes;
+
+	usb_debugf("Trying to parse remaining %d bytes", desc_len);	      
+	
+	if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].report[rep_idx].desc, &rbytes)) {
+	  if(hid_device[idx].report[rep_idx].desc.type == REPORT_TYPE_JOYSTICK) {
+	    usb_debugf("Found second joystick report decriptor");
+	    hid_device[idx].report[rep_idx].state.joystick.js_index = hid_allocate_joystick();	      
 	  }
 	}
       }      
@@ -209,26 +228,28 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   } else
     usb_debugf("Error, no more free HID entries");
 
-  for(int i=0;i<MAX_JS_PER_IFACE;i++) {
-    if(hid_device[idx].rep[i].type == REPORT_TYPE_JOYSTICK) {
+  /* check controller map for all joysticks found */
+  for(int i=0;i<MAX_REPORT_PER_IFACE;i++) {
+    if(hid_device[idx].report[i].desc.type == REPORT_TYPE_JOYSTICK) {
       // lookup for VID/PID/Version
       const void *map = usb_controller_maps_find(desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
       
       if (map) {
-	// check of this is a data frog pc07 and force our custom map then
-	if(hid_device[idx].rep[1].type == REPORT_TYPE_JOYSTICK)
+	// Check of this is a data frog pc07 and force our custom map then. 
+	if((hid_device[idx].report[0].desc.type == REPORT_TYPE_JOYSTICK) &&
+	   (hid_device[idx].report[1].desc.type == REPORT_TYPE_JOYSTICK))
 	  map = usb_controller_maps_get_data_frog_pc07(map);
 
 	usb_controller_maps_show(map);
 	
-	hid_device[idx].rep[i].map = map;
-	hid_device[idx].rep[i].map_found = 1;
-	hid_device[idx].rep[i].map_checked = 1;
+	hid_device[idx].report[i].desc.map = map;
+	hid_device[idx].report[i].desc.map_found = 1;
+	hid_device[idx].report[i].desc.map_checked = 1;
       } else {
 	usb_debugf("No map for VID=%04x PID=%04x, VERSION=%04x",desc.device.idVendor, desc.device.idProduct, desc.device.bcdDevice);
-	hid_device[idx].rep[i].map = NULL;
-	hid_device[idx].rep[i].map_found = 0;
-	hid_device[idx].rep[i].map_checked = 1;
+	hid_device[idx].report[i].desc.map = NULL;
+	hid_device[idx].report[i].desc.map_found = 0;
+	hid_device[idx].report[i].desc.map_checked = 1;
       }
     }
   }
@@ -249,13 +270,14 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
     if(hid_device[idx].dev_addr == dev_addr && hid_device[idx].instance == instance) {
       usb_debugf("releasing %d", idx);
       hid_device[idx].dev_addr = 0xff;
-      for(int i=0;i<MAX_JS_PER_IFACE;i++)
-	if(hid_device[idx].rep[i].type == REPORT_TYPE_KEYBOARD)
-	  kbd_release_all(&hid_device[idx].state[i].kbd);
-      if(hid_device[idx].rep[0].type == REPORT_TYPE_JOYSTICK) {
-	for(int i=0;i<MAX_JS_PER_IFACE;i++)
-	  if(hid_device[idx].state[i].joystick.js_index != NO_JOYSTICK)	
-	    hid_release_joystick(hid_device[idx].state[i].joystick.js_index);
+      for(int i=0;i<MAX_REPORT_PER_IFACE;i++) {
+	if(hid_device[idx].report[i].desc.type == REPORT_TYPE_KEYBOARD)
+	  kbd_release_all(&hid_device[idx].report[i].state.kbd);
+
+	if(hid_device[idx].report[i].desc.type == REPORT_TYPE_JOYSTICK) {
+	  if(hid_device[idx].report[i].state.joystick.js_index != NO_JOYSTICK)	
+	    hid_release_joystick(hid_device[idx].report[i].state.joystick.js_index);
+	}
       }
     }
   }
@@ -263,25 +285,26 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
 }
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) {
-  //  usb_debugf("[%u] HID Interface%u %p/%d", dev_addr, instance, report, len);
-
+  //usb_debugf("[%u] HID Interface%u %p/%d", dev_addr, instance, report, len);
+  //hexdump(report, len);
+  
   // find matching hid report
   for(int idx=0;idx<MAX_HID_DEVICES;idx++)
     if(hid_device[idx].dev_addr == dev_addr && hid_device[idx].instance == instance) {
-      const hid_report_t *report_desc = &hid_device[idx].rep[0];
+      const hid_report_t *report_desc = &hid_device[idx].report[0].desc;
       // if there's no report id at all, then just use the first entry as these are
       // indistinguishable without report id
       if(!report_desc->report_id_present)      
-	hid_parse(report_desc, &hid_device[idx].state[0], report, len);
+	hid_parse(report_desc, &hid_device[idx].report[0].state, report, len);
       else {
 	// there is a report id, so choose the right report descriptor for the
 	// hid layer to parse against
-	for(int i=0;i<MAX_JS_PER_IFACE;i++) {
-	  const hid_report_t *report_desc = &hid_device[idx].rep[i];	
+	for(int i=0;i<MAX_REPORT_PER_IFACE;i++) {
+	  const hid_report_t *report_desc = &hid_device[idx].report[i].desc;	
 	  if(report_desc->report_id_present && report[0] == report_desc->report_id) {
 	    //usb_debugf("parsing report %d, id %d", i, report[0]);
 	    //hexdump(report, len);
-	    hid_parse(report_desc, &hid_device[idx].state[i], report, len);
+	    hid_parse(report_desc, &hid_device[idx].report[i].state, report, len);
 	  }
 	}
       }
