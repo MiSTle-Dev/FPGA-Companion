@@ -5,6 +5,9 @@
 #include "board.h"
 #ifdef ENABLE_USB_HID
 
+#include <FreeRTOS.h>
+#include <task.h>
+
 #include "../hid.h"
 #include "../hidparser.h"
 
@@ -29,12 +32,75 @@ static struct {
     hid_report_t desc;
   } report[MAX_REPORT_PER_IFACE];
 
+  // keyboard lock lights (bit 0 Num, 1 Caps, 2 Scroll); see usb_hid_leds_poll()
+  bool leds_ok;            // its only output report is the boot LED byte
+  uint8_t leds_sent;       // lights it last took, 0xff = none yet
+  TickType_t leds_retry;   // after a failed request: not before this
 } hid_device[MAX_HID_DEVICES];
 
 void usb_hid_init(void) {
   // mark all hid and xbox entries as unused
   for(int i=0;i<MAX_HID_DEVICES;i++)
     hid_device[i].dev_addr = 0xff;
+}
+
+// Keyboard lock lights, as the core asks for them (SPI_HID_GET_LEDS, read in
+// hid_handle_event(); see mcu_hw_kbd_leds()). Only keyboards whose output
+// report is exactly the boot keyboard's LED byte get lights. TinyUSB runs one
+// control transfer at a time, so one SET_REPORT is in flight at most, sent
+// from the USB task. A failed request is tried again a second later.
+static volatile uint8_t core_leds;   // the lights the core last asked for
+static int leds_busy = -1;           // hid_device entry with a request in flight
+static int leds_next;                // entry the next scan starts at (round robin)
+static uint8_t leds_buf;             // its payload, kept until it completes
+
+void usb_hid_kbd_leds(uint8_t leds) {
+  core_leds = leds & 0x07;
+}
+
+static void leds_failed(int idx) {
+  // the keyboard may have taken the report anyway: send again in a second
+  hid_device[idx].leds_sent = 0xff;
+  hid_device[idx].leds_retry = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
+  if(!hid_device[idx].leds_retry) hid_device[idx].leds_retry = 1;
+}
+
+// called from the USB task: every keyboard with lights follows core_leds
+void usb_hid_leds_poll(void) {
+  if(leds_busy >= 0) return;
+  uint8_t want = core_leds;
+  TickType_t now = xTaskGetTickCount();
+  for(int n=0;n<MAX_HID_DEVICES;n++) {
+    int idx = (leds_next + n) % MAX_HID_DEVICES;
+    if(hid_device[idx].dev_addr == 0xff || !hid_device[idx].leds_ok ||
+       hid_device[idx].leds_sent == want)
+      continue;
+    if(hid_device[idx].leds_retry && (int32_t)(hid_device[idx].leds_retry - now) > 0)
+      continue;
+    leds_next = (idx + 1) % MAX_HID_DEVICES;
+    leds_buf = want;
+    if(tuh_hid_set_report(hid_device[idx].dev_addr, hid_device[idx].instance, 0,
+                          HID_REPORT_TYPE_OUTPUT, &leds_buf, 1))
+      leds_busy = idx;
+    else
+      leds_failed(idx);   // e.g. the interface is gone
+    return;
+  }
+}
+
+void tuh_hid_set_report_complete_cb(uint8_t dev_addr, uint8_t instance, uint8_t report_id,
+                                    uint8_t report_type, uint16_t len) {
+  (void) report_id;
+  int idx = leds_busy;
+  if(idx < 0 || report_type != HID_REPORT_TYPE_OUTPUT ||
+     hid_device[idx].dev_addr != dev_addr || hid_device[idx].instance != instance)
+    return;
+  leds_busy = -1;
+  if(len) {
+    hid_device[idx].leds_sent = leds_buf;
+    hid_device[idx].leds_retry = 0;
+  } else
+    leds_failed(idx);
 }
 
 int usb_hid_present(int type) {
@@ -194,6 +260,14 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
     
     uint16_t rbytes = 0;
     if(parse_report_descriptor(desc_report, desc_len, &hid_device[idx].report[0].desc, &rbytes)) {
+      // lights only for a boot layout keyboard; checked on the whole
+      // descriptor, before the search below moves past the first report
+      hid_device[idx].leds_ok = hid_device[idx].report[0].desc.type == REPORT_TYPE_KEYBOARD &&
+	!hid_device[idx].report[0].desc.report_id_present &&
+	hid_leds_boot_layout(desc_report, desc_len) &&
+	tuh_hid_mounted(dev_addr, instance);  // not unplugged during the reads above
+      hid_device[idx].leds_sent = 0xff;      // not yet set
+      hid_device[idx].leds_retry = 0;
       hid_device[idx].dev_addr = dev_addr;
       hid_device[idx].instance = instance;
 
@@ -270,6 +344,9 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
     if(hid_device[idx].dev_addr == dev_addr && hid_device[idx].instance == instance) {
       usb_debugf("releasing %d", idx);
       hid_device[idx].dev_addr = 0xff;
+      // a request in flight to this keyboard is over; its completion, which
+      // TinyUSB may still report as failed after this, no longer matches
+      if(leds_busy == idx) leds_busy = -1;
       for(int i=0;i<MAX_REPORT_PER_IFACE;i++) {
 	if(hid_device[idx].report[i].desc.type == REPORT_TYPE_KEYBOARD)
 	  kbd_release_all(&hid_device[idx].report[i].state.kbd);

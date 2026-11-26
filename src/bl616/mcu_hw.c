@@ -418,63 +418,6 @@ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t led_payload[CONFIG_USBHOST_MAX_HI
 static TaskHandle_t led_task_handle;
 static volatile uint8_t core_leds;          // the lights the core last asked for
 
-// true only for: no report IDs, no PUSH/POP, and output items that together
-// make one byte, the first being data, variable, usage page LEDs, report size
-// 1, usages from 1 (Num Lock) up, at least three bits; any further output
-// items constant padding. Anything malformed or unexpected gives false.
-static bool leds_boot_layout(const uint8_t *d, uint16_t len) {
-  uint32_t page = 0, size = 0, count = 0, usage_min = 0, usage_max = 0;
-  bool have_min = false, have_max = false, have_usage = false;
-  uint32_t out_bits = 0;
-  unsigned outputs = 0;
-  bool first_ok = false;
-  int depth = 0;
-
-  for (uint32_t i = 0; i < len; ) {
-    uint8_t b = d[i];
-    if (b == 0xfe) return false;             // long items: not in a keyboard
-    uint32_t n = (b & 3) == 3 ? 4 : (b & 3);
-    if (i + 1 + n > len) return false;       // truncated item
-    uint32_t v = 0;
-    for (uint32_t k = 0; k < n; k++) v |= (uint32_t)d[i + 1 + k] << (8 * k);
-    switch (b & 0xfc) {
-      case 0x84: return false;               // report ID
-      case 0xa4: case 0xb4: return false;    // PUSH, POP
-      case 0x04: page = v; break;            // usage page
-      case 0x74: size = v; break;            // report size
-      case 0x94: count = v; break;           // report count
-      case 0x08: case 0x18: case 0x28:       // usage, minimum, maximum
-        if (n > 2) return false;             // extended usages: not in a keyboard
-        if ((b & 0xfc) == 0x08) have_usage = true;
-        if ((b & 0xfc) == 0x18) { usage_min = v; have_min = true; }
-        if ((b & 0xfc) == 0x28) { usage_max = v; have_max = true; }
-        break;
-      case 0xa0: depth++; break;             // collection
-      case 0xc0: if (--depth < 0) return false; break;   // end collection
-      case 0x90:                             // output
-        if (size > 8 || count > 8) return false;
-        if (outputs == 0) {
-          // data, variable, absolute; fields named by the range alone
-          first_ok = page == 0x08 && size == 1 && count >= 3 && count <= 8 &&
-                     (v & 7) == 2 && !have_usage && have_min && usage_min == 1 &&
-                     have_max && usage_max >= count;
-        } else if (!(v & 1)) {
-          return false;                      // a second data output
-        }
-        outputs++;
-        out_bits += size * count;
-        if (out_bits > 8) return false;
-        break;
-    }
-    if ((b & 0x0c) == 0x00) {                // main item: locals end
-      have_min = have_max = have_usage = false;
-      usage_min = usage_max = 0;
-    }
-    i += 1 + n;
-  }
-  return first_ok && out_bits == 8 && depth == 0;   // and not cut short
-}
-
 static void led_task(__attribute__((unused)) void *arg) {
   for (;;) {
     TickType_t wait = portMAX_DELAY;
@@ -1132,7 +1075,7 @@ void usbh_hid_run(struct usbh_hid *hid_class)
     usb->hid_info[i].leds_retry = 0;
     usb->hid_info[i].leds_ok = hid->report[0].type == REPORT_TYPE_KEYBOARD &&
       !hid->report[0].report_id_present &&
-      leds_boot_layout(report_desc, hid_class->report_size);
+      hid_leds_boot_layout(report_desc, hid_class->report_size);
     usb->hid_info[i].state = STATE_DETECTED;
     if (usb->hid_info[i].leds_ok) {
       if (!led_task_handle)

@@ -72,7 +72,8 @@ static void com_task(__attribute__((unused)) void *p ) {
     
     // by default, DB9 interrupts are disabled. Reading
     // the DB9 state enables them. This is what hid_handle_event
-    // does.
+    // does. It also reads the keyboard lights (SPI_HID_GET_LEDS),
+    // which likewise lets a core raise the HID interrupt for them.
     hid_handle_event();
 
     // initialize on-screen-display and menu system

@@ -230,6 +230,16 @@ bits 0, 1 and 2 are Num Lock, Caps Lock and Scroll Lock. A core raises
 the HID interrupt when the lights change; on that interrupt the MCU
 reads the DB9 state first and then the lights.
 
+A core must not raise the HID interrupt for its lights until it has
+seen one ```SPI_HID_GET_LEDS``` command, just as DB9 interrupts stay off
+until the first ```SPI_HID_GET_DB9```. The MCU sends both at start-up
+(the ```hid_handle_event()``` call in ```main.c```), so a companion that
+handles lights switches the interrupt on, and an older companion that
+does not know the command never gets one. Once switched on it stays on
+until the FPGA is configured again. When a new core is loaded the MCU
+normally restarts on the FPGA's cold boot event (later, if USB-JTAG is
+busy) and sends the command again.
+
 An answer with bit 7 clear is ignored: the lights keep the last state a
 core gave, and are off until a core gives one. The protocol defines no
 reply to an unknown command, but the existing cores (MiSTeryNano,
@@ -237,9 +247,9 @@ NanoMig, A2600Nano) answer one with the byte of the command before it,
 here ```SPI_HID_GET_DB9```'s, whose bit 7 is clear; that is why the MCU
 reads the DB9 state first.
 
-Currently only the BL616 drives keyboard lights (keyboards whose output
-report is the boot keyboard's LED byte); the RP2040 and ESP32 read the
-answer and do nothing with it.
+The BL616 and the RP2040 drive keyboard lights (keyboards whose output
+report is the boot keyboard's LED byte); the ESP32 reads the answer and
+does nothing with it.
 
 ### OSD target
 
