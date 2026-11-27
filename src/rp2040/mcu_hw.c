@@ -80,6 +80,9 @@ static void pio_usb_task(__attribute__((unused)) void *parms) {
 #endif
 #endif
     }
+#ifdef ENABLE_USB_HID
+    usb_hid_leds_poll();
+#endif
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
@@ -200,6 +203,16 @@ void mcu_hw_spi_init(void) {
   gpio_set_dir(SPI_IRQ_PIN, GPIO_IN);
   gpio_pull_up(SPI_IRQ_PIN);
   gpio_add_raw_irq_handler(SPI_IRQ_PIN, irq_handler);  
+}
+
+// keyboard lights wanted by the core; the USB task sends them to every
+// keyboard that has them (usb_hid_leds_poll() in usb_hid.c)
+void mcu_hw_kbd_leds(uint8_t leds) {
+#ifdef ENABLE_USB_HID
+  usb_hid_kbd_leds(leds);
+#else
+  (void) leds;
+#endif
 }
 
 void mcu_hw_irq_ack(void) {

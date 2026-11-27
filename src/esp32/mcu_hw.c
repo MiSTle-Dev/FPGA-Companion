@@ -446,6 +446,9 @@ void mcu_hw_spi_init(void) {
   gpio_set_intr_type(PIN_NUM_IRQ, GPIO_INTR_LOW_LEVEL);
 }
 
+// keyboard lights are not driven on this platform yet
+void mcu_hw_kbd_leds(__attribute__((unused)) uint8_t leds) { }
+
 void mcu_hw_irq_ack(void) {
   // re-enable the interrupt since it was now serviced outside the irq handler
   gpio_intr_enable(PIN_NUM_IRQ);

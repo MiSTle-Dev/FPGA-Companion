@@ -63,5 +63,6 @@ typedef struct {
 
 bool parse_report_descriptor(const uint8_t *rep, uint16_t rep_size, hid_report_t *conf, uint16_t *rbytes);
 void fix_report_descriptor(uint16_t vid, uint16_t pid, uint16_t version, uint8_t *desc, uint16_t len);
+bool hid_leds_boot_layout(const uint8_t *d, uint16_t len);
 
 #endif // HIDPARSER_H
