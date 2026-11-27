@@ -1,0 +1,97 @@
+name: Build FPGA Companion
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build ${{ matrix.family }} firmware
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    # Grant this repository Read under Manage Actions access on both GHCR packages.
+    container:
+      image: ghcr.io/mistle-dev/fpga-companion-builder-${{ matrix.family }}:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.source }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: bl616
+            source: src/bl616
+          - family: rp2xxx
+            source: src/rp2040
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Trust the mounted checkout for firmware versioning
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build BL616 boards and prepare flashing files
+        if: matrix.family == 'bl616'
+        run: ./buildall.sh
+
+      - name: Build RP2040 and RP2350 boards
+        if: matrix.family == 'rp2xxx'
+        env:
+          RP2XXX_BOARDS: PICO PICO2 WS2040ZERO SH20KLITE DEV20K MSP20K MSP2_20K DEV25K
+        run: |
+          read -r -a boards <<< "$RP2XXX_BOARDS"
+          mkdir -p buildall
+          for board in "${boards[@]}"; do
+            build_dir="build/$board"
+            cmake -S . -B "$build_dir" -G Ninja -DBOARD="$board"
+            cmake --build "$build_dir"
+            cp "$build_dir/fpga_companion.uf2" "buildall/fpga_companion_${board}.uf2"
+          done
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fpga-companion-${{ matrix.family }}-${{ github.sha }}
+          path: ${{ matrix.source }}/buildall/
+          if-no-files-found: error
+          overwrite: true
+
+  attach-to-release:
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download BL616 firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: fpga-companion-bl616-${{ github.sha }}
+          path: artifacts
+
+      - name: Download RP2xxx firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: fpga-companion-rp2xxx-${{ github.sha }}
+          path: artifacts
+
+      - name: Attach firmware and flashing files to the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload --clobber -- "$TAG" artifacts/*
