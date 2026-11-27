@@ -92,6 +92,9 @@
 // reserve a little more ram outside freertos for bluetooth
 #if PICO_RP2350
 #define configTOTAL_HEAP_SIZE                   (112*1024)
+#elif MISTLE_BOARD == 5
+// MSP20K also uses USB device buffers and must leave room for the C heap.
+#define configTOTAL_HEAP_SIZE                   (100*1024)
 #else
 #define configTOTAL_HEAP_SIZE                   (106*1024)
 #endif

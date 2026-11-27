@@ -92,7 +92,7 @@ add_executable(${PROJECT}
 	../tusb_xinput/xinput_host.c
 	../tusb_asix/asix_host.c
 	../config.c
-	../freertos_callbacks.c
+	freertos_callbacks.c
 	../xml.c
 	../ftpd.c
 	../telnetd.c
@@ -152,7 +152,7 @@ elseif(${BOARD} STREQUAL DEV25K)
    add_compile_definitions(${PROJECT} PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64)
    target_sources(${PROJECT} PRIVATE sdio.c ../jtag.c ../gowin.c usb_jtag.c)
    target_sources(${PROJECT} PRIVATE usb_descriptors.c)
-   target_sources(${PROJECT} PRIVATE ../pio_jtag.c)
+   target_sources(${PROJECT} PRIVATE pio_jtag.c)
    target_link_libraries(${PROJECT} PRIVATE tinyusb_device)
    pico_generate_pio_header(${PROJECT} ${CMAKE_CURRENT_LIST_DIR}/jtag.pio)
 elseif(${BOARD} STREQUAL MSP2_20K)
@@ -160,7 +160,7 @@ elseif(${BOARD} STREQUAL MSP2_20K)
    add_custom_command(TARGET ${PROJECT} POST_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Firmware has been built for MiSTeryShieldPico2_TN20k.")
    target_sources(${PROJECT} PRIVATE ../jtag.c ../gowin.c usb_jtag.c)
    target_sources(${PROJECT} PRIVATE usb_descriptors.c)
-   target_sources(${PROJECT} PRIVATE ../pio_jtag.c)
+   target_sources(${PROJECT} PRIVATE pio_jtag.c)
    target_link_libraries(${PROJECT} PRIVATE tinyusb_device)
    pico_generate_pio_header(${PROJECT} ${CMAKE_CURRENT_LIST_DIR}/jtag.pio)
 else()

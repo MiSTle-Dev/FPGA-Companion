@@ -5,6 +5,8 @@
 #include "board.h"
 #ifdef ENABLE_JTAG
 
+#include "hardware/gpio.h"
+
 static bool jtag_is_active = false;
 
 // Enabling any of the following debug mechanisms will disable the use
